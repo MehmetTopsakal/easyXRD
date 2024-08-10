@@ -6,6 +6,8 @@ from pymatgen.core.lattice import Lattice
 from pymatgen.analysis.diffraction.xrd import XRDCalculator
 from pymatgen.io.cif import CifWriter
 
+from IPython.display import clear_output
+
 
 class exrd():
     def __init__(self):
@@ -322,3 +324,90 @@ class exrd():
             
 
                 
+    def setup_gsas2_calculator(self,
+                               gsasii_lib_path=None,
+                               gsasii_scratch_path=None,
+
+
+                        ):
+        if gsasii_lib_path is None:
+            user_loc = input("Enter location of GSASII folder on your GSAS-II installation.")
+            sys.path += [gsasii_lib_path]
+            try:
+                import GSASIIscriptable as G2sc
+            except:
+                try:
+                    gsasii_lib_path = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII folder on your GSAS-II installation\n")
+                    sys.path += [gsasii_lib_path]
+                    import GSASIIscriptable as G2sc
+                except:
+                    gsasii_lib_path = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
+                    return
+            else:
+                clear_output()
+                self.gsasii_lib_path = gsasii_lib_path
+        else:
+            if os.path.isdir(gsasii_lib_path):
+                sys.path += [gsasii_lib_path]
+                try:
+                    import GSASIIscriptable as G2sc
+                except:
+                    try:
+                        gsasii_lib_path = input("\nUnable to import GSASIIscriptable. Please enter GSASII folder on your GSAS-II installation\n")
+                        sys.path += [gsasii_lib_path]
+                        import GSASIIscriptable as G2sc
+                    except:
+                        gsasii_lib_path = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
+                        return
+                    else:
+                        clear_output()
+                        self.gsasii_lib_path = gsasii_lib_path
+                else:
+                    clear_output()
+                    self.gsasii_lib_path = gsasii_lib_path
+            else:
+                print('%s does NOT exist. Please check!'%gsasii_lib_path)
+                return
+
+
+
+
+
+        if gsasii_scratch_path is None:
+            user_home = os.path.expanduser('~')
+            if not os.path.isdir(os.path.join(user_home,'.gsasii_scratch')):
+                os.mkdir(os.path.join(user_home,'.gsasii_scratch'))
+            self.gsasii_scratch_path = os.path.join(user_home,'.gsasii_scratch')
+        else:
+            try:
+                os.makedirs(gsasii_scratch_path,exist_ok=True)
+            except Exception as exc:
+                print(exc)
+                print('Unable to creat or use gsasii_scratch_path. Please check.')
+                return
+            else:
+                self.gsasii_scratch_path = gsasii_scratch_path
+
+
+
+
+#                         except Exception as exc:
+#                             print('Unable to read %s \nPlease check %s is
+#                             print('Error msg from np.loadtxt:\n%s'%exc)
+#
+#
+#
+#
+#
+#
+#
+
+
+
+
+
+
+
+
+
+
