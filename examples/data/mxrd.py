@@ -9,6 +9,31 @@ from pymatgen.io.cif import CifWriter
 from IPython.display import clear_output
 
 
+import random, string
+import fnmatch
+
+import time
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class exrd():
     def __init__(self):
         pass
@@ -312,96 +337,171 @@ class exrd():
 
     def export_phases(self,phase_ind=None, # should start from 0. -1 is not allowed
                             export_to='.',
-                            export_extension='exported.cif'
+                            export_extension='_exported.cif'
                             ):
         if phase_ind is None:
             for e,st in enumerate(self.phases):
-                CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s_%s"%(export_to,st,export_extension))
+                CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s%s"%(export_to,st,export_extension))
         else:
             for e,st in enumerate(self.phases):
                 if e == phase_ind:
-                    CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s_%s"%(export_to,st,export_extension))
+                    CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s%s"%(export_to,st,export_extension))
             
 
                 
     def setup_gsas2_calculator(self,
-                               gsasii_lib_path=None,
-                               gsasii_scratch_path=None,
-
-
+                               gsasii_lib_directory=None,
+                               gsasii_scratch_directory=None,
+                               instprm_from_gpx=None,
+                               instprm_Polariz=0,
+                               instprm_Azimuth=0,
+                               instprm_Zero=0,                                                                   
+                               instprm_U=152,                                  
+                               instprm_V=0.14,                                 
+                               instprm_W=0.8,   
+                               instprm_X=0, 
+                               instprm_Y=-6, 
+                               instprm_Z=0, 
+                               instprm_SHL=0.002,   
                         ):
-        if gsasii_lib_path is None:
-            user_loc = input("Enter location of GSASII folder on your GSAS-II installation.")
-            sys.path += [gsasii_lib_path]
+        
+        if gsasii_lib_directory is None:
+            user_loc = input("Enter location of GSASII directory on your GSAS-II installation.")
+            sys.path += [gsasii_lib_directory]
             try:
                 import GSASIIscriptable as G2sc
             except:
                 try:
-                    gsasii_lib_path = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII folder on your GSAS-II installation\n")
-                    sys.path += [gsasii_lib_path]
+                    gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n")
+                    sys.path += [gsasii_lib_directory]
                     import GSASIIscriptable as G2sc
                 except:
-                    gsasii_lib_path = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
+                    gsasii_lib_directory = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
                     return
             else:
-                clear_output()
-                self.gsasii_lib_path = gsasii_lib_path
+                #clear_output()
+                self.gsasii_lib_directory = gsasii_lib_directory
         else:
-            if os.path.isdir(gsasii_lib_path):
-                sys.path += [gsasii_lib_path]
+            if os.path.isdir(gsasii_lib_directory):
+                sys.path += [gsasii_lib_directory]
                 try:
                     import GSASIIscriptable as G2sc
                 except:
                     try:
-                        gsasii_lib_path = input("\nUnable to import GSASIIscriptable. Please enter GSASII folder on your GSAS-II installation\n")
-                        sys.path += [gsasii_lib_path]
+                        gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n")
+                        sys.path += [gsasii_lib_directory]
                         import GSASIIscriptable as G2sc
                     except:
-                        gsasii_lib_path = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
+                        gsasii_lib_directory = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
                         return
                     else:
-                        clear_output()
-                        self.gsasii_lib_path = gsasii_lib_path
+                        #clear_output()
+                        self.gsasii_lib_directory = gsasii_lib_directory
                 else:
-                    clear_output()
-                    self.gsasii_lib_path = gsasii_lib_path
+                    #clear_output()
+                    self.gsasii_lib_directory = gsasii_lib_directory
             else:
-                print('%s does NOT exist. Please check!'%gsasii_lib_path)
+                print('%s does NOT exist. Please check!'%gsasii_lib_directory)
                 return
 
 
 
-
-
-        if gsasii_scratch_path is None:
+        if gsasii_scratch_directory is None:
             user_home = os.path.expanduser('~')
             if not os.path.isdir(os.path.join(user_home,'.gsasii_scratch')):
                 os.mkdir(os.path.join(user_home,'.gsasii_scratch'))
-            self.gsasii_scratch_path = os.path.join(user_home,'.gsasii_scratch')
+            self.gsasii_scratch_directory = os.path.join(user_home,'.gsasii_scratch')
         else:
             try:
-                os.makedirs(gsasii_scratch_path,exist_ok=True)
+                os.makedirs(gsasii_scratch_directory,exist_ok=True)
             except Exception as exc:
                 print(exc)
-                print('Unable to creat or use gsasii_scratch_path. Please check.')
+                print('Unable to creat or use gsasii_scratch_directory. Please check.')
                 return
             else:
-                self.gsasii_scratch_path = gsasii_scratch_path
+                self.gsasii_scratch_directory = gsasii_scratch_directory
+
+        # randstr = ''.join(random.choices(string.ascii_uppercase+string.digits, k=7))
+        # self.gsasii_run_directory = '%s/%.2f_%s.gsastmp'%(self.gsasii_scratch_directory,time.time(),randstr)
+        randstr ='test'
+        self.gsasii_run_directory = '%s/%.2f_%s.gsastmp'%(self.gsasii_scratch_directory,10.0,randstr)
+
+        os.makedirs(self.gsasii_run_directory,exist_ok=True)
 
 
 
 
-#                         except Exception as exc:
-#                             print('Unable to read %s \nPlease check %s is
-#                             print('Error msg from np.loadtxt:\n%s'%exc)
-#
-#
-#
-#
-#
-#
-#
+        # np.savetxt('%s/data.qye'%self.gsasii_run_directory,
+        #            fmt='%.7e',
+        #            X=np.column_stack( (self.ds.i1d.radial.values, (self.ds.i1d-self.ds.i1d_baseline).values) ))
+        np.savetxt('%s/data.xy'%self.gsasii_run_directory,
+                   fmt='%.7e',
+                   X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_nm']*10e9) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+10 ) ))        
 
+
+        if instprm_from_gpx is not None:
+            if os.path.isfile(instprm_from_gpx):
+                gpx_instprm = G2sc.G2Project(gpxfile=instprm_from_gpx)
+                for n in gpx_instprm.names:
+                    l = n
+                    pattern = 'PWDR *'
+                    matching = fnmatch.filter(l, pattern)
+                    if matching != []:
+                        pwdr_name = matching[0]
+                instprm_dict = gpx_instprm[pwdr_name]['Instrument Parameters'][0]
+
+                with open('%s/gsas.instprm'%self.gsasii_run_directory, 'w') as f:
+                    f.write('#GSAS-II instrument parameter file; do not add/delete items!\n')
+                    f.write('Type:PXC\n')
+                    f.write('Bank:1.0\n')
+                    # f.write('Lam:%s\n'%(instprm_dict['Lam'][1]))
+                    f.write('Lam:%s\n'%(self.ds.i1d.attrs['wavelength_in_nm']*10e9))
+                    f.write('Polariz.:%s\n'%(instprm_dict['Polariz.'][1]))
+                    f.write('Azimuth:%s\n'%(instprm_dict['Azimuth'][1]))
+                    f.write('Zero:%s\n'%(instprm_dict['Zero'][1]))
+                    f.write('U:%s\n'%(instprm_dict['U'][1]))
+                    f.write('V:%s\n'%(instprm_dict['V'][1]))
+                    f.write('W:%s\n'%(instprm_dict['W'][1]))
+                    f.write('X:%s\n'%(instprm_dict['X'][1]))
+                    f.write('Y:%s\n'%(instprm_dict['Y'][1]))
+                    f.write('Z:%s\n'%(instprm_dict['Z'][1]))
+                    f.write('SH/L:%s\n'%(instprm_dict['SH/L'][1]))
+            else:
+                print('gpx file for reading instrument parameters do net exist. Plewase check the path')
+                return
+
+        else:
+            with open('%s/gsas.instprm'%self.gsasii_run_directory, 'w') as f:
+                f.write('#GSAS-II instrument parameter file; do not add/delete items!\n')
+                f.write('Type:PXC\n')
+                f.write('Bank:1.0\n')
+                f.write('Lam:%s\n'%(self.ds.i1d.attrs['wavelength_in_nm']*10e9))
+                f.write('Polariz.:%s\n'%(instprm_Polariz))
+                f.write('Azimuth:%s\n'%(instprm_Azimuth))
+                f.write('Zero:%s\n'%(instprm_Zero))
+                f.write('U:%s\n'%(instprm_U))
+                f.write('V:%s\n'%(instprm_V))
+                f.write('W:%s\n'%(instprm_W))
+                f.write('X:%s\n'%(instprm_X))
+                f.write('Y:%s\n'%(instprm_Y))
+                f.write('Z:%s\n'%(instprm_Z))
+                f.write('SH/L:%s\n'%(instprm_SHL))
+
+
+
+
+        self.gpx = G2sc.G2Project(newgpx='%s/gsas.gpx'%self.gsasii_run_directory)
+        self.gpx.data['Controls']['data']['max cyc'] = 100
+        self.gpx.add_powder_histogram('%s/data.xy'%self.gsasii_run_directory,'%s/gsas.instprm'%self.gsasii_run_directory)
+
+        self.export_phases(export_to=self.gsasii_run_directory,export_extension='.cif')
+        hist = self.gpx.histograms()[0]
+        for p in self.phases:
+            self.gpx.add_phase('%s/%s.cif'%(self.gsasii_run_directory,p),phasename=p,histograms=[hist],fmthint='CIF')
+
+
+
+        # self.gpx.save()
 
 
 
