@@ -13,6 +13,7 @@ import random, string
 import fnmatch
 
 import time
+import copy
 
 
 
@@ -20,9 +21,17 @@ import time
 
 
 
+class HiddenPrints:
+    """
+    This class hides print outputs from functions. It is useful for processes like refinement which produce a lot of text prints.
+    """
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
 
-
-
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 
 
@@ -35,8 +44,27 @@ import time
 
 
 class exrd():
-    def __init__(self):
-        pass
+    def __init__(self, verbose=False):
+        self.verbose = verbose
+
+
+
+
+    def gpx_refiner(self):
+            if self.verbose:
+                self.gpx.refine()
+            else:
+                with HiddenPrints():
+                    self.gpx.refine()
+
+
+    def gpx_saver(self):
+            if self.verbose:
+                self.gpx.save()
+            else:
+                with HiddenPrints():
+                    self.gpx.save()
+
 
 
 
@@ -356,13 +384,14 @@ class exrd():
                                instprm_Polariz=0,
                                instprm_Azimuth=0,
                                instprm_Zero=0,                                                                   
-                               instprm_U=152,                                  
-                               instprm_V=0.14,                                 
-                               instprm_W=0.8,   
+                               instprm_U=173,                                  
+                               instprm_V=-1,                                 
+                               instprm_W=1,   
                                instprm_X=0, 
-                               instprm_Y=-6, 
+                               instprm_Y=-7, 
                                instprm_Z=0, 
                                instprm_SHL=0.002,   
+                               do_1st_refinement=True,
                         ):
         
         if gsasii_lib_directory is None:
@@ -490,20 +519,187 @@ class exrd():
 
 
 
-        self.gpx = G2sc.G2Project(newgpx='%s/gsas.gpx'%self.gsasii_run_directory)
-        self.gpx.data['Controls']['data']['max cyc'] = 100
-        self.gpx.add_powder_histogram('%s/data.xy'%self.gsasii_run_directory,'%s/gsas.instprm'%self.gsasii_run_directory)
 
-        self.export_phases(export_to=self.gsasii_run_directory,export_extension='.cif')
-        hist = self.gpx.histograms()[0]
-        for p in self.phases:
-            self.gpx.add_phase('%s/%s.cif'%(self.gsasii_run_directory,p),phasename=p,histograms=[hist],fmthint='CIF')
+        if self.verbose:
+
+            self.gpx = G2sc.G2Project(newgpx='%s/gsas.gpx'%self.gsasii_run_directory)
+            self.gpx.data['Controls']['data']['max cyc'] = 100
+            self.gpx.add_powder_histogram('%s/data.xy'%self.gsasii_run_directory,'%s/gsas.instprm'%self.gsasii_run_directory)
+            self.export_phases(export_to=self.gsasii_run_directory,export_extension='.cif')
+            hist = self.gpx.histograms()[0]
+            for p in self.phases:
+                self.gpx.add_phase('%s/%s.cif'%(self.gsasii_run_directory,p),phasename=p,histograms=[hist],fmthint='CIF')
+
+        else:
+            with HiddenPrints():
+                self.gpx = G2sc.G2Project(newgpx='%s/gsas.gpx'%self.gsasii_run_directory)
+                self.gpx.data['Controls']['data']['max cyc'] = 100
+                self.gpx.add_powder_histogram('%s/data.xy'%self.gsasii_run_directory,'%s/gsas.instprm'%self.gsasii_run_directory)
+                self.export_phases(export_to=self.gsasii_run_directory,export_extension='.cif')
+                hist = self.gpx.histograms()[0]
+                for p in self.phases:
+                    self.gpx.add_phase('%s/%s.cif'%(self.gsasii_run_directory,p),phasename=p,histograms=[hist],fmthint='CIF')
 
 
 
-        # self.gpx.save()
+
+        for n in self.gpx.names:
+            l = n
+            pattern = 'PWDR *'
+            matching = fnmatch.filter(l, pattern)
+            if matching != []:
+                pwdr_name = matching[0]
+        self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, 10, 0.0, 0.0]
 
 
+        if do_1st_refinement:
+            ParDict = {'set': {'Background': {'refine': False,
+                                            'type': 'chebyschev-1',
+                                            'no. coeffs': 1
+                                            }}}
+            self.gpx.set_refinement(ParDict)
+            self.gpx_previous = copy.deepcopy(self.gpx)
+            self.gpx_refiner()
+            rwp_1st = self.gpx['Covariance']['data']['Rvals']['Rwp']
+            print('\nRwp from 1st refinement is = %.3f \n '%(rwp_1st))
+
+
+        self.gpx_saver()
+
+
+
+
+
+
+
+
+    def set_LeBail(self, set_to=True, phase_ind=None, refine=True):
+        if phase_ind is None:
+            self.gpx.set_refinement({"set":{'LeBail': set_to}})
+        else:
+            for e,p in enumerate(self.phases):
+                if e == phase_ind:
+                    self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['LeBail'] = set_to
+        if refine:
+            self.gpx_previous = copy.deepcopy(self.gpx)
+            rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
+            self.gpx_refiner()
+            rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
+            print('\nset_LeBail output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+        self.gpx_saver()
+
+
+    def refine_background(self, num_coeffs=10, background_type='chebyschev-1', set_to_false_after_refinement=True):
+        ParDict = {'set': {'Background': {'refine': True,
+                                        'type': background_type,
+                                        'no. coeffs': num_coeffs
+                                        }}}
+        self.gpx.set_refinement(ParDict)
+
+        self.gpx_previous = copy.deepcopy(self.gpx)
+        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
+        self.gpx_refiner()
+        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
+
+        print('\nrefine_background output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+        if set_to_false_after_refinement:
+            self.gpx.set_refinement({'set': {'Background': {'refine': False}}})
+        self.gpx_saver()
+                
+
+    def refine_cell_params(self, phase_ind=None, set_to_false_after_refinement=True):
+
+        for e,p in enumerate(self.gpx.phases()):
+            if phase_ind is None:
+                self.gpx['Phases'][p.name]['General']['Cell'][0]= True
+            else:
+                if e == phase_ind:
+                    self.gpx['Phases'][p.name]['General']['Cell'][0]= True
+
+        self.gpx_previous = copy.deepcopy(self.gpx)
+        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
+        self.gpx_refiner()
+        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
+
+        print('\nrefine_cell_params output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+        if set_to_false_after_refinement:
+            phases = self.gpx.phases()
+            for p in phases:
+                self.gpx['Phases'][p.name]['General']['Cell'][0]= False
+        self.gpx_saver()
+
+
+    def refine_strain_broadening(self,set_to_false_after_refinement=True):
+
+        ParDict = {'set': {'Mustrain': {'type': 'isotropic',
+                                        'refine': True
+                                        }}}
+        self.gpx.set_refinement(ParDict)
+
+
+        self.gpx_previous = copy.deepcopy(self.gpx)
+        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
+        self.gpx_refiner()
+        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
+
+        print('\nrefine_strain_broadening output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+
+        if set_to_false_after_refinement:
+            ParDict = {'set': {'Mustrain': {'type': 'isotropic',
+                                'refine': False
+                                }}}
+            self.gpx.set_refinement(ParDict)
+        self.gpx_saver()
+
+
+
+    def refine_size_broadening(self,set_to_false_after_refinement=True):
+
+
+        ParDict = {'set': {'Size': {'type': 'isotropic',
+                                        'refine': True
+                                        }}}
+        self.gpx.set_refinement(ParDict)
+
+        self.gpx_previous = copy.deepcopy(self.gpx)
+        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
+        self.gpx_refiner()
+        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
+
+        print('\nrefine_size_broadening output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+
+
+        if set_to_false_after_refinement:
+            ParDict = {'set': {'Size': {'type': 'isotropic',
+                                'refine': False
+                                }}}
+            self.gpx.set_refinement(ParDict)
+        self.gpx_saver()
+
+
+
+
+    def refine_inst_parameters(self,inst_pars_to_refine=['U', 'V', 'W'],set_to_false_after_refinement=True,verbose=False):
+        """
+        inst_pars_to_refine=['U', 'V', 'W',   'X', 'Y', 'Z', 'Zero', 'SH/L']
+        """
+
+        self.gpx.set_refinement({"set": {'Instrument Parameters': inst_pars_to_refine}})
+
+        self.gpx_previous = copy.deepcopy(self.gpx)
+        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
+        self.gpx_refiner()
+        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
+
+        print('\nrefine_inst_parameters output:')
+        print('%s parameters are refined'%inst_pars_to_refine)
+        print('Rwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+
+        if set_to_false_after_refinement:
+            ParDict = {"clear": {'Instrument Parameters': ['X', 'Y', 'Z', 'Zero', 'SH/L', 'U', 'V', 'W']}}
+            self.gpx.set_refinement(ParDict)
+        self.gpx_saver()
+            
 
 
 
