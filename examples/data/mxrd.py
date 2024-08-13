@@ -50,12 +50,27 @@ class exrd():
 
 
 
-    def gpx_refiner(self):
-            if self.verbose:
+
+
+
+    def gpx_refiner(self, save_previous = True):
+
+        if save_previous:
+            self.gpx_previous = copy.deepcopy(self.gpx)
+            rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
+        else:
+            rwp_previous = None
+
+        if self.verbose:
+            print('\n\n\n\n\n')
+            self.gpx.refine()
+        else:
+            with HiddenPrints():
                 self.gpx.refine()
-            else:
-                with HiddenPrints():
-                    self.gpx.refine()
+        rwp_new = self.gpx['Covariance']['data']['Rvals']['Rwp']
+
+        return rwp_new, rwp_previous
+    
 
 
     def gpx_saver(self):
@@ -64,7 +79,6 @@ class exrd():
             else:
                 with HiddenPrints():
                     self.gpx.save()
-
 
 
 
@@ -79,7 +93,6 @@ class exrd():
                 radial_range=None,
                 plot=True,
                 ax_inp=None
-
                 ):
 
 
@@ -460,7 +473,7 @@ class exrd():
 
 
 
-        # np.savetxt('%s/data.qye'%self.gsasii_run_directory,
+        # np.savetxt('%s/data.xy'%self.gsasii_run_directory,
         #            fmt='%.7e',
         #            X=np.column_stack( (self.ds.i1d.radial.values, (self.ds.i1d-self.ds.i1d_baseline).values) ))
         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
@@ -558,13 +571,10 @@ class exrd():
                                             'no. coeffs': 1
                                             }}}
             self.gpx.set_refinement(ParDict)
-            self.gpx_previous = copy.deepcopy(self.gpx)
-            self.gpx_refiner()
-            rwp_1st = self.gpx['Covariance']['data']['Rvals']['Rwp']
-            print('\nRwp from 1st refinement is = %.3f \n '%(rwp_1st))
 
+            rwp_new, _ = self.gpx_refiner(save_previous=False)
 
-        self.gpx_saver()
+            print('\nRwp from 1st refinement is = %.3f \n '%(rwp_new))
 
 
 
@@ -573,7 +583,9 @@ class exrd():
 
 
 
-    def set_LeBail(self, set_to=True, phase_ind=None, refine=True):
+
+
+    def set_LeBail(self, set_to=True, phase_ind=None, refine=False):
         if phase_ind is None:
             self.gpx.set_refinement({"set":{'LeBail': set_to}})
         else:
@@ -584,9 +596,15 @@ class exrd():
             self.gpx_previous = copy.deepcopy(self.gpx)
             rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
             self.gpx_refiner()
-            rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
-            print('\nset_LeBail output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+            rwp_new = self.gpx['Covariance']['data']['Rvals']['Rwp']
+            print('\nset_LeBail output:\nRwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
         self.gpx_saver()
+
+
+
+
+
+
 
 
     def refine_background(self, num_coeffs=10, background_type='chebyschev-1', set_to_false_after_refinement=True):
@@ -596,18 +614,17 @@ class exrd():
                                         }}}
         self.gpx.set_refinement(ParDict)
 
-        self.gpx_previous = copy.deepcopy(self.gpx)
-        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
-        self.gpx_refiner()
-        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
+        rwp_new, rwp_previous = self.gpx_refiner(self)
+        print('\nBackground is refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
 
-        print('\nrefine_background output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
         if set_to_false_after_refinement:
             self.gpx.set_refinement({'set': {'Background': {'refine': False}}})
         self.gpx_saver()
+
+
                 
 
-    def refine_cell_params(self, phase_ind=None, set_to_false_after_refinement=True):
+    def refine_cell_params(self, phase_ind=None, set_to_false_after_refinement=True, export_refined_phases=True):
 
         for e,p in enumerate(self.gpx.phases()):
             if phase_ind is None:
@@ -616,17 +633,23 @@ class exrd():
                 if e == phase_ind:
                     self.gpx['Phases'][p.name]['General']['Cell'][0]= True
 
-        self.gpx_previous = copy.deepcopy(self.gpx)
-        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
-        self.gpx_refiner()
-        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
 
-        print('\nrefine_cell_params output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+        rwp_new, rwp_previous = self.gpx_refiner(self)
+        if phase_ind is None:
+            print('\nCell parameters of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+        else:
+            print('\nCell parameters of %s phase is refined. Rwp is now %.3f (was %.3f)'%(p.name,rwp_new,rwp_previous))
+
         if set_to_false_after_refinement:
             phases = self.gpx.phases()
             for p in phases:
                 self.gpx['Phases'][p.name]['General']['Cell'][0]= False
         self.gpx_saver()
+
+        if export_refined_phases:
+            for p in self.gpx.phases():
+                p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
+
 
 
     def refine_strain_broadening(self,set_to_false_after_refinement=True):
@@ -636,13 +659,8 @@ class exrd():
                                         }}}
         self.gpx.set_refinement(ParDict)
 
-
-        self.gpx_previous = copy.deepcopy(self.gpx)
-        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
-        self.gpx_refiner()
-        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
-
-        print('\nrefine_strain_broadening output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
+        rwp_new, rwp_previous = self.gpx_refiner(self)
+        print('\nStrain broadening of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
 
         if set_to_false_after_refinement:
             ParDict = {'set': {'Mustrain': {'type': 'isotropic',
@@ -661,13 +679,8 @@ class exrd():
                                         }}}
         self.gpx.set_refinement(ParDict)
 
-        self.gpx_previous = copy.deepcopy(self.gpx)
-        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
-        self.gpx_refiner()
-        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
-
-        print('\nrefine_size_broadening output:\nRwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
-
+        rwp_new, rwp_previous = self.gpx_refiner(self)
+        print('\nSize broadening of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
 
         if set_to_false_after_refinement:
             ParDict = {'set': {'Size': {'type': 'isotropic',
@@ -686,15 +699,9 @@ class exrd():
 
         self.gpx.set_refinement({"set": {'Instrument Parameters': inst_pars_to_refine}})
 
-        self.gpx_previous = copy.deepcopy(self.gpx)
-        rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
-        self.gpx_refiner()
-        rwp_now = self.gpx['Covariance']['data']['Rvals']['Rwp']
-
-        print('\nrefine_inst_parameters output:')
-        print('%s parameters are refined'%inst_pars_to_refine)
-        print('Rwp is now %.3f (was %.3f)'%(rwp_now,rwp_previous))
-
+        rwp_new, rwp_previous = self.gpx_refiner(self)
+        print('\nInstrument parameters %s are refined. Rwp is now %.3f (was %.3f)'%(inst_pars_to_refine,rwp_new,rwp_previous))
+     
         if set_to_false_after_refinement:
             ParDict = {"clear": {'Instrument Parameters': ['X', 'Y', 'Z', 'Zero', 'SH/L', 'U', 'V', 'W']}}
             self.gpx.set_refinement(ParDict)
@@ -702,6 +709,122 @@ class exrd():
             
 
 
+
+
+    def gpx_plotter(self,
+                    label_x = 0.9,
+                    label_y = 0.8,
+                    label_y_shift = -0.2
+                    ):
+
+        histogram = self.gpx.histograms()[0]
+        Ycalc     = histogram.getdata('ycalc').astype('float32')
+        Ybkg      = histogram.getdata('Background').astype('float32')
+        self.ds['i1d_refined'] = xr.DataArray(data=Ycalc,dims=['radial'],coords={'radial':self.ds.i1d.radial})
+        
+
+        if 'i2d' in self.ds.keys():
+            fig = plt.figure(figsize=(8,6),dpi=128)
+            mosaic = """
+                        A
+                        A
+                        B
+                        B
+                        B
+                        B
+                        C
+                        """
+        else:
+            fig = plt.figure(figsize=(8,4),dpi=128)
+            mosaic = """
+                        B
+                        B
+                        B
+                        B
+                        C
+                        """
+
+        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+        if 'i2d' in self.ds.keys():
+            ax = ax = ax_dict["A"]
+            np.log(self.ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+            ax.set_xlabel(None)
+            ax.set_ylabel('Azimuthal')
+
+        ax = ax_dict["B"]
+        np.log(self.ds.i1d-self.ds.i1d_baseline+10).plot(ax=ax,color='k',label='Yobs.')
+        np.log(self.ds.i1d_refined).plot(ax=ax, linestyle='--', color='y',label='Ycalc.')       
+        ax.fill_between(self.ds.i1d.radial.values, self.ds.i1d.radial.values*0+np.log(10),alpha=0.2)
+        ax.set_xlabel(None)
+        ax.set_ylabel('Log$_{10}$(data-baseline+10) (a.u.)')
+        ax.set_ylim(bottom=np.log(8))
+        ax.legend()
+
+        xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_nm']*10e9)
+
+
+        # initial phases
+        for e,st in enumerate(self.phases):
+            ps = xrdc.get_pattern(self.phases[st],
+                                scaled=True,
+                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_nm']*10e9) / (4 * np.pi))   ) )
+                                )
+            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_nm']*10e9)) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+
+            for i in refl_X:
+                if 'i2d' in self.ds.keys():
+                    ax_dict["A"].axvline(x=i,lw=0.3,color='C%d'%e)
+                ax_dict["B"].axvline(x=i,lw=0.3,color='C%d'%e)
+                ax_dict["C"].axvline(x=i,lw=0.3,color='C%d'%e)
+
+            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt=".")
+            ax_dict["C"].set_ylim(bottom=0)
+
+            plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
+            plt.setp(markerline, color='C%d'%e)
+
+            ax_dict["C"].text(label_x,label_y+e*label_y_shift,st,color='C%d'%e,transform=ax_dict["C"].transAxes)
+
+
+        # refined phases
+        self.refined_phases = {}
+        for p in self.phases:
+                st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
+                self.refined_phases[p] = st
+
+        for e,st in enumerate(self.refined_phases):
+            ps = xrdc.get_pattern(self.refined_phases[st],
+                                scaled=True,
+                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_nm']*10e9) / (4 * np.pi))   ) )
+                                )
+            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_nm']*10e9)) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+
+            for i in refl_X:
+                if 'i2d' in self.ds.keys():
+                    ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+                ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+                ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+
+            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
+            ax_dict["C"].set_ylim(bottom=0)
+
+            plt.setp(stemlines, linewidth=0.5, linestyle='--', color='C%d'%e)
+            plt.setp(markerline, color='C%d'%e)
+
+
+
+
+
+
+
+
+
+
+
+
+
+        ax_dict["C"].set_xlabel(self.ds.i1d.attrs['xlabel'])
 
 
 
