@@ -85,12 +85,13 @@ class exrd():
     def read_data(self,
                 nc_file=None,
                 txt_file=None,
-                txt_file_wavelength_in_nm=1.814e-11,
+                txt_file_wavelength_in_angst=0.1814,
                 txt_file_comments='#',
                 txt_file_skiprows=0,
                 txt_file_usecols=(0,1),
                 txt_file_radial_unit='tth',
                 radial_range=None,
+                azimuthal_range=None,
                 plot=True,
                 ax_inp=None
                 ):
@@ -103,7 +104,19 @@ class exrd():
             if os.path.isfile(nc_file):
                 try:
                     with xr.open_dataset(nc_file) as self.ds:
-                        pass
+                        if azimuthal_range is not None:
+                            original_i1d_attrs = self.ds.i1d.attrs
+                            da_i1d = xr.DataArray(
+                                data=self.ds.i2d.sel(azimuthal_i2d=slice(azimuthal_range[0],azimuthal_range[1])).mean(dim='azimuthal_i2d').astype('float32'),
+                                coords=[self.ds.radial_i2d],
+                                dims=['radial'],
+                                attrs={
+                                    'selected_azimuthal_range':azimuthal_range,
+                                } | original_i1d_attrs
+                            )
+                            self.ds['i1d'] = da_i1d.dropna(dim='radial')
+                            self.ds['i2d'].attrs['selected_azimuthal_range'] = azimuthal_range
+
                 except Exception as exc:
                     print('Unable to read %s \nPlease check %s is a valid xarray nc file\n\n'%(nc_file,nc_file))
                     print('Error msg from xarray:\n%s'%exc)
@@ -116,7 +129,7 @@ class exrd():
                 try:
                     X,Y = np.loadtxt(txt_file,comments=txt_file_comments,skiprows=txt_file_skiprows,usecols=txt_file_usecols,unpack=True)
                     if txt_file_radial_unit.lower()[0] == 't':
-                        X = ((4 * np.pi) / (txt_file_wavelength_in_nm*10e9)) * np.sin(np.deg2rad(X) / 2)
+                        X = ((4 * np.pi) / (txt_file_wavelength_in_angst)) * np.sin(np.deg2rad(X) / 2)
                     elif txt_file_radial_unit.lower()[0] == 'q':
                         pass
                     else:
@@ -129,7 +142,7 @@ class exrd():
                                                     attrs={'radial_unit':'q_A^-1',
                                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
                                                            'ylabel':'Intensity (a.u.)',
-                                                           'wavelength_in_nm':txt_file_wavelength_in_nm,
+                                                           'wavelength_in_angst':txt_file_wavelength_in_angst,
                                                            'i1d_from':txt_file,
                                                             })
                 except Exception as exc:
@@ -143,7 +156,6 @@ class exrd():
 
         if radial_range is not None:
             self.ds = self.ds.sel(radial=slice(radial_range[0],radial_range[1]))
-
 
 
         if plot:
@@ -349,14 +361,14 @@ class exrd():
             ax.set_ylabel('Log$_{10}$(data-baseline+10) (a.u.)')
             ax.set_ylim(bottom=np.log(8))
 
-            xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_nm']*10e9)
+            xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_angst'])
 
             for e,st in enumerate(self.phases):
                 ps = xrdc.get_pattern(self.phases[st],
                                     scaled=True,
-                                    two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_nm']*10e9) / (4 * np.pi))   ) )
+                                    two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
                                     )
-                refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_nm']*10e9)) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+                refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
 
                 for i in refl_X:
                     if 'i2d' in self.ds.keys():
@@ -389,40 +401,55 @@ class exrd():
                     CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s%s"%(export_to,st,export_extension))
             
 
-                
+
+
+
+
+
     def setup_gsas2_calculator(self,
                                gsasii_lib_directory=None,
                                gsasii_scratch_directory=None,
                                instprm_from_gpx=None,
                                instprm_Polariz=0,
                                instprm_Azimuth=0,
-                               instprm_Zero=0,                                                                   
-                               instprm_U=173,                                  
-                               instprm_V=-1,                                 
-                               instprm_W=1,   
+                               instprm_Zero=-0.0006,                                                                   
+                               instprm_U=118.313,                                  
+                               instprm_V=4.221,                                 
+                               instprm_W=0.747,   
                                instprm_X=0, 
-                               instprm_Y=-7, 
+                               instprm_Y=-7.148, 
                                instprm_Z=0, 
                                instprm_SHL=0.002,   
                                do_1st_refinement=True,
                         ):
         
+
+
+
+
+        
         if gsasii_lib_directory is None:
-            user_loc = input("Enter location of GSASII directory on your GSAS-II installation.")
-            sys.path += [gsasii_lib_directory]
+
             try:
+                default_install_path = os.path.join(os.path.expanduser('~'),'g2full/GSAS-II/GSASII')
+                sys.path += [default_install_path]
                 import GSASIIscriptable as G2sc
             except:
+                user_loc = input("Enter location of GSASII directory on your GSAS-II installation.")
+                sys.path += [gsasii_lib_directory]
                 try:
-                    gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n")
-                    sys.path += [gsasii_lib_directory]
                     import GSASIIscriptable as G2sc
                 except:
-                    gsasii_lib_directory = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
-                    return
-            else:
-                #clear_output()
-                self.gsasii_lib_directory = gsasii_lib_directory
+                    try:
+                        gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n")
+                        sys.path += [gsasii_lib_directory]
+                        import GSASIIscriptable as G2sc
+                    except:
+                        gsasii_lib_directory = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
+                        return
+                else:
+                    #clear_output()
+                    self.gsasii_lib_directory = gsasii_lib_directory
         else:
             if os.path.isdir(gsasii_lib_directory):
                 sys.path += [gsasii_lib_directory]
@@ -444,7 +471,7 @@ class exrd():
                     self.gsasii_lib_directory = gsasii_lib_directory
             else:
                 print('%s does NOT exist. Please check!'%gsasii_lib_directory)
-                return
+
 
 
 
@@ -478,7 +505,7 @@ class exrd():
         #            X=np.column_stack( (self.ds.i1d.radial.values, (self.ds.i1d-self.ds.i1d_baseline).values) ))
         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
                    fmt='%.7e',
-                   X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_nm']*10e9) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+10 ) ))        
+                   X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+10 ) ))        
 
 
         if instprm_from_gpx is not None:
@@ -497,7 +524,7 @@ class exrd():
                     f.write('Type:PXC\n')
                     f.write('Bank:1.0\n')
                     # f.write('Lam:%s\n'%(instprm_dict['Lam'][1]))
-                    f.write('Lam:%s\n'%(self.ds.i1d.attrs['wavelength_in_nm']*10e9))
+                    f.write('Lam:%s\n'%(self.ds.i1d.attrs['wavelength_in_angst']))
                     f.write('Polariz.:%s\n'%(instprm_dict['Polariz.'][1]))
                     f.write('Azimuth:%s\n'%(instprm_dict['Azimuth'][1]))
                     f.write('Zero:%s\n'%(instprm_dict['Zero'][1]))
@@ -517,7 +544,7 @@ class exrd():
                 f.write('#GSAS-II instrument parameter file; do not add/delete items!\n')
                 f.write('Type:PXC\n')
                 f.write('Bank:1.0\n')
-                f.write('Lam:%s\n'%(self.ds.i1d.attrs['wavelength_in_nm']*10e9))
+                f.write('Lam:%s\n'%(self.ds.i1d.attrs['wavelength_in_angst']))
                 f.write('Polariz.:%s\n'%(instprm_Polariz))
                 f.write('Azimuth:%s\n'%(instprm_Azimuth))
                 f.write('Zero:%s\n'%(instprm_Zero))
@@ -646,9 +673,9 @@ class exrd():
                 self.gpx['Phases'][p.name]['General']['Cell'][0]= False
         self.gpx_saver()
 
-        if export_refined_phases:
-            for p in self.gpx.phases():
-                p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
+        # if export_refined_phases:
+        #     for p in self.gpx.phases():
+        #         p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
 
 
 
@@ -722,6 +749,8 @@ class exrd():
         Ybkg      = histogram.getdata('Background').astype('float32')
         self.ds['i1d_refined'] = xr.DataArray(data=Ycalc,dims=['radial'],coords={'radial':self.ds.i1d.radial})
         
+        for p in self.gpx.phases():
+            p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
 
         if 'i2d' in self.ds.keys():
             fig = plt.figure(figsize=(8,6),dpi=128)
@@ -754,23 +783,23 @@ class exrd():
 
         ax = ax_dict["B"]
         np.log(self.ds.i1d-self.ds.i1d_baseline+10).plot(ax=ax,color='k',label='Yobs.')
-        np.log(self.ds.i1d_refined).plot(ax=ax, linestyle='--', color='y',label='Ycalc.')       
+        np.log(self.ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.')       
         ax.fill_between(self.ds.i1d.radial.values, self.ds.i1d.radial.values*0+np.log(10),alpha=0.2)
         ax.set_xlabel(None)
         ax.set_ylabel('Log$_{10}$(data-baseline+10) (a.u.)')
         ax.set_ylim(bottom=np.log(8))
         ax.legend()
 
-        xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_nm']*10e9)
+        xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_angst'])
 
 
         # initial phases
         for e,st in enumerate(self.phases):
             ps = xrdc.get_pattern(self.phases[st],
                                 scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_nm']*10e9) / (4 * np.pi))   ) )
+                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
                                 )
-            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_nm']*10e9)) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
 
             for i in refl_X:
                 if 'i2d' in self.ds.keys():
@@ -796,9 +825,9 @@ class exrd():
         for e,st in enumerate(self.refined_phases):
             ps = xrdc.get_pattern(self.refined_phases[st],
                                 scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_nm']*10e9) / (4 * np.pi))   ) )
+                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
                                 )
-            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_nm']*10e9)) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
 
             for i in refl_X:
                 if 'i2d' in self.ds.keys():
