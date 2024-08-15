@@ -228,6 +228,13 @@ class exrd():
             else:
                 print('%s does not exist. Please check the file path.'%from_txt_file)
                 return
+            
+
+
+
+        if ((from_img_array is None) and (from_txt_file is None)) and (from_nc_file is not None):
+            with xr.open_dataset(from_nc_file) as self.ds:
+                pass
 
 
 
@@ -306,14 +313,15 @@ class exrd():
         # refresh i1d
         if ('i2d' in self.ds.keys()):
 
-            for k in ['i1d','i1d_baseline','i1d_refined']:
+            for k in ['radial','i1d','i1d_baseline','i1d_refined']:
                 if k in self.ds.keys():
                     del self.ds[k]
                     
             if roi_azimuthal_range is not None:
-                da_i1d = xr.DataArray(data=self.ds['i2d'].sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d').values,
+                da_here = self.ds['i2d'].sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d')
+                da_i1d = xr.DataArray(data=da_here.dropna(dim='radial_i2d').values,
                                       dims = ['radial'],
-                                      coords = [self.ds['i2d'].radial_i2d],
+                                      coords = [da_here.dropna(dim='radial_i2d').radial_i2d],
                                       attrs = {
                                           'radial_unit':'q_A^-1',
                                           'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
@@ -321,27 +329,26 @@ class exrd():
                                           'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
                                           'roi_azimuthal_range':roi_azimuthal_range
                                       }
-                ).dropna(dim='radial')
+                )
                 self.ds['i1d'] = da_i1d
 
             else:
-                da_i1d = xr.DataArray(data=self.ds['i2d'].mean(dim='azimuthal_i2d').values,
+                da_here = self.ds['i2d'].mean(dim='azimuthal_i2d')
+                da_i1d = xr.DataArray(data=da_here.dropna(dim='radial_i2d').values,
                                       dims = ['radial'],
-                                      coords = [self.ds['i2d'].radial_i2d],
+                                      coords = [da_here.dropna(dim='radial_i2d').radial_i2d],
                                       attrs = {
                                           'radial_unit':'q_A^-1',
                                           'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
                                           'ylabel':'Intensity (a.u.)',
                                           'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
                                       }
-                ).dropna(dim='radial')
+                )
                 self.ds['i1d'] = da_i1d
-
+                print([self.ds.i1d.shape])
 
             if roi_radial_range is not None:
                 self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
-
-
 
         if ('i1d_from_txt_file' in self.ds.keys()):
             self.ds['i1d'] = self.ds.i1d_from_txt_file
@@ -351,28 +358,11 @@ class exrd():
 
 
         
-        # if roi_azimuthal_range is not None:
-
-        #     if 'i2d' in ds.keys():
-        #         original_i1d_attrs = self.ds.i1d.attrs
-        #         da_i1d = xr.DataArray(
-        #             data=self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d').astype('float32'),
-        #             coords=[self.ds.radial_i2d],
-        #             dims=['radial'],
-        #             attrs={
-        #                 'roi_azimuthal_range':roi_azimuthal_range,
-        #             } | original_i1d_attrs
-        #         )
-        #         self.ds['i1d'] = da_i1d.dropna(dim='radial')
-        #         self.ds['i2d'].attrs['roi_azimuthal_range'] = roi_azimuthal_range
-        #     else:
-        #         print('This data does not have i2d data!! roi_azimuthal_range selection is ignored')
-
-        # if roi_radial_range is not None:
-        #     self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
 
 
 
+        print([self.ds.i1d.shape,self.ds.i1d.dropna(dim='radial').shape])
+              
         if i1d_bkg is not None:
             # check the limits
             if not np.array_equal(i1d_bkg.radial,self.ds.i1d.radial):
@@ -391,19 +381,35 @@ class exrd():
                 while (min((self.ds['i1d'].values-bkg_scale*i1d_bkg.values)) < 0):
                     bkg_scale = bkg_scale*0.99
                 if use_arpls:
-                    baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']-bkg_scale*i1d_bkg).values, lam=arpls_lam)[0]
-                    self.ds['i1d_baseline'] = xr.DataArray(data=(baseline+bkg_scale*i1d_bkg.values),dims=['radial'],coords={'radial':self.ds.i1d.radial},attrs={'arpls_lam':arpls_lam})
+                    baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']-bkg_scale*i1d_bkg).values, 
+                                                                                               lam=arpls_lam)[0]
+                    self.ds['i1d_baseline'] = xr.DataArray(data=(baseline+bkg_scale*i1d_bkg.values),
+                                                           dims=['radial'],
+                                                           coords={'radial':self.ds.i1d.radial},
+                                                           attrs={'arpls_lam':arpls_lam}
+                                                           )
                 else:
                     baseline = bkg_scale*i1d_bkg
-                    self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],coords={'radial':self.ds.i1d.radial},attrs={'arpls_lam':arpls_lam})
-                
+                    self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),
+                                                           dims=['radial'],
+                                                           coords={'radial':self.ds.i1d.radial},
+                                                           attrs={'arpls_lam':arpls_lam}
+                                                           )
             else:
-                baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, lam=arpls_lam)[0]
-                self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],coords={'radial':self.ds.i1d.radial},attrs={'arpls_lam':arpls_lam})
+                baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
+                                                                                           lam=arpls_lam)[0]
+                self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
+                                                       coords={'radial':self.ds.i1d.radial},
+                                                       attrs={'arpls_lam':arpls_lam}
+                                                       )
         else:
             print('i1d_bkg is not provided. Using arpls to find the baseline\n\n')
-            baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, lam=arpls_lam)[0]
-            self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],coords={'radial':self.ds.i1d.radial},attrs={'arpls_lam':arpls_lam})
+            baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
+                                                                                       lam=arpls_lam)[0]
+            self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
+                                                   coords={'radial':self.ds.i1d.radial},
+                                                   attrs={'arpls_lam':arpls_lam}
+                                                   )
 
         # if smoothen:
         #     self.ds['i1d_bkg'] = xr.DataArray(data=savgol_filter(i1d_bkg.interp(radial=self.ds.i1d.radial).values, window_length=savgol_filter_window_length, polyorder=2),
@@ -704,7 +710,7 @@ class exrd():
             rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
             self.gpx_refiner()
             rwp_new = self.gpx['Covariance']['data']['Rvals']['Rwp']
-            print('\nset_LeBail output:\nRwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+            print('set_LeBail output:\nRwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
         self.gpx_saver()
 
 
@@ -722,7 +728,7 @@ class exrd():
         self.gpx.set_refinement(ParDict)
 
         rwp_new, rwp_previous = self.gpx_refiner(self)
-        print('\nBackground is refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+        print('Background is refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
 
         if set_to_false_after_refinement:
             self.gpx.set_refinement({'set': {'Background': {'refine': False}}})
@@ -743,9 +749,9 @@ class exrd():
 
         rwp_new, rwp_previous = self.gpx_refiner(self)
         if phase_ind is None:
-            print('\nCell parameters of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+            print('Cell parameters of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
         else:
-            print('\nCell parameters of %s phase is refined. Rwp is now %.3f (was %.3f)'%(p.name,rwp_new,rwp_previous))
+            print('Cell parameters of %s phase is refined. Rwp is now %.3f (was %.3f)'%(p.name,rwp_new,rwp_previous))
 
         if set_to_false_after_refinement:
             phases = self.gpx.phases()
@@ -767,7 +773,7 @@ class exrd():
         self.gpx.set_refinement(ParDict)
 
         rwp_new, rwp_previous = self.gpx_refiner(self)
-        print('\nStrain broadening of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+        print('Strain broadening of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
 
         if set_to_false_after_refinement:
             ParDict = {'set': {'Mustrain': {'type': 'isotropic',
@@ -787,7 +793,7 @@ class exrd():
         self.gpx.set_refinement(ParDict)
 
         rwp_new, rwp_previous = self.gpx_refiner(self)
-        print('\nSize broadening of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+        print('Size broadening of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
 
         if set_to_false_after_refinement:
             ParDict = {'set': {'Size': {'type': 'isotropic',
@@ -807,7 +813,7 @@ class exrd():
         self.gpx.set_refinement({"set": {'Instrument Parameters': inst_pars_to_refine}})
 
         rwp_new, rwp_previous = self.gpx_refiner(self)
-        print('\nInstrument parameters %s are refined. Rwp is now %.3f (was %.3f)'%(inst_pars_to_refine,rwp_new,rwp_previous))
+        print('Instrument parameters %s are refined. Rwp is now %.3f (was %.3f)'%(inst_pars_to_refine,rwp_new,rwp_previous))
      
         if set_to_false_after_refinement:
             ParDict = {"clear": {'Instrument Parameters': ['X', 'Y', 'Z', 'Zero', 'SH/L', 'U', 'V', 'W']}}
@@ -820,6 +826,10 @@ class exrd():
 
 
 
+    def export_ds(self,save_dir='.',save_name='ds.nc'):
+        self.ds.to_netcdf('%s/%s'%(save_dir,save_name),
+                     engine="h5netcdf",
+                     encoding={'i2d': {'zlib': True, 'complevel': 9}}) # pip install h5netcdf
 
 
 
@@ -892,6 +902,7 @@ class exrd():
         ax.set_ylabel('Log$_{10}$(data-baseline+10) (a.u.)')
         ax.set_ylim(bottom=np.log(8))
         ax.legend()
+        ax.set_xlim([self.ds.i1d.radial[0],self.ds.i1d.radial[-1]])
 
         xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_angst'])
 
@@ -919,30 +930,30 @@ class exrd():
             ax_dict["C"].text(label_x,label_y+e*label_y_shift,st,color='C%d'%e,transform=ax_dict["C"].transAxes)
 
 
-        # refined phases
-        self.refined_phases = {}
-        for p in self.phases:
-                st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
-                self.refined_phases[p] = st
+        # # refined phases
+        # self.refined_phases = {}
+        # for p in self.phases:
+        #         st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
+        #         self.refined_phases[p] = st
 
-        for e,st in enumerate(self.refined_phases):
-            ps = xrdc.get_pattern(self.refined_phases[st],
-                                scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
-                                )
-            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+        # for e,st in enumerate(self.refined_phases):
+        #     ps = xrdc.get_pattern(self.refined_phases[st],
+        #                         scaled=True,
+        #                         two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
+        #                         )
+        #     refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
 
-            for i in refl_X:
-                if 'i2d' in self.ds.keys():
-                    ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-                ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-                ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+        #     for i in refl_X:
+        #         if 'i2d' in self.ds.keys():
+        #             ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+        #         ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+        #         ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
 
-            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
-            ax_dict["C"].set_ylim(bottom=0)
+        #     markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
+        #     ax_dict["C"].set_ylim(bottom=0)
 
-            plt.setp(stemlines, linewidth=0.5, linestyle='--', color='C%d'%e)
-            plt.setp(markerline, color='C%d'%e)
+        #     plt.setp(stemlines, linewidth=0.5, linestyle='--', color='C%d'%e)
+        #     plt.setp(markerline, color='C%d'%e)
 
         ax_dict["C"].set_xlabel(self.ds.i1d.attrs['xlabel'])
 
