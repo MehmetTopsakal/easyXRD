@@ -1,0 +1,282 @@
+********************************************************************************
+   General Structure Analysis System-II Crystal Structure Refinement
+              by Robert B. Von Dreele & Brian H. Toby
+                Argonne National Laboratory(C), 2010
+ This product includes software developed by the UChicago Argonne, LLC,
+            as Operator of Argonne National Laboratory.
+                          Please cite:
+   B.H. Toby & R.B. Von Dreele, J. Appl. Cryst. 46, 544-549 (2013)
+********************************************************************************
+ Least squares controls:
+ Refinement type: analytic Hessian
+ Maximum number of cycles: 100
+ Regularize hydrogens (if any): False
+ Initial shift factor: 1.000
+
+ Phases:
+
+ Phase name: Zr
+=======================================================================================================================================
+
+ X-ray scattering factors:
+   Symbol     fa                                      fb                                      fc
+---------------------------------------------------------------------------------------------------
+ Zr        17.87650  10.94800   5.41732   3.65721   1.27618  11.91600   0.11762  87.66270   2.06929
+
+ Electron scattering factors:
+   Symbol     fa                                                fb
+---------------------------------------------------------------------------------------------------
+ Zr         0.29970   1.18790   3.10750   3.97400   3.57690   0.11210   1.06380   6.38910  28.70810  97.42890
+
+ Neutron scattering factors:
+   Symbol   isotope       mass       b       resonant terms
+---------------------------------------------------------------------------------------------------
+ Zr      Nat. Abund.     91.220    0.716
+
+ Space Group: P 63/m m c
+ The lattice is centrosymmetric primitive hexagonal
+ The Laue symmetry is 6/mmm
+ The lattice point group is 6/mmm
+ Multiplicity of a general site is 24
+ The inversion center is located at 0,0,0
+ 
+ The equivalent positions are:
+
+ ( 1)     X,     Y,     Z 
+ ( 2)   X-Y,     X, 1/2+Z 
+ ( 3)    -Y,   X-Y,     Z 
+ ( 4)    -X,    -Y, 1/2+Z 
+ ( 5)   Y-X,    -X,     Z 
+ ( 6)     Y,   Y-X, 1/2+Z 
+ ( 7)   Y-X,     Y,     Z 
+ ( 8)    -X,   Y-X, 1/2+Z 
+ ( 9)    -Y,    -X,     Z 
+ (10)   X-Y,    -Y, 1/2+Z 
+ (11)     X,   X-Y,     Z 
+ (12)     Y,     X, 1/2+Z 
+
+ Atoms:
+   name    type  refine?   x         y         z      frac site sym  mult I/A   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Zr0     Zr          0.33333   0.66667   0.25000   1.000-6m2(100)    2    I 0.03030                                                
+
+ Unit cell: a = 3.22755 b = 3.22755 c = 5.15107 alpha = 90.000 beta = 90.000 gamma = 120.000 volume = 46.470 Refine? True
+
+ Phase name: Pt
+=======================================================================================================================================
+
+ X-ray scattering factors:
+   Symbol     fa                                      fb                                      fc
+---------------------------------------------------------------------------------------------------
+ Pt        27.00590  17.76390  15.71310   5.78370   1.51293   8.81174   0.42459  38.61030  11.68830
+
+ Electron scattering factors:
+   Symbol     fa                                                fb
+---------------------------------------------------------------------------------------------------
+ Pt         0.30830   1.41580   2.96620   3.93490   2.17090   0.06090   0.59930   3.19210  12.52850  49.76750
+
+ Neutron scattering factors:
+   Symbol   isotope       mass       b       resonant terms
+---------------------------------------------------------------------------------------------------
+ Pt      Nat. Abund.    195.090    0.960
+
+ Space Group: F m -3 m
+ The lattice is centrosymmetric F-centered cubic
+ The Laue symmetry is m3m
+ The lattice point group is m3m
+ Multiplicity of a general site is 192
+ The inversion center is located at 0,0,0
+ 
+ The equivalent positions are:
+
+ (0,0,0; 0,1/2,1/2; 1/2,0,1/2; 1/2,1/2,0)+
+
+ ( 1)     X,     Y,     Z 
+ ( 2)     Z,     X,     Y 
+ ( 3)     Y,     Z,     X 
+ ( 4)     X,     Y,    -Z 
+ ( 5)    -Z,     X,     Y 
+ ( 6)     Y,    -Z,     X 
+ ( 7)    -Z,     X,    -Y 
+ ( 8)    -Y,    -Z,     X 
+ ( 9)     Y,    -Z,    -X 
+ (10)    -X,     Y,    -Z 
+ (11)    -Z,    -X,     Y 
+ (12)     X,    -Y,    -Z 
+ (13)     Y,     X,     Z 
+ (14)     Z,     Y,     X 
+ (15)     X,     Z,     Y 
+ (16)     Y,     X,    -Z 
+ (17)    -Z,     Y,     X 
+ (18)     X,    -Z,     Y 
+ (19)    -Z,     Y,    -X 
+ (20)    -X,    -Z,     Y 
+ (21)     X,    -Z,    -Y 
+ (22)    -Y,     X,    -Z 
+ (23)    -Z,    -Y,     X 
+ (24)     Y,    -X,    -Z 
+
+ Atoms:
+   name    type  refine?   x         y         z      frac site sym  mult I/A   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Pt0     Pt          0.00000   0.00000   0.00000   1.000    m3m    4    I 0.35184                                                
+
+ Unit cell: a = 3.92220 b = 3.92220 c = 3.92220 alpha = 90.000 beta = 90.000 gamma = 90.000 volume = 60.338 Refine? False
+
+ Phase: Zr in histogram: PWDR data.xy
+=======================================================================================================================================
+ Phase fraction  :      15.27 Refine? True
+ Extinction coeff:     0.0000 Refine? False
+
+ Spherical harmonics preferred orientation: Order: 6 Refine? True
+ names :      C(2,0)      C(4,0)      C(6,0)      C(6,6)
+ values:       2.311       0.594      -0.938      -0.351
+ Penalty hkl list: [] tolerance: 0.10
+
+ Size model    : isotropic equatorial:      10.000 Refine? True
+	 LG mixing coeff.:       1.0000 Refine? False
+
+ Mustrain model: isotropic equatorial:      8958.6 Refine? False
+	 LG mixing coeff.:      1.0000 Refine? False
+
+ Hydrostatic/elastic strain:
+ names :         D11         D33
+ values:           0           0
+ refine:       False       False
+ Layer Displacement:      0.000 Refine? False
+
+ Phase: Pt in histogram: PWDR data.xy
+=======================================================================================================================================
+ Phase fraction  :      20.01 Refine? True
+ Extinction coeff:     0.0000 Refine? False
+
+ Spherical harmonics preferred orientation: Order: 4 Refine? False
+ names :      C(4,1)
+ values:      -0.480
+ Penalty hkl list: [] tolerance: 0.10
+
+ Size model    : isotropic equatorial:       0.285 Refine? False
+	 LG mixing coeff.:       1.0000 Refine? False
+
+ Mustrain model: isotropic equatorial:      1017.8 Refine? True
+	 LG mixing coeff.:      1.0000 Refine? False
+
+ Hydrostatic/elastic strain:
+ names :         D11          eA
+ values:           0           0
+ refine:       False       False
+ Layer Displacement:      0.000 Refine? False
+
+ Histogram: PWDR data.xy histogram Id: 0
+=======================================================================================================================================
+ Instrument type: Debye-Scherrer
+ Histogram limits:     2.50 deg to     6.99 deg
+
+ Sample Parameters:
+ Goniometer omega = 0.00, chi = 0.00, phi = 90.00
+ name  :         Scale    Absorption     DisplaceX     DisplaceY
+ value :        0.0011        0.0000        0.0000        0.0000
+ refine:         False         False         False         False
+
+ Instrument Parameters:
+ name  :     Azimuth         Lam    Polariz.        SH/L           U           V           W           X           Y
+ value :    0.000000    0.182400    0.000000    0.002000  180.531687   -2.357769    0.529902    0.000000   -3.210168
+ refine:                   False       False       False       False       False       False       False       False
+
+ name  :           Z        Zero
+ value :    0.000000   -0.000054
+ refine:       False       False
+
+ Background function: chebyschev-1 Refine? False
+ Coefficients:     10.000
+ Fixed background file: ; mult: 1.000  Refine? False
+
+ Refinement results:
+---------------------------------------------------------------------------------------------------------------------------------------
+ Number of function calls: 5 No. of observations: 1080 No. of parameters: 10 User rejected: 0 Sp. gp. extinct: 0
+ Refinement time =    0.507s,    0.253s/cycle, for 2 cycles
+ wR =    9.21%, chi**2 =      344.029, GOF =   0.57
+----------------------------------------------------------------------------------------------------------------------------------
+Parameters generated by constraints
+
+ name  :          0::A0
+ value :        0.12800
+ sig   :        0.00001 
+
+ Phases:
+ Result for phase: Zr
+=======================================================================================================================================
+ Reciprocal metric tensor: 
+  names :            A11            A22            A33            A12            A13            A23
+  values:    0.127995345    0.127995345    0.037688300    0.127995345    0.000000000    0.000000000
+  esds  :    0.000007736                   0.000006061                                             
+ New unit cell:
+  names :           a           b           c       alpha        beta       gamma      Volume
+  values:    3.227545    3.227545    5.151061     90.0000     90.0000    120.0000      46.470
+  esds  :    0.000163                0.000414                                           0.003
+
+ Atoms:
+   name      x         y         z      frac   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Zr0     Zr:
+ values:   0.33333   0.66667   0.25000   1.000 0.03030
+ sig   :                                               
+
+ Density: 6.5192 g/cm**3
+ Result for phase: Pt
+=======================================================================================================================================
+
+ Atoms:
+   name      x         y         z      frac   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Pt0     Pt:
+ values:   0.00000   0.00000   0.00000   1.000 0.35184
+ sig   :                                               
+
+ Density: 21.4761 g/cm**3
+
+ Phase: Zr in histogram: PWDR data.xy
+=======================================================================================================================================
+ Final refinement RF, RF^2 = 1.70%, 4.11% on 5 reflections
+ Durbin-Watson statistic = 0.137
+ Bragg intensity sum = 7.59e+03
+ Phase fraction  :     15.236, sig    0.11081 Weight fraction  :  0.15111, sig    0.00118
+
+ Spherical harmonics preferred orientation: Order: 6
+ names :      C(2,0)      C(4,0)      C(6,0)      C(6,6)
+ values:       2.312       0.592      -0.947      -0.349
+ sig   :       0.039       0.035       0.061       0.064
+
+ Texture index J = 2.186(37)
+
+ Size model:     isotropic equatorial:    10.00000, sig:377.3642 LG mix coeff.:      1.0000
+
+ Phase: Pt in histogram: PWDR data.xy
+=======================================================================================================================================
+ Final refinement RF, RF^2 = 0.42%, 0.72% on 2 reflections
+ Durbin-Watson statistic = 0.137
+ Bragg intensity sum = 4.83e+03
+ Phase fraction  :     20.011, sig    0.11067 Weight fraction  :  0.84889, sig    0.00118
+
+ Spherical harmonics preferred orientation: Order: 4
+ names :      C(4,1)
+ values:      -0.480
+ sig   :            
+
+ Texture index J = 1.026(0)
+
+ Mustrain model: isotropic
+ equatorial:      1022.2, sig:    44.6 LG mix coeff.:      1.0000
+
+ Histogram: PWDR data.xy histogram Id: 0
+=======================================================================================================================================
+ PWDR histogram weight factor = 1.000
+ Final refinement wR = 9.21% on 1080 observations in this histogram
+ Other residuals: R = 5.75%, R-bkg = 5.49%, wR-bkg = 9.21% wRmin = 16.31%
+ Instrument type: Debye-Scherrer
+
+ Resonant form factors:(ref: D.T. Cromer & D.A. Liberman (1981), Acta Cryst. A37, 267-268.)
+ Element:       Zr       Pt
+ f'     :    0.089   -2.046
+ f"     :    0.352    0.829
+ Background sums: empirical 1.08e+04, Debye 0, peaks 0, Total 1.08e+04
