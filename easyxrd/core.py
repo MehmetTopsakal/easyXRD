@@ -8,12 +8,16 @@ from pymatgen.io.cif import CifWriter
 
 from IPython.display import clear_output
 
+import subprocess
+
+import shutil
 
 import random, string
 import fnmatch
 
 import time
 import copy
+
 
 import os,sys
 
@@ -23,6 +27,7 @@ import xarray as xr
 
 import fabio
 import pyFAI
+
 
 
 
@@ -307,6 +312,7 @@ class exrd():
                      plot=True,
                      roi_radial_range=None,
                      roi_azimuthal_range=None,
+                     include_baseline_in_ds = True,
                      ):
         
 
@@ -316,52 +322,120 @@ class exrd():
             for k in ['radial','i1d','i1d_baseline','i1d_refined']:
                 if k in self.ds.keys():
                     del self.ds[k]
-                    
+
+
+
+            # get i2d_baseline
+
+            i2d_baseline = copy.deepcopy(self.ds.i2d)
+
+            # serial version (can be speed-up using threads)
+            for a_ind in range(self.ds.i2d.shape[0]):
+
+                # 
+                da_now = self.ds.i2d.isel(azimuthal_i2d=a_ind)
+                da_now_dropna = da_now.dropna(dim='radial_i2d')
+                baseline_now, params = pybaselines.Baseline(x_data=da_now_dropna.radial_i2d.values).arpls(da_now_dropna.values,lam=1e5)
+
+                # create baseline da by copying
+                da_now_dropna_baseline = copy.deepcopy(da_now_dropna)
+                da_now_dropna_baseline.values = baseline_now
+
+                # now interpolate baseline da to original i2d radial range
+                da_now_dropna_baseline_interpolated = da_now_dropna_baseline.interp(radial_i2d=self.ds.i2d.radial_i2d)
+
+                i2d_baseline[a_ind,:] = da_now_dropna_baseline_interpolated
+
+
+            self.ds['i2d_baseline'] = i2d_baseline
+
+
+
+
             if roi_azimuthal_range is not None:
-                da_here = self.ds['i2d'].sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d')
-                da_i1d = xr.DataArray(data=da_here.dropna(dim='radial_i2d').values,
-                                      dims = ['radial'],
-                                      coords = [da_here.dropna(dim='radial_i2d').radial_i2d],
-                                      attrs = {
-                                          'radial_unit':'q_A^-1',
-                                          'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-                                          'ylabel':'Intensity (a.u.)',
-                                          'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-                                          'roi_azimuthal_range':roi_azimuthal_range
-                                      }
-                )
-                self.ds['i1d'] = da_i1d
-
+                self.ds['i1d'] = self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
+                self.ds['i1d'].attrs =  {
+                                            'radial_unit':'q_A^-1',
+                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+                                            'ylabel':'Intensity (a.u.)',
+                                            'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+                                            'roi_azimuthal_range':roi_azimuthal_range
+                                        }
+                self.ds['i1d_baseline'] = self.ds.i2d_baseline.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
+                self.ds['i1d_baseline'].attrs =  {
+                                            'radial_unit':'q_A^-1',
+                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+                                            'ylabel':'Intensity (a.u.)',
+                                            'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+                                            'roi_azimuthal_range':roi_azimuthal_range,
+                                            'arpls_lam':arpls_lam,
+                                        }
             else:
-                da_here = self.ds['i2d'].mean(dim='azimuthal_i2d')
-                da_i1d = xr.DataArray(data=da_here.dropna(dim='radial_i2d').values,
-                                      dims = ['radial'],
-                                      coords = [da_here.dropna(dim='radial_i2d').radial_i2d],
-                                      attrs = {
-                                          'radial_unit':'q_A^-1',
-                                          'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-                                          'ylabel':'Intensity (a.u.)',
-                                          'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-                                      }
-                )
-                self.ds['i1d'] = da_i1d
-                print([self.ds.i1d.shape])
-
-            if roi_radial_range is not None:
-                self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
-
-        if ('i1d_from_txt_file' in self.ds.keys()):
-            self.ds['i1d'] = self.ds.i1d_from_txt_file
-
-            if roi_radial_range is not None:
-                self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
+                self.ds['i1d'] = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
+                self.ds['i1d'].attrs =  {
+                                            'radial_unit':'q_A^-1',
+                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+                                            'ylabel':'Intensity (a.u.)',
+                                            'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+                                        }
+                self.ds['i1d_baseline'] = self.ds.i2d_baseline.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})         
+                self.ds['i1d_baseline'].attrs =  {
+                                            'radial_unit':'q_A^-1',
+                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+                                            'ylabel':'Intensity (a.u.)',
+                                            'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+                                            'arpls_lam':arpls_lam,
+                                        }
+                
 
 
-        
+            if not include_baseline_in_ds:
+                del self.ds['i2d_baseline']
+
+                    
+        #     if roi_azimuthal_range is not None:
+        #         da_here = self.ds['i2d'].sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d')
+        #         da_i1d = xr.DataArray(data=da_here.dropna(dim='radial_i2d').values,
+        #                               dims = ['radial'],
+        #                               coords = [da_here.dropna(dim='radial_i2d').radial_i2d],
+        #                               attrs = {
+        #                                   'radial_unit':'q_A^-1',
+        #                                   'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+        #                                   'ylabel':'Intensity (a.u.)',
+        #                                   'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+        #                                   'roi_azimuthal_range':roi_azimuthal_range
+        #                               }
+        #         )
+        #         self.ds['i1d'] = da_i1d
+
+        #     else:
+        #         da_here = self.ds['i2d'].mean(dim='azimuthal_i2d')
+        #         da_i1d = xr.DataArray(data=da_here.dropna(dim='radial_i2d').values,
+        #                               dims = ['radial'],
+        #                               coords = [da_here.dropna(dim='radial_i2d').radial_i2d],
+        #                               attrs = {
+        #                                   'radial_unit':'q_A^-1',
+        #                                   'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+        #                                   'ylabel':'Intensity (a.u.)',
+        #                                   'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+        #                               }
+        #         )
+        #         self.ds['i1d'] = da_i1d
+
+        #     if roi_radial_range is not None:
+        #         self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
+
+        # if ('i1d_from_txt_file' in self.ds.keys()):
+        #     self.ds['i1d'] = self.ds.i1d_from_txt_file
 
 
+        # if roi_radial_range is not None:
+        #     self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
 
-        print([self.ds.i1d.shape,self.ds.i1d.dropna(dim='radial').shape])
+        if roi_radial_range is not None:
+            self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
+
+
               
         if i1d_bkg is not None:
             # check the limits
@@ -402,14 +476,14 @@ class exrd():
                                                        coords={'radial':self.ds.i1d.radial},
                                                        attrs={'arpls_lam':arpls_lam}
                                                        )
-        else:
-            print('i1d_bkg is not provided. Using arpls to find the baseline\n\n')
-            baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
-                                                                                       lam=arpls_lam)[0]
-            self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
-                                                   coords={'radial':self.ds.i1d.radial},
-                                                   attrs={'arpls_lam':arpls_lam}
-                                                   )
+        # else:
+        #     print('i1d_bkg is not provided. Using arpls to find the baseline\n\n')
+        #     baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
+        #                                                                                lam=arpls_lam)[0]
+        #     self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
+        #                                            coords={'radial':self.ds.i1d.radial},
+        #                                            attrs={'arpls_lam':arpls_lam}
+        #                                            )
 
         # if smoothen:
         #     self.ds['i1d_bkg'] = xr.DataArray(data=savgol_filter(i1d_bkg.interp(radial=self.ds.i1d.radial).values, window_length=savgol_filter_window_length, polyorder=2),
@@ -520,19 +594,21 @@ class exrd():
                 default_install_path = os.path.join(os.path.expanduser('~'),'g2full/GSAS-II/GSASII')
                 sys.path += [default_install_path]
                 import GSASIIscriptable as G2sc
+                self.gsasii_lib_directory = default_install_path
             except:
                 user_loc = input("Enter location of GSASII directory on your GSAS-II installation.")
-                sys.path += [gsasii_lib_directory]
+                sys.path += [user_loc]
                 try:
                     import GSASIIscriptable as G2sc
+                    self.gsasii_lib_directory = user_loc
                 except:
                     try:
                         gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n")
-                        sys.path += [gsasii_lib_directory]
+                        sys.path += [user_loc]
                         import GSASIIscriptable as G2sc
+                        self.gsasii_lib_directory = user_loc
                     except:
                         gsasii_lib_directory = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
-                        return
                 else:
                     #clear_output()
                     self.gsasii_lib_directory = gsasii_lib_directory
@@ -546,9 +622,9 @@ class exrd():
                         gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n")
                         sys.path += [gsasii_lib_directory]
                         import GSASIIscriptable as G2sc
+                        self.gsasii_lib_directory = gsasii_lib_directory
                     except:
                         gsasii_lib_directory = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
-                        return
                     else:
                         #clear_output()
                         self.gsasii_lib_directory = gsasii_lib_directory
@@ -622,8 +698,8 @@ class exrd():
                     f.write('Z:%s\n'%(instprm_dict['Z'][1]))
                     f.write('SH/L:%s\n'%(instprm_dict['SH/L'][1]))
             else:
-                print('gpx file for reading instrument parameters do net exist. Plewase check the path')
-                return
+                print('gpx file for reading instrument parameters do net exist. Please check the path')
+                # return
 
         else:
             with open('%s/gsas.instprm'%self.gsasii_run_directory, 'w') as f:
@@ -824,12 +900,30 @@ class exrd():
 
 
 
-
-
     def export_ds(self,save_dir='.',save_name='ds.nc'):
         self.ds.to_netcdf('%s/%s'%(save_dir,save_name),
                      engine="h5netcdf",
                      encoding={'i2d': {'zlib': True, 'complevel': 9}}) # pip install h5netcdf
+
+
+
+
+
+
+    def fine_tune_gpx(self):
+        subprocess.check_call(['%s/../../RunGSASII.sh'%self.gsasii_lib_directory, '%s/gsas.gpx'%self.gsasii_run_directory])
+        import GSASIIscriptable as G2sc
+        self.gpx = G2sc.G2Project(gpxfile='%s/gsas.gpx'%self.gsasii_run_directory)
+        self.gpx.refine()
+
+
+    def replace_gpx_with(self,newgpx_to_replace):
+        shutil.copy(newgpx_to_replace,'%s/gsas.gpx'%self.gsasii_lib_directory)
+        import GSASIIscriptable as G2sc
+        self.gpx = G2sc.G2Project(gpxfile='%s/gsas.gpx'%self.gsasii_run_directory)
+        self.gpx.refine()
+
+
 
 
 
@@ -882,6 +976,7 @@ class exrd():
         if 'i2d' in self.ds.keys():
             ax = ax = ax_dict["A"]
             np.log(self.ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+            # self.ds.i2d.plot.imshow(ax=ax,robust=False,add_colorbar=False,cmap='viridis',vmin=0)
             ax.set_xlabel(None)
             ax.set_ylabel('Azimuthal')
 
@@ -896,7 +991,7 @@ class exrd():
 
         ax = ax_dict["B"]
         np.log(self.ds.i1d-self.ds.i1d_baseline+10).plot(ax=ax,color='k',label='Yobs.')
-        np.log(self.ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.')       
+        np.log(self.ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f)'%self.gpx['Covariance']['data']['Rvals']['Rwp'])       
         ax.fill_between(self.ds.i1d.radial.values, self.ds.i1d.radial.values*0+np.log(10),alpha=0.2)
         ax.set_xlabel(None)
         ax.set_ylabel('Log$_{10}$(data-baseline+10) (a.u.)')
@@ -907,7 +1002,13 @@ class exrd():
         xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_angst'])
 
 
-        # initial phases
+
+
+
+
+
+
+        # supplied phases
         for e,st in enumerate(self.phases):
             ps = xrdc.get_pattern(self.phases[st],
                                 scaled=True,
@@ -930,30 +1031,34 @@ class exrd():
             ax_dict["C"].text(label_x,label_y+e*label_y_shift,st,color='C%d'%e,transform=ax_dict["C"].transAxes)
 
 
-        # # refined phases
-        # self.refined_phases = {}
-        # for p in self.phases:
-        #         st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
-        #         self.refined_phases[p] = st
 
-        # for e,st in enumerate(self.refined_phases):
-        #     ps = xrdc.get_pattern(self.refined_phases[st],
-        #                         scaled=True,
-        #                         two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
-        #                         )
-        #     refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
 
-        #     for i in refl_X:
-        #         if 'i2d' in self.ds.keys():
-        #             ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-        #         ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-        #         ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
 
-        #     markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
-        #     ax_dict["C"].set_ylim(bottom=0)
 
-        #     plt.setp(stemlines, linewidth=0.5, linestyle='--', color='C%d'%e)
-        #     plt.setp(markerline, color='C%d'%e)
+        # refined phases
+        self.refined_phases = {}
+        for p in self.phases:
+                st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
+                self.refined_phases[p] = st
+
+        for e,st in enumerate(self.refined_phases):
+            ps = xrdc.get_pattern(self.refined_phases[st],
+                                scaled=True,
+                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
+                                )
+            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+
+            for i in refl_X:
+                if 'i2d' in self.ds.keys():
+                    ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+                ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+                ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+
+            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
+            ax_dict["C"].set_ylim(bottom=0)
+
+            plt.setp(stemlines, linewidth=0.5, linestyle='--', color='C%d'%e)
+            plt.setp(markerline, color='C%d'%e)
 
         ax_dict["C"].set_xlabel(self.ds.i1d.attrs['xlabel'])
 
