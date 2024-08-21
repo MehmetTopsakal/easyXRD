@@ -335,16 +335,24 @@ class exrd():
                 # 
                 da_now = self.ds.i2d.isel(azimuthal_i2d=a_ind)
                 da_now_dropna = da_now.dropna(dim='radial_i2d')
-                baseline_now, params = pybaselines.Baseline(x_data=da_now_dropna.radial_i2d.values).arpls(da_now_dropna.values,lam=1e5)
 
-                # create baseline da by copying
-                da_now_dropna_baseline = copy.deepcopy(da_now_dropna)
-                da_now_dropna_baseline.values = baseline_now
+                try:
+                    baseline_now, params = pybaselines.Baseline(x_data=da_now_dropna.radial_i2d.values).arpls(da_now_dropna.values,lam=1e5)
 
-                # now interpolate baseline da to original i2d radial range
-                da_now_dropna_baseline_interpolated = da_now_dropna_baseline.interp(radial_i2d=self.ds.i2d.radial_i2d)
+                    # create baseline da by copying
+                    da_now_dropna_baseline = copy.deepcopy(da_now_dropna)
+                    da_now_dropna_baseline.values = baseline_now
 
-                i2d_baseline[a_ind,:] = da_now_dropna_baseline_interpolated
+                    # now interpolate baseline da to original i2d radial range
+                    da_now_dropna_baseline_interpolated = da_now_dropna_baseline.interp(radial_i2d=self.ds.i2d.radial_i2d)
+
+                    i2d_baseline[a_ind,:] = da_now_dropna_baseline_interpolated
+
+                except:
+                    # da_now.values[:] = np.nan
+                    i2d_baseline[a_ind,:] = da_now
+                
+
 
 
             self.ds['i2d_baseline'] = i2d_baseline
@@ -584,10 +592,17 @@ class exrd():
                         ):
         
 
+        try:
+            del self.gsasii_lib_directory
+        except:
+            pass
+        try:
+            del self.gpx
+        except:
+            pass
 
 
 
-        
         if gsasii_lib_directory is None:
 
             try:
@@ -603,20 +618,21 @@ class exrd():
                     self.gsasii_lib_directory = user_loc
                 except:
                     try:
-                        gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n")
+                        user_loc = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n")
                         sys.path += [user_loc]
                         import GSASIIscriptable as G2sc
                         self.gsasii_lib_directory = user_loc
                     except:
-                        gsasii_lib_directory = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
-                else:
+                        print("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
+                # else:
                     #clear_output()
-                    self.gsasii_lib_directory = gsasii_lib_directory
+                    # self.gsasii_lib_directory = gsasii_lib_directory
         else:
             if os.path.isdir(gsasii_lib_directory):
                 sys.path += [gsasii_lib_directory]
                 try:
                     import GSASIIscriptable as G2sc
+                    self.gsasii_lib_directory = gsasii_lib_directory
                 except:
                     try:
                         gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n")
@@ -624,13 +640,13 @@ class exrd():
                         import GSASIIscriptable as G2sc
                         self.gsasii_lib_directory = gsasii_lib_directory
                     except:
-                        gsasii_lib_directory = input("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
-                    else:
-                        #clear_output()
-                        self.gsasii_lib_directory = gsasii_lib_directory
-                else:
-                    #clear_output()
-                    self.gsasii_lib_directory = gsasii_lib_directory
+                        gsasii_lib_directory = print("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
+                    # else:
+                    #     #clear_output()
+                    #     self.gsasii_lib_directory = gsasii_lib_directory
+                # else:
+                #     #clear_output()
+                #     self.gsasii_lib_directory = gsasii_lib_directory
             else:
                 print('%s does NOT exist. Please check!'%gsasii_lib_directory)
 
