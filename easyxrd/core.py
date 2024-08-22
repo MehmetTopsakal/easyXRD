@@ -850,7 +850,10 @@ class exrd():
         self.gpx.set_refinement({"set":{'LeBail': set_to}},phase=phase)
         if refine:
             rwp_new, rwp_previous = self.gpx_refiner(self)
-            print('After LeBail refinement, Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+            if set_to:
+                print('After setting LeBail refinement to True, Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+            else:
+                print('After setting LeBail refinement to False, Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
         else:
             pass
         self.gpx_saver()
@@ -926,6 +929,38 @@ class exrd():
         self.gpx_saver()
 
 
+
+
+
+    def refine_phase_fractions(self,
+                           set_to_false_after_refinement=True,
+                           ):
+        """
+        """
+        self.gpx['PWDR data.xy']['Sample Parameters']['Scale'][1]=False
+        for e,p in enumerate(self.phases):
+            self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=True
+
+        rwp_new, rwp_previous = self.gpx_refiner(self)
+        print('Phase fractions of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+
+        if set_to_false_after_refinement:
+            self.gpx['PWDR data.xy']['Sample Parameters']['Scale'][1]=False
+            for e,p in enumerate(self.phases):
+                self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=True
+
+        self.gpx_saver()
+
+
+
+
+
+
+
+
+
+
+
     def export_ds(self,
                   save_dir='.',
                   save_name='ds.nc'
@@ -969,10 +1004,22 @@ class exrd():
 
 
     def plot_refinement(self,
-                    label_x = 0.9,
+                    label_x = 0.85,
                     label_y = 0.8,
                     label_y_shift = -0.2
                     ):
+
+
+        wtSum = 0.0
+        for e,p in enumerate(self.phases):
+            mass = self.gpx['Phases'][p]['General']['Mass']
+            phFr = self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]
+            wtSum += mass*phFr
+        # for e,p in enumerate(sample.phases):
+            # weightFr = sample.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]*sample.gpx['Phases'][p]['General']['Mass']/wtSum
+
+
+
 
         histogram = self.gpx.histograms()[0]
         Ycalc     = histogram.getdata('ycalc').astype('float32')-10.0 # this includes gsas background
@@ -1028,16 +1075,22 @@ class exrd():
 
 
         
-        ax.fill_between(self.ds.i1d.radial.values, self.ds.i1d.radial.values*0+np.log(10),alpha=0.2)
+        ax.fill_between(self.ds.i1d.radial.values,
+                        self.ds.i1d.radial.values*0+np.log(10),
+                        alpha=0.2,
+                        color='C7',
+                        )
         
         ax.fill_between(self.ds.i1d.radial.values, 
                         y1=np.log((10+self.ds.i1d_gsas_background).values),
                         y2=np.log((10)),
                         alpha=0.2,
-                        label='Ybkg. from GSAS-II')
+                        color='C9',
+                        label='Ybkg. from GSAS-II'
+                        )
 
 
-        # ax.fill_between(self.ds.i1d.radial.values, np.log((10+self.ds.i1d-self.ds.i1d).values),alpha=0.2,label='Baseline')
+
 
         ax.set_xlabel(None)
         ax.set_ylabel('Log$_{10}$(data+10) (a.u.)')
@@ -1074,7 +1127,8 @@ class exrd():
             plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
             plt.setp(markerline, color='C%d'%e)
 
-            ax_dict["C"].text(label_x,label_y+e*label_y_shift,st,color='C%d'%e,transform=ax_dict["C"].transAxes)
+            weightFr = self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Scale'][0]*self.gpx['Phases'][st]['General']['Mass']/wtSum
+            ax_dict["C"].text(label_x,label_y+e*label_y_shift,'%s (%.3f)'%(st,weightFr),color='C%d'%e,transform=ax_dict["C"].transAxes)
 
 
 

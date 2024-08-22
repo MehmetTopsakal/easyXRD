@@ -74,21 +74,21 @@ for rp in required_other_packages:
 
 def set_defaults(name, val):
     ''' set a global variable.'''
-    global pysuli_defaults
-    pysuli_defaults[name] = val
+    global easyxrd_defaults
+    easyxrd_defaults[name] = val
 
 def print_defaults():
-    for key, val in pysuli_defaults.items():
+    for key, val in easyxrd_defaults.items():
         print("- {} : {}".format(key, val))
 
 
 
 # defaults
-pysuli_defaults  = dict()
+easyxrd_defaults  = dict()
 # pysuli_defaults['gsas2_scratch'] = os.path.join(user_home,'.gsas2_scratch')
 # pysuli_defaults['gsas2_lib'] = gsasii_loc
 
-print("\n\nImported pysuli with following configuration:\n")
+print("\n\nImported easyxrd with following configuration:\n")
 print_defaults()
 
 
