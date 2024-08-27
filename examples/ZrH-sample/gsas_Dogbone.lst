@@ -1,0 +1,247 @@
+********************************************************************************
+   General Structure Analysis System-II Crystal Structure Refinement
+              by Robert B. Von Dreele & Brian H. Toby
+                Argonne National Laboratory(C), 2010
+ This product includes software developed by the UChicago Argonne, LLC,
+            as Operator of Argonne National Laboratory.
+                          Please cite:
+   B.H. Toby & R.B. Von Dreele, J. Appl. Cryst. 46, 544-549 (2013)
+********************************************************************************
+ Least squares controls:
+ Refinement type: analytic Hessian
+ Maximum number of cycles: 100
+ Regularize hydrogens (if any): False
+ Initial shift factor: 1.000
+
+ Phases:
+
+ Phase name: ZrH
+=======================================================================================================================================
+
+ X-ray scattering factors:
+   Symbol     fa                                      fb                                      fc
+---------------------------------------------------------------------------------------------------
+ Zr        17.87650  10.94800   5.41732   3.65721   1.27618  11.91600   0.11762  87.66270   2.06929
+ H          0.49300   0.32291   0.14019   0.04081  10.51090  26.12570   3.14236  57.79970   0.00304
+
+ Electron scattering factors:
+   Symbol     fa                                                fb
+---------------------------------------------------------------------------------------------------
+ Zr         0.29970   1.18790   3.10750   3.97400   3.57690   0.11210   1.06380   6.38910  28.70810  97.42890
+ H          0.00880   0.04490   0.14810   0.23560   0.09140   0.11520   1.08670   4.97550  16.55910  43.27430
+
+ Neutron scattering factors:
+   Symbol   isotope       mass       b       resonant terms
+---------------------------------------------------------------------------------------------------
+ Zr      Nat. Abund.     91.220    0.716
+ H       Nat. Abund.      1.008   -0.374
+
+ Space Group: F m -3 m
+ The lattice is centrosymmetric F-centered cubic
+ The Laue symmetry is m3m
+ The lattice point group is m3m
+ Multiplicity of a general site is 192
+ The inversion center is located at 0,0,0
+ 
+ The equivalent positions are:
+
+ (0,0,0; 0,1/2,1/2; 1/2,0,1/2; 1/2,1/2,0)+
+
+ ( 1)     X,     Y,     Z 
+ ( 2)     Z,     X,     Y 
+ ( 3)     Y,     Z,     X 
+ ( 4)     X,     Y,    -Z 
+ ( 5)    -Z,     X,     Y 
+ ( 6)     Y,    -Z,     X 
+ ( 7)    -Z,     X,    -Y 
+ ( 8)    -Y,    -Z,     X 
+ ( 9)     Y,    -Z,    -X 
+ (10)    -X,     Y,    -Z 
+ (11)    -Z,    -X,     Y 
+ (12)     X,    -Y,    -Z 
+ (13)     Y,     X,     Z 
+ (14)     Z,     Y,     X 
+ (15)     X,     Z,     Y 
+ (16)     Y,     X,    -Z 
+ (17)    -Z,     Y,     X 
+ (18)     X,    -Z,     Y 
+ (19)    -Z,     Y,    -X 
+ (20)    -X,    -Z,     Y 
+ (21)     X,    -Z,    -Y 
+ (22)    -Y,     X,    -Z 
+ (23)    -Z,    -Y,     X 
+ (24)     Y,    -X,    -Z 
+
+ Atoms:
+   name    type  refine?   x         y         z      frac site sym  mult I/A   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Zr0     Zr          0.00000   0.00000   0.00000   1.000    m3m    4    I 0.01000                                                
+     H1      H          0.25000   0.25000   0.25000   0.830   -43m    8    I 0.01000                                                
+
+ Unit cell: a = 4.75238 b = 4.75238 c = 4.75238 alpha = 90.000 beta = 90.000 gamma = 90.000 volume = 107.333 Refine? False
+
+ Phase name: Zr
+=======================================================================================================================================
+
+ X-ray scattering factors:
+   Symbol     fa                                      fb                                      fc
+---------------------------------------------------------------------------------------------------
+ Zr        17.87650  10.94800   5.41732   3.65721   1.27618  11.91600   0.11762  87.66270   2.06929
+
+ Electron scattering factors:
+   Symbol     fa                                                fb
+---------------------------------------------------------------------------------------------------
+ Zr         0.29970   1.18790   3.10750   3.97400   3.57690   0.11210   1.06380   6.38910  28.70810  97.42890
+
+ Neutron scattering factors:
+   Symbol   isotope       mass       b       resonant terms
+---------------------------------------------------------------------------------------------------
+ Zr      Nat. Abund.     91.220    0.716
+
+ Space Group: P 63/m m c
+ The lattice is centrosymmetric primitive hexagonal
+ The Laue symmetry is 6/mmm
+ The lattice point group is 6/mmm
+ Multiplicity of a general site is 24
+ The inversion center is located at 0,0,0
+ 
+ The equivalent positions are:
+
+ ( 1)     X,     Y,     Z 
+ ( 2)   X-Y,     X, 1/2+Z 
+ ( 3)    -Y,   X-Y,     Z 
+ ( 4)    -X,    -Y, 1/2+Z 
+ ( 5)   Y-X,    -X,     Z 
+ ( 6)     Y,   Y-X, 1/2+Z 
+ ( 7)   Y-X,     Y,     Z 
+ ( 8)    -X,   Y-X, 1/2+Z 
+ ( 9)    -Y,    -X,     Z 
+ (10)   X-Y,    -Y, 1/2+Z 
+ (11)     X,   X-Y,     Z 
+ (12)     Y,     X, 1/2+Z 
+
+ Atoms:
+   name    type  refine?   x         y         z      frac site sym  mult I/A   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Zr0     Zr          0.33333   0.66667   0.25000   1.000-6m2(100)    2    I 0.01000                                                
+
+ Unit cell: a = 3.23131 b = 3.23131 c = 5.15212 alpha = 90.000 beta = 90.000 gamma = 120.000 volume = 46.588 Refine? False
+
+ Phase: ZrH in histogram: PWDR data.xy
+=======================================================================================================================================
+ Perform LeBail extraction
+
+ Size model    : isotropic equatorial:       0.001 Refine? False
+	 LG mixing coeff.:       1.0000 Refine? False
+
+ Mustrain model: isotropic equatorial:      1000.0 Refine? False
+	 LG mixing coeff.:      1.0000 Refine? False
+
+ Hydrostatic/elastic strain:
+ names :         D11          eA
+ values:           0           0
+ refine:       False       False
+
+ Phase: Zr in histogram: PWDR data.xy
+=======================================================================================================================================
+ Perform LeBail extraction
+
+ Size model    : isotropic equatorial:       0.151 Refine? False
+	 LG mixing coeff.:       1.0000 Refine? False
+
+ Mustrain model: isotropic equatorial:      1000.0 Refine? False
+	 LG mixing coeff.:      1.0000 Refine? False
+
+ Hydrostatic/elastic strain:
+ names :         D11         D33
+ values:           0           0
+ refine:       False       False
+
+ Histogram: PWDR data.xy histogram Id: 0
+=======================================================================================================================================
+ Instrument type: Debye-Scherrer
+ Histogram limits:     2.50 deg to     6.82 deg
+
+ Sample Parameters:
+ Goniometer omega = 0.00, chi = 0.00, phi = 0.00
+ name  :         Scale    Absorption     DisplaceX     DisplaceY
+ value :        0.0001        0.0000        0.0000        0.0000
+ refine:          True         False         False         False
+
+ Instrument Parameters:
+ name  :     Azimuth         Lam    Polariz.        SH/L           U           V           W           X           Y
+ value :    0.000000    0.182400    0.000000    0.002000  180.531687   -2.357769    0.529902    0.000000   -3.210168
+ refine:                   False       False       False       False       False       False       False       False
+
+ name  :           Z        Zero
+ value :    0.000000   -0.000054
+ refine:       False       False
+
+ Background function: chebyschev-1 Refine? False
+ Coefficients:      9.618     0.219     0.723    -0.800    -0.155
+ Fixed background file: ; mult: 1.000  Refine? False
+
+ Refinement results:
+---------------------------------------------------------------------------------------------------------------------------------------
+ Number of function calls: 9 No. of observations: 1040 No. of parameters: 1 User rejected: 0 Sp. gp. extinct: 0
+ Refinement time =    0.580s,    0.290s/cycle, for 2 cycles
+ wR =   10.02%, chi**2 =      445.115, GOF =   0.65
+
+ Phases:
+ Result for phase: ZrH
+=======================================================================================================================================
+
+ Atoms:
+   name      x         y         z      frac   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Zr0     Zr:
+ values:   0.00000   0.00000   0.00000   1.000 0.01000
+ sig   :                                               
+     H1      H:
+ values:   0.25000   0.25000   0.25000   0.830 0.01000
+ sig   :                                               
+
+ Density: 5.7486 g/cm**3
+ Result for phase: Zr
+=======================================================================================================================================
+
+ Atoms:
+   name      x         y         z      frac   Uiso     U11     U22     U33     U12     U13     U23
+---------------------------------------------------------------------------------------------------------------------------------------
+    Zr0     Zr:
+ values:   0.33333   0.66667   0.25000   1.000 0.01000
+ sig   :                                               
+
+ Density: 6.5027 g/cm**3
+
+ Phase: ZrH in histogram: PWDR data.xy
+=======================================================================================================================================
+ Final refinement RF, RF^2 = 0.00%, 0.00% on 3 reflections
+ Durbin-Watson statistic = 0.138
+ Bragg intensity sum = 63.5
+ Performed LeBail extraction for phase ZrH in histogram PWDR data.xy
+
+ Phase: Zr in histogram: PWDR data.xy
+=======================================================================================================================================
+ Final refinement RF, RF^2 = 0.00%, 0.00% on 5 reflections
+ Durbin-Watson statistic = 0.138
+ Bragg intensity sum = 1.44e+04
+ Performed LeBail extraction for phase Zr in histogram PWDR data.xy
+
+ Histogram: PWDR data.xy histogram Id: 0
+=======================================================================================================================================
+ PWDR histogram weight factor = 1.000
+ Final refinement wR = 10.02% on 1040 observations in this histogram
+ Other residuals: R = 6.68%, R-bkg = 6.58%, wR-bkg = 10.02% wRmin = 15.31%
+ Instrument type: Debye-Scherrer
+
+ Resonant form factors:(ref: D.T. Cromer & D.A. Liberman (1981), Acta Cryst. A37, 267-268.)
+ Element:       Zr        H
+ f'     :    0.089    0.000
+ f"     :    0.352    0.000
+
+ Sample Parameters:
+ names :         Scale    Absorption     DisplaceX     DisplaceY
+ values:        0.0001        0.0000        0.0000        0.0000
+ sig   :        0.0000                                          
+ Background sums: empirical 9.76e+03, Debye 0, peaks 0, Total 9.76e+03

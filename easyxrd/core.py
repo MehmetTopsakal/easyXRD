@@ -64,7 +64,7 @@ class exrd():
         self.verbose = verbose
 
 
-        super(exrd, self).__init__()
+        # super(exrd, self).__init__()
 
 
 
@@ -220,7 +220,7 @@ class exrd():
                         print('Unable to determine radial unit. Check the radial_unit in txt file\n\n')
                         return
                     self.ds = xr.Dataset()
-                    self.ds['i1d_from_txt_file'] = xr.DataArray(data=Y.astype('float32'),
+                    self.ds['i1d'] = xr.DataArray(data=Y.astype('float32'),
                                                     coords=[X],
                                                     dims=['radial'],
                                                     attrs={'radial_unit':'q_A^-1',
@@ -316,6 +316,10 @@ class exrd():
                      roi_radial_range=None,
                      roi_azimuthal_range=None,
                      include_baseline_in_ds = True,
+                     normalize = True,
+                     normalize_to = 100,
+                     spotty_data_correction=False,
+                     spotty_data_correction_threshold=5,
                      ):
         
 
@@ -356,11 +360,11 @@ class exrd():
                     i2d_baseline[a_ind,:] = da_now
                 
 
-
-
             self.ds['i2d_baseline'] = i2d_baseline
 
+            if spotty_data_correction:
 
+                self.ds['i2d'] = self.ds['i2d'].where((self.ds['i2d']-self.ds['i2d_baseline']) > spotty_data_correction_threshold)
 
 
             if roi_azimuthal_range is not None:
@@ -487,14 +491,35 @@ class exrd():
                                                        coords={'radial':self.ds.i1d.radial},
                                                        attrs={'arpls_lam':arpls_lam}
                                                        )
-        # else:
-        #     print('i1d_bkg is not provided. Using arpls to find the baseline\n\n')
-        #     baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
-        #                                                                                lam=arpls_lam)[0]
-        #     self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
-        #                                            coords={'radial':self.ds.i1d.radial},
-        #                                            attrs={'arpls_lam':arpls_lam}
-        #                                            )
+        else:
+            print('i1d_bkg is not provided. Using arpls to find the baseline\n\n')
+            baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
+                                                                                       lam=arpls_lam)[0]
+            self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
+                                                   coords={'radial':self.ds.i1d.radial},
+                                                   attrs={'arpls_lam':arpls_lam}
+                                                   )
+            
+
+
+        if normalize:
+
+            # find normalization scale from i1d
+            da_baseline_sub = (self.ds.i1d-self.ds.i1d_baseline)
+            normalization_multiplier = normalize_to*(1/max(da_baseline_sub.values))
+
+            self.ds.i1d.values = self.ds.i1d.values*normalization_multiplier
+            self.ds.i1d.attrs['normalization_multiplier'] = normalization_multiplier
+            self.ds.i1d.attrs['normalized_to'] = normalize_to
+            self.ds.i1d_baseline.values = self.ds.i1d_baseline.values*normalization_multiplier
+            self.ds.i1d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
+
+            if ('i2d' in self.ds.keys()):
+                self.ds.i2d.values = self.ds.i2d.values*normalization_multiplier  
+                self.ds.i2d.attrs['normalization_multiplier'] = normalization_multiplier
+                self.ds.i2d.attrs['normalized_to'] = normalize_to
+                self.ds.i2d_baseline.values = self.ds.i2d_baseline.values*normalization_multiplier
+                self.ds.i2d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
 
         # if smoothen:
         #     self.ds['i1d_bkg'] = xr.DataArray(data=savgol_filter(i1d_bkg.interp(radial=self.ds.i1d.radial).values, window_length=savgol_filter_window_length, polyorder=2),
@@ -509,9 +534,6 @@ class exrd():
 
         if plot:
             ds_plotter(ds=self.ds,  plot_hint = 'get_baseline') # type: ignore
-
-
-
 
 
 
@@ -592,6 +614,7 @@ class exrd():
                                instprm_Z=0, 
                                instprm_SHL=0.002,   
                                do_1st_refinement=True,
+                               yshift_multiplier=0.01,
                         ):
         
 
@@ -608,7 +631,7 @@ class exrd():
             if k in self.ds.keys():
                 del self.ds[k]
 
-
+        self.yshift_multiplier = yshift_multiplier
 
         if gsasii_lib_directory is None:
 
@@ -690,7 +713,7 @@ class exrd():
         #            X=np.column_stack( (self.ds.i1d.radial.values, (self.ds.i1d-self.ds.i1d_baseline).values) ))
         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
                    fmt='%.7e',
-                   X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+10 ) ))        
+                   X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] ) ))        
 
 
         if instprm_from_gpx is not None:
@@ -774,16 +797,17 @@ class exrd():
             matching = fnmatch.filter(l, pattern)
             if matching != []:
                 pwdr_name = matching[0]
-        self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, 10, 0.0, 0.0]
+        self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'], 0.0, 0.0]
 
 
         if do_1st_refinement:
-            ParDict = {'set': {'Background': {'refine': False,
-                                            'type': 'chebyschev-1',
-                                            'no. coeffs': 1
-                                            }}}
+            ParDict = {'set': {'Background': {'refine': False,'type': 'chebyschev-1','no. coeffs': 1},
+                               }
+                        }
             self.gpx.set_refinement(ParDict)
+            rwp_new, _ = self.gpx_refiner(save_previous=False)
 
+            self.gpx.set_refinement({"set":{'LeBail': True}},phase='all')
             rwp_new, _ = self.gpx_refiner(save_previous=False)
 
             print('\nRwp from 1st refinement is = %.3f \n '%(rwp_new))
@@ -993,6 +1017,15 @@ class exrd():
         self.gpx.refine()
 
 
+    def export_gpx_to(self,
+                      export_to='gsas.gpx'
+                         
+                         ):
+        """
+        """
+        shutil.copy('%s/gsas.gpx'%self.gsasii_run_directory,export_to)
+
+
 
 
 
@@ -1006,7 +1039,8 @@ class exrd():
     def plot_refinement(self,
                     label_x = 0.85,
                     label_y = 0.8,
-                    label_y_shift = -0.2
+                    label_y_shift = -0.2,
+                    ylogscale=True
                     ):
 
 
@@ -1022,8 +1056,8 @@ class exrd():
 
 
         histogram = self.gpx.histograms()[0]
-        Ycalc     = histogram.getdata('ycalc').astype('float32')-10.0 # this includes gsas background
-        Ybkg      = histogram.getdata('Background').astype('float32')-10.0
+        Ycalc     = histogram.getdata('ycalc').astype('float32')-self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'] # this includes gsas background
+        Ybkg      = histogram.getdata('Background').astype('float32')-self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']
         self.ds['i1d_refined'] = xr.DataArray(data=Ycalc,dims=['radial'],coords={'radial':self.ds.i1d.radial})
         self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
         
@@ -1055,7 +1089,11 @@ class exrd():
 
         if 'i2d' in self.ds.keys():
             ax = ax = ax_dict["A"]
-            np.log(self.ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+            if ylogscale:
+                # np.log(self.ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+                np.log(self.ds.i2d-self.ds.i2d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
+            else:
+                (self.ds.i2d-self.ds.i2d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
             # self.ds.i2d.plot.imshow(ax=ax,robust=False,add_colorbar=False,cmap='viridis',vmin=0)
             ax.set_xlabel(None)
             ax.set_ylabel('Azimuthal')
@@ -1070,32 +1108,51 @@ class exrd():
                 pass
 
         ax = ax_dict["B"]
-        np.log(self.ds.i1d-self.ds.i1d_baseline+10).plot(ax=ax,color='k',label='Yobs.')
-        np.log(self.ds.i1d_refined+10).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f)'%self.gpx['Covariance']['data']['Rvals']['Rwp'])    
+        if ylogscale:
+            np.log(self.ds.i1d-self.ds.i1d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
+            np.log(self.ds.i1d_refined+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f)'%self.gpx['Covariance']['data']['Rvals']['Rwp'])   
+            np.log(self.ds.i1d_gsas_background+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Ybkg.')  
+            # ax.fill_between(self.ds.i1d.radial.values,
+            #                 self.ds.i1d.radial.values*0+np.log(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']),
+            #                 alpha=0.2,
+            #                 color='C7',
+            #                 )
+            
+            # ax.fill_between(self.ds.i1d.radial.values, 
+            #                 y1=np.log((self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']+self.ds.i1d_gsas_background).values),
+            #                 y2=np.log((self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'])),
+            #                 alpha=0.2,
+            #                 color='C9',
+            #                 label='Ybkg.'
+            #                 )
+            ax.set_ylabel('Log$_{10}$(data+10) (a.u.)')
 
+        else:
+            (self.ds.i1d-self.ds.i1d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
+            (self.ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f)'%self.gpx['Covariance']['data']['Rvals']['Rwp'])   
+            ax.fill_between(self.ds.i1d.radial.values,
+                            self.ds.i1d.radial.values*0+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'],
+                            alpha=0.2,
+                            color='C7',
+                            )
+            
+            ax.fill_between(self.ds.i1d.radial.values, 
+                            y1=(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']+self.ds.i1d_gsas_background).values,
+                            y2=self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'],
+                            alpha=0.2,
+                            color='C9',
+                            label='Ybkg.'
+                            )
+            ax.set_ylabel('data+10 (a.u.)')
 
-        
-        ax.fill_between(self.ds.i1d.radial.values,
-                        self.ds.i1d.radial.values*0+np.log(10),
-                        alpha=0.2,
-                        color='C7',
-                        )
-        
-        ax.fill_between(self.ds.i1d.radial.values, 
-                        y1=np.log((10+self.ds.i1d_gsas_background).values),
-                        y2=np.log((10)),
-                        alpha=0.2,
-                        color='C9',
-                        label='Ybkg. from GSAS-II'
-                        )
 
 
 
 
         ax.set_xlabel(None)
-        ax.set_ylabel('Log$_{10}$(data+10) (a.u.)')
-        ax.set_ylim(bottom=np.log(8))
-        ax.legend()
+
+        # ax.set_ylim(bottom=-np.log(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']))
+        ax.legend(loc='upper right')
         ax.set_xlim([self.ds.i1d.radial[0],self.ds.i1d.radial[-1]])
 
         xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_angst'])

@@ -85,9 +85,9 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
 
             ax = ax_dict["C"]
-            np.log(ds.i1d_from_txt_file).plot(ax=ax,color='k')
-            ax.set_xlabel(ds.i1d_from_txt_file.attrs['xlabel'])
-            ax.set_ylabel(ds.i1d_from_txt_file.attrs['ylabel'])
+            np.log(ds.i1d).plot(ax=ax,color='k')
+            ax.set_xlabel(ds.i1d.attrs['xlabel'])
+            ax.set_ylabel(ds.i1d.attrs['ylabel'])
 
 
         
@@ -131,10 +131,11 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
         ax.set_xlabel(ds.i1d.attrs['xlabel'])
         ax.set_ylabel(ds.i1d.attrs['ylabel'])
         ax.legend()
+        ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
         if 'i2d' in ds.keys():
             ax = ax = ax_dict["B"]
-            np.log(ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+            np.log(ds.i2d-ds.i2d_baseline+0.01*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
             ax.set_xlabel(None)
             ax.set_ylabel('Azimuthal')
 
@@ -148,17 +149,17 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
                 pass
 
         ax = ax = ax_dict["C"]
-        np.log(ds.i1d-ds.i1d_baseline+10).plot(ax=ax,color='k')
-        ax.fill_between(ds.i1d.radial.values, ds.i1d.radial.values*0+np.log(10),alpha=0.2)
+        np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k')
+        # ax.fill_between(ds.i1d.radial.values, ds.i1d.radial.values*0+np.log(0.01*ds.i1d.attrs['normalized_to']),alpha=0.2)
         ax.set_xlabel(None)
-        ax.set_ylabel('Log$_{10}$(data-baseline+10) (a.u.)')
-        ax.set_ylim(bottom=np.log(8))
+        ax.set_ylabel('Log$_{10}$(data-baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
+        ax.set_ylim(bottom=np.log(0.01*0.9*ds.i2d.attrs['normalized_to']))
         
         ax = ax = ax_dict["D"]
         (ds.i1d-ds.i1d_baseline).plot(ax=ax,color='k')
         ax.axhline(y=0,alpha=0.5,color='y')
         ax.set_xlabel(ds.i1d.attrs['xlabel'])
-        ax.set_ylim([-1,1])
+        ax.set_ylim([-0.02,0.02])
 
 
 
@@ -195,9 +196,11 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
 
         if 'i2d' in ds.keys():
             ax = ax = ax_dict["A"]
-            np.log(ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+            np.log(ds.i2d-ds.i2d_baseline+0.01*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
             ax.set_xlabel(None)
             ax.set_ylabel('Azimuthal')
+            ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
+            
 
             try:
                 roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
@@ -209,11 +212,12 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
                 pass
 
         ax = ax_dict["B"]
-        np.log(ds.i1d-ds.i1d_baseline+10).plot(ax=ax,color='k')
-        ax.fill_between(ds.i1d.radial.values, ds.i1d.radial.values*0+np.log(10),alpha=0.2)
+        np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k')
+        ax.fill_between(ds.i1d.radial.values, ds.i1d.radial.values*0+np.log(0.01*ds.i1d.attrs['normalized_to']),alpha=0.2)
         ax.set_xlabel(None)
-        ax.set_ylabel('Log$_{10}$(data-baseline+10) (a.u.)')
-        ax.set_ylim(bottom=np.log(8))
+        ax.set_ylabel('Log$_{10}$(data-baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
+        ax.set_ylim(bottom=-0.02)
+        ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
         xrdc = XRDCalculator(wavelength=ds.i1d.attrs['wavelength_in_angst'])
 
@@ -240,4 +244,5 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
             ax_dict["C"].text(plot_label_x[0],plot_label_y[0]+e*plot_label_y_shift,st,color='C%d'%e,transform=ax_dict["C"].transAxes)
 
         ax_dict["C"].set_xlabel(ds.i1d.attrs['xlabel'])
+        ax_dict["C"].set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
