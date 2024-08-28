@@ -72,7 +72,7 @@ class exrd():
 
 
 
-    def gpx_refiner(self, save_previous = True):
+    def gpx_refiner(self, save_previous = True, update_ds=True):
 
         if save_previous:
             self.gpx_previous = copy.deepcopy(self.gpx)
@@ -87,6 +87,16 @@ class exrd():
             with HiddenPrints():
                 self.gpx.refine()
         rwp_new = self.gpx['Covariance']['data']['Rvals']['Rwp']
+
+        if update_ds:
+            histogram = self.gpx.histograms()[0]
+            Ycalc     = histogram.getdata('ycalc').astype('float32')-self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'] # this includes gsas background
+            Ybkg      = histogram.getdata('Background').astype('float32')-self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']
+            self.ds['i1d_refined'] = xr.DataArray(data=Ycalc,dims=['radial'],coords={'radial':self.ds.i1d.radial})
+            self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
+
+            self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+
 
         return rwp_new, rwp_previous
     
@@ -309,7 +319,7 @@ class exrd():
 
 
     def get_baseline(self,
-                     i1d_bkg=None,
+                     input_bkg=None,
                      use_arpls=True,
                      arpls_lam=1e5,
                      plot=True,
@@ -319,52 +329,155 @@ class exrd():
                      normalize = True,
                      normalize_to = 100,
                      spotty_data_correction=False,
-                     spotty_data_correction_threshold=5,
+                     spotty_data_correction_threshold=1,
                      ):
         
 
-        # refresh i1d
+        if roi_radial_range is not None:
+            if ('i2d' in self.ds.keys()):
+                for k in ['radial','i1d','i1d_baseline','i1d_refined','i1d_gsas_background']:
+                    if k in self.ds.keys():
+                        del self.ds[k]
+                self.ds = self.ds.sel(radial_i2d=slice(roi_radial_range[0],roi_radial_range[1]))
+                da_i1d_tmp = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
+            else:
+                for k in ['i1d_baseline','i1d_refined','i1d_gsas_background']:
+                    if k in self.ds.keys():
+                        del self.ds[k]
+                self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
+                da_i1d_tmp = self.ds.i1d
+        else:
+            if ('i2d' in self.ds.keys()):
+                for k in ['radial','i1d','i1d_baseline','i1d_refined','i1d_gsas_background']:
+                    if k in self.ds.keys():
+                        del self.ds[k]
+                da_i1d_tmp = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
+            else:
+                for k in ['i1d_baseline','i1d_refined','i1d_gsas_background']:
+                    if k in self.ds.keys():
+                        del self.ds[k]
+                da_i1d_tmp = self.ds.i1d
+
+
+
+        if input_bkg is not None:
+            # check the limits
+            if not np.array_equal(input_bkg.radial,da_i1d_tmp.radial):
+                if (input_bkg.radial.values[0] > da_i1d_tmp.radial.values[0]) or (input_bkg.radial.values[-1] < da_i1d_tmp.radial.values[-1]):
+                    print('input_bkg is not useable. input_bkg is ignored and using arpls to find the baseline\n\n')
+                    input_bkg_useable = False
+                else:
+                    input_bkg = input_bkg.interp(radial=da_i1d_tmp.radial)
+                    input_bkg_useable = True
+
+            else:
+                input_bkg_useable = True
+
+        else:
+            input_bkg_useable = False
+
+
+        if input_bkg_useable:
+            bkg_scale = da_i1d_tmp.values[0]/input_bkg.values[0]
+            while (min((da_i1d_tmp.values-bkg_scale*input_bkg.values)) < 0):
+                bkg_scale = bkg_scale*0.99
+
+
+
+
+
+        # update i1d
         if ('i2d' in self.ds.keys()):
 
-            for k in ['radial','i1d','i1d_baseline','i1d_refined','i1d_gsas_background']:
-                if k in self.ds.keys():
-                    del self.ds[k]
-
-
+            # for k in ['radial','i1d','i1d_baseline','i1d_refined','i1d_gsas_background']:
+            #     if k in self.ds.keys():
+            #         del self.ds[k]
 
             # get i2d_baseline
+            if input_bkg_useable:
+                i2d_baseline = copy.deepcopy(self.ds.i2d-bkg_scale*input_bkg.rename({'radial': 'radial_i2d'}))
+            else:
+                i2d_baseline = copy.deepcopy(self.ds.i2d)
 
-            i2d_baseline = copy.deepcopy(self.ds.i2d)
+
 
             # serial version (can be speed-up using threads)
             for a_ind in range(self.ds.i2d.shape[0]):
-
                 # 
-                da_now = self.ds.i2d.isel(azimuthal_i2d=a_ind)
+                da_now = i2d_baseline.isel(azimuthal_i2d=a_ind)
                 da_now_dropna = da_now.dropna(dim='radial_i2d')
-
                 try:
                     baseline_now, params = pybaselines.Baseline(x_data=da_now_dropna.radial_i2d.values).arpls(da_now_dropna.values,lam=arpls_lam)
-
                     # create baseline da by copying
                     da_now_dropna_baseline = copy.deepcopy(da_now_dropna)
                     da_now_dropna_baseline.values = baseline_now
-
                     # now interpolate baseline da to original i2d radial range
                     da_now_dropna_baseline_interpolated = da_now_dropna_baseline.interp(radial_i2d=self.ds.i2d.radial_i2d)
-
                     i2d_baseline[a_ind,:] = da_now_dropna_baseline_interpolated
-
                 except:
                     # da_now.values[:] = np.nan
                     i2d_baseline[a_ind,:] = da_now
+
+
+            if input_bkg_useable:
+                self.ds['i2d_baseline'] = 0.99*(i2d_baseline+bkg_scale*input_bkg.rename({'radial': 'radial_i2d'}))
+            else:
+                self.ds['i2d_baseline'] = 0.99*i2d_baseline
+
+            # if spotty_data_correction:
+            #     da_diff = self.ds.i2d-self.ds.i2d_baseline 
+            #     self.ds['i2d'] = self.ds.i2d.where(da_diff>spotty_data_correction_threshold)
+                # self.ds['i2d_baseline'] = self.ds.i2d_baseline.where(da_diff>spotty_data_correction_threshold)
+
+                # self.ds['i2d'] = self.ds['i2d'].where((self.ds['i2d']-self.ds['i2d_baseline']) > spotty_data_correction_threshold)
+
+
+            # if roi_azimuthal_range is not None:
+            #     if spotty_data_correction:
+            #         self.ds['i1d'] = (self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').fillna(spotty_data_correction_threshold)-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'})
+            #         self.ds['i1d_baseline'] = (self.ds.i2d_baseline.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').fillna(spotty_data_correction_threshold)-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'})
+            #     else:
+            #         self.ds['i1d'] = self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
+            #         self.ds['i1d_baseline'] = self.ds.i2d_baseline.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
+            #     self.ds['i1d'].attrs =  {
+            #                                 'radial_unit':'q_A^-1',
+            #                                 'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+            #                                 'ylabel':'Intensity (a.u.)',
+            #                                 'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+            #                                 'roi_azimuthal_range':roi_azimuthal_range
+            #                             }
+                
+            #     self.ds['i1d_baseline'].attrs =  {
+            #                                 'radial_unit':'q_A^-1',
+            #                                 'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+            #                                 'ylabel':'Intensity (a.u.)',
+            #                                 'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+            #                                 'roi_azimuthal_range':roi_azimuthal_range,
+            #                                 'arpls_lam':arpls_lam,
+            #                             }
+            # else:
+            # if spotty_data_correction:
+            #     self.ds['i1d'] = (self.ds.i2d.mean(dim='azimuthal_i2d').fillna(spotty_data_correction_threshold)-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'})
+            # else:
+            #     self.ds['i1d'] = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'}) 
+            # self.ds['i1d'].attrs =  {
+            #                             'radial_unit':'q_A^-1',
+            #                             'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+            #                             'ylabel':'Intensity (a.u.)',
+            #                             'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+            #                         }
+            
+            # self.ds['i1d_baseline'] = self.ds.i2d_baseline.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
+            # self.ds['i1d_baseline'].attrs =  {
+            #                             'radial_unit':'q_A^-1',
+            #                             'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
+            #                             'ylabel':'Intensity (a.u.)',
+            #                             'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
+            #                             'arpls_lam':arpls_lam,
+            #                         }
                 
 
-            self.ds['i2d_baseline'] = i2d_baseline
 
-            if spotty_data_correction:
-
-                self.ds['i2d'] = self.ds['i2d'].where((self.ds['i2d']-self.ds['i2d_baseline']) > spotty_data_correction_threshold)
 
 
             if roi_azimuthal_range is not None:
@@ -404,101 +517,63 @@ class exrd():
                 
 
 
+
             if not include_baseline_in_ds:
                 del self.ds['i2d_baseline']
 
                     
-        #     if roi_azimuthal_range is not None:
-        #         da_here = self.ds['i2d'].sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d')
-        #         da_i1d = xr.DataArray(data=da_here.dropna(dim='radial_i2d').values,
-        #                               dims = ['radial'],
-        #                               coords = [da_here.dropna(dim='radial_i2d').radial_i2d],
-        #                               attrs = {
-        #                                   'radial_unit':'q_A^-1',
-        #                                   'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-        #                                   'ylabel':'Intensity (a.u.)',
-        #                                   'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-        #                                   'roi_azimuthal_range':roi_azimuthal_range
-        #                               }
-        #         )
-        #         self.ds['i1d'] = da_i1d
-
-        #     else:
-        #         da_here = self.ds['i2d'].mean(dim='azimuthal_i2d')
-        #         da_i1d = xr.DataArray(data=da_here.dropna(dim='radial_i2d').values,
-        #                               dims = ['radial'],
-        #                               coords = [da_here.dropna(dim='radial_i2d').radial_i2d],
-        #                               attrs = {
-        #                                   'radial_unit':'q_A^-1',
-        #                                   'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-        #                                   'ylabel':'Intensity (a.u.)',
-        #                                   'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-        #                               }
-        #         )
-        #         self.ds['i1d'] = da_i1d
-
-        #     if roi_radial_range is not None:
-        #         self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
-
-        # if ('i1d_from_txt_file' in self.ds.keys()):
-        #     self.ds['i1d'] = self.ds.i1d_from_txt_file
 
 
-        # if roi_radial_range is not None:
-        #     self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
-
-        if roi_radial_range is not None:
-            self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
 
 
               
-        if i1d_bkg is not None:
-            # check the limits
-            if not np.array_equal(i1d_bkg.radial,self.ds.i1d.radial):
-                if (i1d_bkg.radial.values[0] > self.ds.i1d.radial.values[0]) or (i1d_bkg.radial.values[-1] < self.ds.i1d.radial.values[-1]):
-                    print('i1d_bkg is not useable. i1d_bkg is ignored and using arpls to find the baseline\n\n')
-                    i1d_bkg_useable = False
-                else:
-                    i1d_bkg = i1d_bkg.interp(radial=self.ds.i1d.radial)
-                    i1d_bkg_useable = True
+        # if i1d_bkg is not None:
+        #     # check the limits
+        #     if not np.array_equal(i1d_bkg.radial,self.ds.i1d.radial):
+        #         if (i1d_bkg.radial.values[0] > self.ds.i1d.radial.values[0]) or (i1d_bkg.radial.values[-1] < self.ds.i1d.radial.values[-1]):
+        #             print('i1d_bkg is not useable. i1d_bkg is ignored and using arpls to find the baseline\n\n')
+        #             i1d_bkg_useable = False
+        #         else:
+        #             i1d_bkg = i1d_bkg.interp(radial=self.ds.i1d.radial)
+        #             i1d_bkg_useable = True
 
-            else:
-                i1d_bkg_useable = True
+        #     else:
+        #         i1d_bkg_useable = True
 
-            if i1d_bkg_useable:
-                bkg_scale = self.ds['i1d'].values[0]/i1d_bkg.values[0]
-                while (min((self.ds['i1d'].values-bkg_scale*i1d_bkg.values)) < 0):
-                    bkg_scale = bkg_scale*0.99
-                if use_arpls:
-                    baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']-bkg_scale*i1d_bkg).values, 
-                                                                                               lam=arpls_lam)[0]
-                    self.ds['i1d_baseline'] = xr.DataArray(data=(baseline+bkg_scale*i1d_bkg.values),
-                                                           dims=['radial'],
-                                                           coords={'radial':self.ds.i1d.radial},
-                                                           attrs={'arpls_lam':arpls_lam}
-                                                           )
-                else:
-                    baseline = bkg_scale*i1d_bkg
-                    self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),
-                                                           dims=['radial'],
-                                                           coords={'radial':self.ds.i1d.radial},
-                                                           attrs={'arpls_lam':arpls_lam}
-                                                           )
-            else:
-                baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
-                                                                                           lam=arpls_lam)[0]
-                self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
-                                                       coords={'radial':self.ds.i1d.radial},
-                                                       attrs={'arpls_lam':arpls_lam}
-                                                       )
-        else:
-            print('i1d_bkg is not provided. Using arpls to find the baseline\n\n')
-            baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
-                                                                                       lam=arpls_lam)[0]
-            self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
-                                                   coords={'radial':self.ds.i1d.radial},
-                                                   attrs={'arpls_lam':arpls_lam}
-                                                   )
+        #     if i1d_bkg_useable:
+        #         bkg_scale = self.ds['i1d'].values[0]/i1d_bkg.values[0]
+        #         while (min((self.ds['i1d'].values-bkg_scale*i1d_bkg.values)) < 0):
+        #             bkg_scale = bkg_scale*0.99
+        #         if use_arpls:
+        #             baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']-bkg_scale*i1d_bkg).values, 
+        #                                                                                        lam=arpls_lam)[0]
+        #             self.ds['i1d_baseline'] = xr.DataArray(data=(baseline+bkg_scale*i1d_bkg.values),
+        #                                                    dims=['radial'],
+        #                                                    coords={'radial':self.ds.i1d.radial},
+        #                                                    attrs={'arpls_lam':arpls_lam}
+        #                                                    )
+        #         else:
+        #             baseline = bkg_scale*i1d_bkg
+        #             self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),
+        #                                                    dims=['radial'],
+        #                                                    coords={'radial':self.ds.i1d.radial},
+        #                                                    attrs={'arpls_lam':arpls_lam}
+        #                                                    )
+        #     else:
+        #         baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
+        #                                                                                    lam=arpls_lam)[0]
+        #         self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
+        #                                                coords={'radial':self.ds.i1d.radial},
+        #                                                attrs={'arpls_lam':arpls_lam}
+        #                                                )
+        # else:
+        #     print('i1d_bkg is not provided. Using arpls to find the baseline\n\n')
+        #     baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
+        #                                                                                lam=arpls_lam)[0]
+        #     self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
+        #                                            coords={'radial':self.ds.i1d.radial},
+        #                                            attrs={'arpls_lam':arpls_lam}
+        #                                            )
             
 
 
@@ -520,6 +595,26 @@ class exrd():
                 self.ds.i2d.attrs['normalized_to'] = normalize_to
                 self.ds.i2d_baseline.values = self.ds.i2d_baseline.values*normalization_multiplier
                 self.ds.i2d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
+
+
+
+
+
+        if spotty_data_correction:
+            da_diff = self.ds.i2d-self.ds.i2d_baseline 
+
+            self.ds['i2d'] = (self.ds['i2d']).where(da_diff>=spotty_data_correction_threshold)
+
+            i1d_attrs = copy.deepcopy(self.ds.i1d.attrs)
+            self.ds['i1d'] = (((self.ds['i2d']).where(da_diff>=spotty_data_correction_threshold).mean(dim='azimuthal_i2d'))-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'}).fillna(0)   
+            self.ds['i1d'].attrs = i1d_attrs
+
+
+
+
+
+
+
 
         # if smoothen:
         #     self.ds['i1d_bkg'] = xr.DataArray(data=savgol_filter(i1d_bkg.interp(radial=self.ds.i1d.radial).values, window_length=savgol_filter_window_length, polyorder=2),
@@ -550,7 +645,7 @@ class exrd():
                     ):
         
         self.phases = {}
-        for p in phases:
+        for e,p in enumerate(phases):
             if p['mp_id'].lower() == 'none':
                 st = Structure.from_file(p['cif'])
                 st.lattice = Lattice.from_parameters(a=st.lattice.abc[0]*p['scale']*p['scale_a'],
@@ -561,6 +656,9 @@ class exrd():
                                                      gamma=st.lattice.angles[2]
                                                     )
                 self.phases[p['label']] = st
+
+
+
             else:
                 from mp_api.client import MPRester
                 mpr = MPRester(mp_rester_api_key)
@@ -573,6 +671,19 @@ class exrd():
                                                      gamma=st.lattice.angles[2]
                                                     )
                 self.phases[p['label']] = st
+
+
+            randstr = ''.join(random.choices(string.ascii_uppercase+string.digits, k=7)) 
+            CifWriter(st,symprec=0.01).write_file('%s.cif'%randstr)
+            # read cif
+            with open('%s.cif'%randstr, 'r') as ciffile:
+                ciffile_content = ciffile.read()
+            self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
+            self.ds.attrs['PhaseInd_%d_label'%(e)] = p['label']
+            os.remove('%s.cif'%randstr)
+
+        self.ds.attrs['num_phases'] = e+1
+            
                 
         if plot:
             ds_plotter(ds=self.ds, phases=self.phases,  plot_hint = 'load_phases') # type: ignore
@@ -891,6 +1002,7 @@ class exrd():
     def refine_cell_params(self,
                            phase='all',
                            set_to_false_after_refinement=True,
+                           update_ds_attrs = True
                            ):
         """
         """
@@ -907,6 +1019,17 @@ class exrd():
             self.gpx.set_refinement({"set":{'Cell': False}},phase=phase)
 
         self.gpx_saver()
+
+
+        if update_ds_attrs:
+            for e,p in enumerate(self.gpx.phases()):
+                p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
+                with open('%s/%s_refined.cif'%(self.gsasii_run_directory,p.name), 'r') as ciffile:
+                    ciffile_content = ciffile.read()
+                self.ds.attrs['PhaseInd_%d_refined_cif'%(e)] = ciffile_content
+
+
+            
 
 
 
@@ -1036,6 +1159,220 @@ class exrd():
 
 
 
+    # def plot_refinement(self,
+    #                 label_x = 0.85,
+    #                 label_y = 0.8,
+    #                 label_y_shift = -0.2,
+    #                 ylogscale=True
+    #                 ):
+
+
+    #     wtSum = 0.0
+    #     for e,p in enumerate(self.phases):
+    #         mass = self.gpx['Phases'][p]['General']['Mass']
+    #         phFr = self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]
+    #         wtSum += mass*phFr
+    #     # for e,p in enumerate(sample.phases):
+    #         # weightFr = sample.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]*sample.gpx['Phases'][p]['General']['Mass']/wtSum
+
+
+
+        
+    #     for p in self.gpx.phases():
+    #         p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
+
+    #     if 'i2d' in self.ds.keys():
+    #         fig = plt.figure(figsize=(8,6),dpi=128)
+    #         mosaic = """
+    #                     A
+    #                     A
+    #                     B
+    #                     B
+    #                     B
+    #                     B
+    #                     C
+    #                     """
+    #     else:
+    #         fig = plt.figure(figsize=(8,4),dpi=128)
+    #         mosaic = """
+    #                     B
+    #                     B
+    #                     B
+    #                     B
+    #                     C
+    #                     """
+
+    #     ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+    #     if 'i2d' in self.ds.keys():
+    #         ax = ax = ax_dict["A"]
+    #         if ylogscale:
+    #             # np.log(self.ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+    #             np.log(self.ds.i2d-self.ds.i2d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
+    #         else:
+    #             (self.ds.i2d-self.ds.i2d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
+    #         # self.ds.i2d.plot.imshow(ax=ax,robust=False,add_colorbar=False,cmap='viridis',vmin=0)
+    #         ax.set_xlabel(None)
+    #         ax.set_ylabel('Azimuthal')
+
+    #         try:
+    #             roi_xy = [self.ds.i1d.radial.values[0],self.ds.i1d.attrs['roi_azimuthal_range'][0]]
+    #             roi_width = self.ds.i1d.radial.values[-1] - self.ds.i1d.radial.values[0]
+    #             roi_height = self.ds.i1d.attrs['roi_azimuthal_range'][1] - self.ds.i1d.attrs['roi_azimuthal_range'][0]
+    #             rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
+    #             ax.add_patch(rect)
+    #         except:
+    #             pass
+
+    #     ax = ax_dict["B"]
+    #     if ylogscale:
+    #         np.log(self.ds.i1d-self.ds.i1d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
+    #         np.log(self.ds.i1d_refined+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f)'%self.gpx['Covariance']['data']['Rvals']['Rwp'])   
+    #         np.log(self.ds.i1d_gsas_background+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Ybkg.')  
+    #         # ax.fill_between(self.ds.i1d.radial.values,
+    #         #                 self.ds.i1d.radial.values*0+np.log(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']),
+    #         #                 alpha=0.2,
+    #         #                 color='C7',
+    #         #                 )
+            
+    #         # ax.fill_between(self.ds.i1d.radial.values, 
+    #         #                 y1=np.log((self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']+self.ds.i1d_gsas_background).values),
+    #         #                 y2=np.log((self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'])),
+    #         #                 alpha=0.2,
+    #         #                 color='C9',
+    #         #                 label='Ybkg.'
+    #         #                 )
+    #         ax.set_ylabel('Log$_{10}$(data+10) (a.u.)')
+
+    #     else:
+    #         (self.ds.i1d-self.ds.i1d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
+    #         (self.ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f)'%self.gpx['Covariance']['data']['Rvals']['Rwp'])   
+    #         ax.fill_between(self.ds.i1d.radial.values,
+    #                         self.ds.i1d.radial.values*0+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'],
+    #                         alpha=0.2,
+    #                         color='C7',
+    #                         )
+            
+    #         ax.fill_between(self.ds.i1d.radial.values, 
+    #                         y1=(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']+self.ds.i1d_gsas_background).values,
+    #                         y2=self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'],
+    #                         alpha=0.2,
+    #                         color='C9',
+    #                         label='Ybkg.'
+    #                         )
+    #         ax.set_ylabel('data+10 (a.u.)')
+
+
+
+
+
+    #     ax.set_xlabel(None)
+
+    #     # ax.set_ylim(bottom=-np.log(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']))
+    #     ax.legend(loc='upper right')
+    #     ax.set_xlim([self.ds.i1d.radial[0],self.ds.i1d.radial[-1]])
+
+
+
+
+
+
+
+
+
+    #     xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_angst'])
+
+
+
+
+
+
+
+
+    #     # supplied phases
+    #     for e,st in enumerate(self.phases):
+    #         ps = xrdc.get_pattern(self.phases[st],
+    #                             scaled=True,
+    #                             two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
+    #                             )
+    #         refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+
+    #         for i in refl_X:
+    #             if 'i2d' in self.ds.keys():
+    #                 ax_dict["A"].axvline(x=i,lw=0.3,color='C%d'%e)
+    #             ax_dict["B"].axvline(x=i,lw=0.3,color='C%d'%e)
+    #             ax_dict["C"].axvline(x=i,lw=0.3,color='C%d'%e)
+
+    #         markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt=".")
+    #         ax_dict["C"].set_ylim(bottom=0)
+
+    #         plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
+    #         plt.setp(markerline, color='C%d'%e)
+
+    #         weightFr = self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Scale'][0]*self.gpx['Phases'][st]['General']['Mass']/wtSum
+    #         ax_dict["C"].text(label_x,label_y+e*label_y_shift,'%s (%.3f)'%(st,weightFr),color='C%d'%e,transform=ax_dict["C"].transAxes)
+
+
+
+
+
+
+    #     # refined phases
+    #     self.refined_phases = {}
+    #     for p in self.phases:
+    #             st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
+    #             self.refined_phases[p] = st
+
+    #     for e,st in enumerate(self.refined_phases):
+    #         ps = xrdc.get_pattern(self.refined_phases[st],
+    #                             scaled=True,
+    #                             two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
+    #                             )
+    #         refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+
+    #         for i in refl_X:
+    #             if 'i2d' in self.ds.keys():
+    #                 ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+    #             ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+    #             ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+
+    #         markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
+    #         ax_dict["C"].set_ylim(bottom=0)
+
+    #         plt.setp(stemlines, linewidth=0.5, linestyle='--', color='C%d'%e)
+    #         plt.setp(markerline, color='C%d'%e)
+
+    #     ax_dict["C"].set_xlabel(self.ds.i1d.attrs['xlabel'])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def plot_refinement(self,
                     label_x = 0.85,
                     label_y = 0.8,
@@ -1044,25 +1381,15 @@ class exrd():
                     ):
 
 
-        wtSum = 0.0
-        for e,p in enumerate(self.phases):
-            mass = self.gpx['Phases'][p]['General']['Mass']
-            phFr = self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]
-            wtSum += mass*phFr
+        # wtSum = 0.0
+        # for e,p in enumerate(self.phases):
+        #     mass = self.gpx['Phases'][p]['General']['Mass']
+        #     phFr = self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]
+        #     wtSum += mass*phFr
         # for e,p in enumerate(sample.phases):
             # weightFr = sample.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]*sample.gpx['Phases'][p]['General']['Mass']/wtSum
 
 
-
-
-        histogram = self.gpx.histograms()[0]
-        Ycalc     = histogram.getdata('ycalc').astype('float32')-self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'] # this includes gsas background
-        Ybkg      = histogram.getdata('Background').astype('float32')-self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']
-        self.ds['i1d_refined'] = xr.DataArray(data=Ycalc,dims=['radial'],coords={'radial':self.ds.i1d.radial})
-        self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
-        
-        for p in self.gpx.phases():
-            p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
 
         if 'i2d' in self.ds.keys():
             fig = plt.figure(figsize=(8,6),dpi=128)
@@ -1110,7 +1437,7 @@ class exrd():
         ax = ax_dict["B"]
         if ylogscale:
             np.log(self.ds.i1d-self.ds.i1d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
-            np.log(self.ds.i1d_refined+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f)'%self.gpx['Covariance']['data']['Rvals']['Rwp'])   
+            np.log(self.ds.i1d_refined+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(self.ds.attrs['Rwp'],self.ds.attrs['GOF'])) 
             np.log(self.ds.i1d_gsas_background+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Ybkg.')  
             # ax.fill_between(self.ds.i1d.radial.values,
             #                 self.ds.i1d.radial.values*0+np.log(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']),
@@ -1129,7 +1456,7 @@ class exrd():
 
         else:
             (self.ds.i1d-self.ds.i1d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
-            (self.ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f)'%self.gpx['Covariance']['data']['Rvals']['Rwp'])   
+            (self.ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(self.ds.attrs['Rwp'],self.ds.attrs['GOF']))   
             ax.fill_between(self.ds.i1d.radial.values,
                             self.ds.i1d.radial.values*0+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'],
                             alpha=0.2,
@@ -1152,8 +1479,9 @@ class exrd():
         ax.set_xlabel(None)
 
         # ax.set_ylim(bottom=-np.log(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']))
-        ax.legend(loc='upper right')
+        ax.legend(loc='upper right',fontsize=8)
         ax.set_xlim([self.ds.i1d.radial[0],self.ds.i1d.radial[-1]])
+
 
         xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_angst'])
 
@@ -1161,12 +1489,48 @@ class exrd():
 
 
 
+        # ds_phases = {}
+        # for e,p in enumerate(phases):
+        #     if p['mp_id'].lower() == 'none':
+        #         st = Structure.from_file(p['cif'])
+        #         st.lattice = Lattice.from_parameters(a=st.lattice.abc[0]*p['scale']*p['scale_a'],
+        #                                              b=st.lattice.abc[1]*p['scale']*p['scale_b'],
+        #                                              c=st.lattice.abc[2]*p['scale']*p['scale_c'],
+        #                                              alpha=st.lattice.angles[0],
+        #                                              beta =st.lattice.angles[1],
+        #                                              gamma=st.lattice.angles[2]
+        #                                             )
+        #         self.phases[p['label']] = st
 
 
+        ds_phases = {}
+        for a in self.ds.attrs.keys():
+            for aa in range(20):
+                try:
+                    if a == 'PhaseInd_%d_cif'%aa:
+                        with open("tmp.cif", "w") as cif_file:
+                            cif_file.write(self.ds.attrs[a])
+                        st = Structure.from_file('tmp.cif')
+                        ds_phases[self.ds.attrs['PhaseInd_%d_label'%aa]] = st
+                except:
+                    break
+        
+        ds_phases_refined = {}
+        for a in self.ds.attrs.keys():
+            for aa in range(self.ds.attrs['num_phases']):
 
-        # supplied phases
-        for e,st in enumerate(self.phases):
-            ps = xrdc.get_pattern(self.phases[st],
+                if a == 'PhaseInd_%d_refined_cif'%aa:
+                    with open("tmp.cif", "w") as cif_file:
+                        cif_file.write(self.ds.attrs[a])
+                    st = Structure.from_file('tmp.cif')
+                    ds_phases_refined[self.ds.attrs['PhaseInd_%d_label'%aa]] = st
+
+
+        os.remove('tmp.cif')
+
+        #supplied phases
+        for e,st in enumerate(ds_phases):
+            ps = xrdc.get_pattern(ds_phases[st],
                                 scaled=True,
                                 two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
                                 )
@@ -1184,22 +1548,13 @@ class exrd():
             plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
             plt.setp(markerline, color='C%d'%e)
 
-            weightFr = self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Scale'][0]*self.gpx['Phases'][st]['General']['Mass']/wtSum
-            ax_dict["C"].text(label_x,label_y+e*label_y_shift,'%s (%.3f)'%(st,weightFr),color='C%d'%e,transform=ax_dict["C"].transAxes)
+            # weightFr = self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Scale'][0]*self.gpx['Phases'][st]['General']['Mass']/wtSum
+            # ax_dict["C"].text(label_x,label_y+e*label_y_shift,'%s (%.3f)'%(st,weightFr),color='C%d'%e,transform=ax_dict["C"].transAxes)
+            ax_dict["C"].text(label_x,label_y+e*label_y_shift,'%s'%(st),color='C%d'%e,transform=ax_dict["C"].transAxes)
 
-
-
-
-
-
-        # refined phases
-        self.refined_phases = {}
-        for p in self.phases:
-                st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
-                self.refined_phases[p] = st
-
-        for e,st in enumerate(self.refined_phases):
-            ps = xrdc.get_pattern(self.refined_phases[st],
+        #refined phases
+        for e,st in enumerate(ds_phases_refined):
+            ps = xrdc.get_pattern(ds_phases_refined[st],
                                 scaled=True,
                                 two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
                                 )
@@ -1214,7 +1569,11 @@ class exrd():
             markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
             ax_dict["C"].set_ylim(bottom=0)
 
-            plt.setp(stemlines, linewidth=0.5, linestyle='--', color='C%d'%e)
+            plt.setp(stemlines, linewidth=0.5,linestyle='--', color='C%d'%e)
             plt.setp(markerline, color='C%d'%e)
 
-        ax_dict["C"].set_xlabel(self.ds.i1d.attrs['xlabel'])
+
+
+
+
+
