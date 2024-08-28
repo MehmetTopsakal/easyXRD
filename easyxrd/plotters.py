@@ -105,13 +105,13 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
         if 'i2d' in ds.keys():
             fig = plt.figure(figsize=(8,6),dpi=128)
             mosaic = """
-                        AABBB
-                        AABBB
-                        AACCC
-                        AACCC
-                        AACCC
-                        AACCC
                         AADDD
+                        AADDD
+                        AADDD
+                        AAEEE
+                        AAEEE
+                        BBEEE
+                        BBEEE
                         """
         else:
             fig = plt.figure(figsize=(8,5),dpi=128)
@@ -128,38 +128,67 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
         (ds.i1d).plot(ax=ax,label='data')
         (ds.i1d_baseline).plot(ax=ax,label='baseline')
         ax.set_yscale('log')
-        ax.set_xlabel(ds.i1d.attrs['xlabel'])
-        ax.set_ylabel(ds.i1d.attrs['ylabel'])
+        ax.set_xlabel(None)
+        ax.set_ylabel('Normalized Intensity (a.u.)')
         ax.legend()
         ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
         if 'i2d' in ds.keys():
-            ax = ax = ax_dict["B"]
-            np.log(ds.i2d-ds.i2d_baseline+0.01*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
+
+
+            ax = ax_dict["D"]
+            (ds.i2d-ds.i2d_baseline).plot.imshow(ax=ax,
+                                                 robust=True,
+                                                 add_colorbar=True,
+                                                 cbar_kwargs=dict(orientation="vertical", pad=0.02, shrink=0.8, label=None),
+                                                 cmap='Greys',
+                                                 vmin=0
+                                                 )
             ax.set_xlabel(None)
-            ax.set_ylabel('Azimuthal')
+            ax.set_ylabel(None)
+            ax.set_facecolor('#EEA086')
 
-            try:
-                roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
-                roi_width = ds.i1d.radial.values[-1] - ds.i1d.radial.values[0]
-                roi_height = ds.i1d.attrs['roi_azimuthal_range'][1] - ds.i1d.attrs['roi_azimuthal_range'][0]
-                rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
-                ax.add_patch(rect)
-            except:
-                pass
+            # try:
+            #     roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
+            #     roi_width = ds.i1d.radial.values[-1] - ds.i1d.radial.values[0]
+            #     roi_height = ds.i1d.attrs['roi_azimuthal_range'][1] - ds.i1d.attrs['roi_azimuthal_range'][0]
+            #     rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
+            #     ax.add_patch(rect)
+            # except:
+            #     pass
 
-        ax = ax = ax_dict["C"]
+        ax = ax_dict["E"]
         np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k')
         # ax.fill_between(ds.i1d.radial.values, ds.i1d.radial.values*0+np.log(0.01*ds.i1d.attrs['normalized_to']),alpha=0.2)
-        ax.set_xlabel(None)
+        ax.set_xlabel(ds.i1d.attrs['xlabel'])
         ax.set_ylabel('Log$_{10}$(data-baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
         ax.set_ylim(bottom=np.log(0.01*0.9*ds.i2d.attrs['normalized_to']))
         
-        ax = ax = ax_dict["D"]
-        (ds.i1d-ds.i1d_baseline).plot(ax=ax,color='k')
+        ax = ax_dict["B"]
+        (ds.i1d-ds.i1d_baseline).plot(ax=ax,color='k',label='data-baseline')
         ax.axhline(y=0,alpha=0.5,color='y')
         ax.set_xlabel(ds.i1d.attrs['xlabel'])
-        ax.set_ylim([-0.02,0.02])
+        ax.set_ylim([-0.01,0.02])
+        ax.legend()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
