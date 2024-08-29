@@ -750,18 +750,21 @@ class exrd():
                 default_install_path = os.path.join(os.path.expanduser('~'),'g2full/GSAS-II/GSASII')
                 sys.path += [default_install_path]
                 import GSASIIscriptable as G2sc
+                import GSASIIlattice as G2lat
                 self.gsasii_lib_directory = default_install_path
             except:
                 user_loc = input("Enter location of GSASII directory on your GSAS-II installation.")
                 sys.path += [user_loc]
                 try:
                     import GSASIIscriptable as G2sc
+                    import GSASIIlattice as G2lat
                     self.gsasii_lib_directory = user_loc
                 except:
                     try:
                         user_loc = input("\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n")
                         sys.path += [user_loc]
                         import GSASIIscriptable as G2sc
+                        import GSASIIlattice as G2lat
                         self.gsasii_lib_directory = user_loc
                     except:
                         print("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
@@ -773,12 +776,14 @@ class exrd():
                 sys.path += [gsasii_lib_directory]
                 try:
                     import GSASIIscriptable as G2sc
+                    import GSASIIlattice as G2lat
                     self.gsasii_lib_directory = gsasii_lib_directory
                 except:
                     try:
                         gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n")
                         sys.path += [gsasii_lib_directory]
                         import GSASIIscriptable as G2sc
+                        import GSASIIlattice as G2lat
                         self.gsasii_lib_directory = gsasii_lib_directory
                     except:
                         gsasii_lib_directory = print("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
@@ -1101,8 +1106,35 @@ class exrd():
 
 
 
+    def refine_preferred_orientation(self,
+                                    phase='all',
+                                    harmonics_order=4,
+                                    set_to_false_after_refinement=True,
+                                    ):
+        
+        import GSASIIlattice as G2lat
+        phase_ind = phase
+        L=harmonics_order
 
+        for e,st in enumerate(self.phases):
+            if e==phase_ind:
+                coef_dict = {}
+                sytsym=self.gpx['Phases'][st]['General']['SGData']['SGLaue']
+                for l in range(2,L+1):
+                    coeffs = G2lat.GenShCoeff(sytsym=sytsym,L=l)
+                    try:
+                        cst = coeffs[0][0][:6]
+                        coef_dict[cst]=0.0
+                    except:
+                        pass
 
+                self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'] = ['SH', 1.0, True, [0, 0, 1], L, coef_dict, [''], 0.1]
+                
+                rwp_new, rwp_previous = self.gpx_refiner(self)
+                print('Preferred orientation for %s phase is refined. Rwp is now %.3f (was %.3f)'%(self.gpx.phases()[phase].name,rwp_new,rwp_previous)) 
+
+                if set_to_false_after_refinement:     
+                    self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
 
 
 
