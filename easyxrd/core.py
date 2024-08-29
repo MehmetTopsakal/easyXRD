@@ -319,7 +319,7 @@ class exrd():
 
 
     def get_baseline(self,
-                     input_bkg=None,
+                     input_bkg_ds=None,
                      use_arpls=True,
                      arpls_lam=1e5,
                      plot=True,
@@ -360,6 +360,9 @@ class exrd():
 
 
 
+
+
+        
         if input_bkg is not None:
             # check the limits
             if not np.array_equal(input_bkg.radial,da_i1d_tmp.radial):
@@ -983,7 +986,8 @@ class exrd():
     def set_LeBail(self,
                    set_to=True,
                    phase='all',
-                   refine=False
+                   refine=False,
+                   
                    ):
         """
         """
@@ -1007,7 +1011,8 @@ class exrd():
     def refine_cell_params(self,
                            phase='all',
                            set_to_false_after_refinement=True,
-                           update_ds_attrs = True
+                           update_ds_attrs = True,
+                           plot=False,
                            ):
         """
         """
@@ -1033,7 +1038,8 @@ class exrd():
                     ciffile_content = ciffile.read()
                 self.ds.attrs['PhaseInd_%d_refined_cif'%(e)] = ciffile_content
 
-
+        if plot:
+            ds_plotter(ds=self.ds,  plot_hint = 'ds_with_refinement_info') # type: ignore
             
 
 
@@ -1405,204 +1411,7 @@ class exrd():
 
 
 
-    def plot_refinement(self,
-                    label_x = 0.85,
-                    label_y = 0.8,
-                    label_y_shift = -0.2,
-                    ylogscale=True
-                    ):
 
-
-        # wtSum = 0.0
-        # for e,p in enumerate(self.phases):
-        #     mass = self.gpx['Phases'][p]['General']['Mass']
-        #     phFr = self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]
-        #     wtSum += mass*phFr
-        # for e,p in enumerate(sample.phases):
-            # weightFr = sample.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]*sample.gpx['Phases'][p]['General']['Mass']/wtSum
-
-
-
-        if 'i2d' in self.ds.keys():
-            fig = plt.figure(figsize=(8,6),dpi=128)
-            mosaic = """
-                        A
-                        A
-                        B
-                        B
-                        B
-                        B
-                        C
-                        """
-        else:
-            fig = plt.figure(figsize=(8,4),dpi=128)
-            mosaic = """
-                        B
-                        B
-                        B
-                        B
-                        C
-                        """
-
-        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-        if 'i2d' in self.ds.keys():
-            ax = ax = ax_dict["A"]
-            if ylogscale:
-                # np.log(self.ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
-                np.log(self.ds.i2d-self.ds.i2d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
-            else:
-                (self.ds.i2d-self.ds.i2d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
-            # self.ds.i2d.plot.imshow(ax=ax,robust=False,add_colorbar=False,cmap='viridis',vmin=0)
-            ax.set_xlabel(None)
-            ax.set_ylabel('Azimuthal')
-
-            try:
-                roi_xy = [self.ds.i1d.radial.values[0],self.ds.i1d.attrs['roi_azimuthal_range'][0]]
-                roi_width = self.ds.i1d.radial.values[-1] - self.ds.i1d.radial.values[0]
-                roi_height = self.ds.i1d.attrs['roi_azimuthal_range'][1] - self.ds.i1d.attrs['roi_azimuthal_range'][0]
-                rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
-                ax.add_patch(rect)
-            except:
-                pass
-
-        ax = ax_dict["B"]
-        if ylogscale:
-            np.log(self.ds.i1d-self.ds.i1d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
-            np.log(self.ds.i1d_refined+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(self.ds.attrs['Rwp'],self.ds.attrs['GOF'])) 
-            np.log(self.ds.i1d_gsas_background+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Ybkg.')  
-            # ax.fill_between(self.ds.i1d.radial.values,
-            #                 self.ds.i1d.radial.values*0+np.log(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']),
-            #                 alpha=0.2,
-            #                 color='C7',
-            #                 )
-            
-            # ax.fill_between(self.ds.i1d.radial.values, 
-            #                 y1=np.log((self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']+self.ds.i1d_gsas_background).values),
-            #                 y2=np.log((self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'])),
-            #                 alpha=0.2,
-            #                 color='C9',
-            #                 label='Ybkg.'
-            #                 )
-            ax.set_ylabel('Log$_{10}$(data+10) (a.u.)')
-
-        else:
-            (self.ds.i1d-self.ds.i1d_baseline+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
-            (self.ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(self.ds.attrs['Rwp'],self.ds.attrs['GOF']))   
-            ax.fill_between(self.ds.i1d.radial.values,
-                            self.ds.i1d.radial.values*0+self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'],
-                            alpha=0.2,
-                            color='C7',
-                            )
-            
-            ax.fill_between(self.ds.i1d.radial.values, 
-                            y1=(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']+self.ds.i1d_gsas_background).values,
-                            y2=self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'],
-                            alpha=0.2,
-                            color='C9',
-                            label='Ybkg.'
-                            )
-            ax.set_ylabel('data+10 (a.u.)')
-
-
-
-
-
-        ax.set_xlabel(None)
-
-        # ax.set_ylim(bottom=-np.log(self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']))
-        ax.legend(loc='upper right',fontsize=8)
-        ax.set_xlim([self.ds.i1d.radial[0],self.ds.i1d.radial[-1]])
-
-
-        xrdc = XRDCalculator(wavelength=self.ds.i1d.attrs['wavelength_in_angst'])
-
-
-
-
-
-        # ds_phases = {}
-        # for e,p in enumerate(phases):
-        #     if p['mp_id'].lower() == 'none':
-        #         st = Structure.from_file(p['cif'])
-        #         st.lattice = Lattice.from_parameters(a=st.lattice.abc[0]*p['scale']*p['scale_a'],
-        #                                              b=st.lattice.abc[1]*p['scale']*p['scale_b'],
-        #                                              c=st.lattice.abc[2]*p['scale']*p['scale_c'],
-        #                                              alpha=st.lattice.angles[0],
-        #                                              beta =st.lattice.angles[1],
-        #                                              gamma=st.lattice.angles[2]
-        #                                             )
-        #         self.phases[p['label']] = st
-
-
-        ds_phases = {}
-        for a in self.ds.attrs.keys():
-            for aa in range(20):
-                try:
-                    if a == 'PhaseInd_%d_cif'%aa:
-                        with open("tmp.cif", "w") as cif_file:
-                            cif_file.write(self.ds.attrs[a])
-                        st = Structure.from_file('tmp.cif')
-                        ds_phases[self.ds.attrs['PhaseInd_%d_label'%aa]] = st
-                except:
-                    break
-        
-        ds_phases_refined = {}
-        for a in self.ds.attrs.keys():
-            for aa in range(self.ds.attrs['num_phases']):
-
-                if a == 'PhaseInd_%d_refined_cif'%aa:
-                    with open("tmp.cif", "w") as cif_file:
-                        cif_file.write(self.ds.attrs[a])
-                    st = Structure.from_file('tmp.cif')
-                    ds_phases_refined[self.ds.attrs['PhaseInd_%d_label'%aa]] = st
-
-
-        os.remove('tmp.cif')
-
-        #supplied phases
-        for e,st in enumerate(ds_phases):
-            ps = xrdc.get_pattern(ds_phases[st],
-                                scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
-                                )
-            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
-
-            for i in refl_X:
-                if 'i2d' in self.ds.keys():
-                    ax_dict["A"].axvline(x=i,lw=0.3,color='C%d'%e)
-                ax_dict["B"].axvline(x=i,lw=0.3,color='C%d'%e)
-                ax_dict["C"].axvline(x=i,lw=0.3,color='C%d'%e)
-
-            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt=".")
-            ax_dict["C"].set_ylim(bottom=0)
-
-            plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
-            plt.setp(markerline, color='C%d'%e)
-
-            # weightFr = self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Scale'][0]*self.gpx['Phases'][st]['General']['Mass']/wtSum
-            # ax_dict["C"].text(label_x,label_y+e*label_y_shift,'%s (%.3f)'%(st,weightFr),color='C%d'%e,transform=ax_dict["C"].transAxes)
-            ax_dict["C"].text(label_x,label_y+e*label_y_shift,'%s'%(st),color='C%d'%e,transform=ax_dict["C"].transAxes)
-
-        #refined phases
-        for e,st in enumerate(ds_phases_refined):
-            ps = xrdc.get_pattern(ds_phases_refined[st],
-                                scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([self.ds.i1d.radial.values[0],self.ds.i1d.radial.values[-1]]) * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
-                                )
-            refl_X, refl_Y = ((4 * np.pi) / (self.ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
-
-            for i in refl_X:
-                if 'i2d' in self.ds.keys():
-                    ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-                ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-                ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-
-            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
-            ax_dict["C"].set_ylim(bottom=0)
-
-            plt.setp(stemlines, linewidth=0.5,linestyle='--', color='C%d'%e)
-            plt.setp(markerline, color='C%d'%e)
 
 
 
