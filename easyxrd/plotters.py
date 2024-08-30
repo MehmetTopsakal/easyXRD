@@ -53,15 +53,10 @@ class HiddenPrints:
 
 
 
-def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
+def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, plot_hint = '1st_loaded_data'):
 
 
     if plot_hint == '1st_loaded_data':
-            # fig = plt.figure()
-            # ax = fig.add_subplot(1,1,1)
-            # ds.i1d.plot(ax=ax)
-            # ax.set_xlabel(ds.i1d.attrs['xlabel'])
-            # ax.set_ylabel(ds.i1d.attrs['ylabel'])
         if 'i2d' in ds.keys():
             fig = plt.figure(figsize=(8,4),dpi=128)
             mosaic = """
@@ -88,8 +83,8 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
 
             ax =  ax_dict["C"]
             np.log(ds.i2d.mean(dim='azimuthal_i2d')).plot(ax=ax,color='k')
-            ax.set_xlabel(ds.i2d.attrs['xlabel'])
-            ax.set_ylabel(ds.i2d.attrs['ylabel'])
+            ax.set_xlabel(ds.i1d.attrs['xlabel'])
+            ax.set_ylabel(ds.i1d.attrs['ylabel'])
 
 
         else:
@@ -116,6 +111,20 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     if plot_hint == 'get_baseline':
         if 'i2d' in ds.keys():
             fig = plt.figure(figsize=(8,6),dpi=128)
@@ -125,12 +134,12 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
                         AADDD
                         AAEEE
                         AAEEE
-                        BBEEE
-                        BBEEE
+                        AAEEE
+                        AAEEE
                         """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
             ax = ax_dict["A"]
-            ax.set_xlim([ds.i2d.radial_i2d[0],ds.i2d.radial_i2d[-1]])
+            ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
         else:
             fig = plt.figure(figsize=(8,5),dpi=128)
             mosaic = """
@@ -145,29 +154,43 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
             ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
         
 
-        
-        (ds.i1d).plot(ax=ax,label='data')
-        (ds.i1d_baseline).plot(ax=ax,label='baseline')
+
+        if ('normalized_to' in ds.i1d.attrs):
+            (ds.i1d).plot(ax=ax,label='i1d (norm.)')
+        else:
+            (ds.i1d).plot(ax=ax,label='i1d')
+        if ('i1d_baseline' in ds.keys()) and ('normalized_to' in ds.i1d.attrs):
+            (ds.i1d_baseline).plot(ax=ax,label='i1d_baseline (norm.)')
+        elif ('i1d_baseline' in ds.keys()):
+            (ds.i1d_baseline).plot(ax=ax,label='i1d_baseline')
+
         ax.set_yscale('log')
-        ax.set_xlabel(None)
-        ax.set_ylabel('Normalized Intensity (a.u.)')
-        ax.legend()
+        ax.set_xlabel(ds.i1d.attrs['xlabel'])
+        ax.set_ylabel('Intensity (a.u.)')
+        ax.legend(fontsize=6)
         
 
         if 'i2d' in ds.keys():
 
 
             ax = ax_dict["D"]
-            (ds.i2d-ds.i2d_baseline).plot.imshow(ax=ax,
-                                                 robust=True,
-                                                 add_colorbar=True,
-                                                 cbar_kwargs=dict(orientation="vertical", 
-                                                                pad=0.02, 
-                                                                shrink=0.8, 
-                                                                label=None),
-                                                                cmap='Greys',
-                                                                vmin=0
-                                                 )
+
+            if 'i2d_baseline' in ds.keys():
+                da_i2d = ds.i2d-ds.i2d_baseline
+            else:
+                da_i2d = ds.i2d
+
+            (da_i2d).plot.imshow(ax=ax,
+                                robust=True,
+                                add_colorbar=True,
+                                cbar_kwargs=dict(orientation="vertical", 
+                                                pad=0.02, 
+                                                shrink=0.8, 
+                                                label=None),
+                                                cmap='Greys',
+                                                vmin=0
+                                                )
+
             ax.set_xlabel(None)
             ax.set_ylabel(None)
             ax.set_facecolor('#FFF7D9')
@@ -182,18 +205,28 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
                 pass
 
         ax = ax_dict["E"]
-        np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k')
-        # ax.fill_between(ds.i1d.radial.values, ds.i1d.radial.values*0+np.log(0.01*ds.i1d.attrs['normalized_to']),alpha=0.2)
+
+        if ('i1d_baseline' in ds.keys()) and ('normalized_to' in ds.i1d.attrs):
+            np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='i1d - i1d_baseline + %.f'%(0.01*ds.i1d.attrs['normalized_to']))
+            ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
+            ax.set_ylim(bottom=np.log(0.01*0.9*ds.i2d.attrs['normalized_to']))
+            ax.legend(fontsize=8)
+        elif ('i1d_baseline' in ds.keys()):
+            np.log(ds.i1d-ds.i1d_baseline +1).plot(ax=ax,color='k',label='i1d - i1d_baseline + 1')
+            ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
+            ax.legend(fontsize=8)
         ax.set_xlabel(ds.i1d.attrs['xlabel'])
-        ax.set_ylabel('Log$_{10}$(data-baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
-        ax.set_ylim(bottom=np.log(0.01*0.9*ds.i2d.attrs['normalized_to']))
-        
-        ax = ax_dict["B"]
-        (ds.i1d-ds.i1d_baseline).plot(ax=ax,color='k',label='data-baseline')
-        ax.axhline(y=0,alpha=0.5,color='y')
-        ax.set_xlabel(ds.i1d.attrs['xlabel'])
-        ax.set_ylim([-0.01,0.1])
-        ax.legend()
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -227,37 +260,51 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
         if 'i2d' in ds.keys():
             fig = plt.figure(figsize=(8,6),dpi=128)
             mosaic = """
-                        A
-                        A
-                        B
-                        B
-                        B
-                        B
+                        D
+                        D
+                        E
+                        E
+                        E
+                        E
                         C
                         """
         else:
             fig = plt.figure(figsize=(8,4),dpi=128)
             mosaic = """
-                        B
-                        B
-                        B
-                        B
+                        E
+                        E
+                        E
+                        E
                         C
                         """
 
         ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
 
+
         if 'i2d' in ds.keys():
-            ax = ax = ax_dict["A"]
+
+
+            ax = ax_dict["D"]
+
             if 'i2d_baseline' in ds.keys():
-                np.log(ds.i2d-ds.i2d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+                da_i2d = ds.i2d-ds.i2d_baseline
             else:
-                np.log(ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+                da_i2d = ds.i2d
+
+            (da_i2d).plot.imshow(ax=ax,
+                                robust=True,
+                                add_colorbar=True,
+                                cbar_kwargs=dict(orientation="vertical", 
+                                                pad=0.02, 
+                                                shrink=0.8, 
+                                                label=None),
+                                                cmap='Greys',
+                                                vmin=0
+                                                )
+
             ax.set_xlabel(None)
-            ax.set_ylabel('Azimuthal')
-            ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
+            ax.set_ylabel(None)
             ax.set_facecolor('#FFF7D9')
-            
 
             try:
                 roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
@@ -268,12 +315,31 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
             except:
                 pass
 
-        ax = ax_dict["B"]
-        np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k')
-        ax.fill_between(ds.i1d.radial.values, ds.i1d.radial.values*0+np.log(0.01*ds.i1d.attrs['normalized_to']),alpha=0.2)
+        ax = ax_dict["E"]
+
+        if ('i1d_baseline' in ds.keys()) and ('normalized_to' in ds.i1d.attrs):
+            np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='i1d - i1d_baseline + %.f  (norm.)'%(0.01*ds.i1d.attrs['normalized_to']))
+            ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
+            ax.set_ylim(bottom=np.log(0.01*0.9*ds.i2d.attrs['normalized_to']))
+            ax.legend(fontsize=8)
+            ax.set_ylim(bottom=-0.02)
+        elif ('i1d_baseline' in ds.keys()):
+            np.log(ds.i1d-ds.i1d_baseline +1).plot(ax=ax,color='k',label='i1d - i1d_baseline + 1')
+            ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
+            ax.legend(fontsize=8)
+            ax.set_ylim(bottom=-0.02)
+        else:
+            np.log(ds.i1d).plot(ax=ax,color='k',label='i1d')
+            ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
+            ax.legend(fontsize=8)
+            # ax.set_ylim(bottom=-0.02)
+
+        ax.set_xlabel(ds.i1d.attrs['xlabel'])
+
+        
         ax.set_xlabel(None)
-        ax.set_ylabel('Log$_{10}$(data-baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
-        ax.set_ylim(bottom=-0.02)
+        
+        
         ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
         xrdc = XRDCalculator(wavelength=ds.i1d.attrs['wavelength_in_angst'])
@@ -287,8 +353,8 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
 
             for i in refl_X:
                 if 'i2d' in ds.keys():
-                    ax_dict["A"].axvline(x=i,lw=0.3,color='C%d'%e)
-                ax_dict["B"].axvline(x=i,lw=0.3,color='C%d'%e)
+                    ax_dict["D"].axvline(x=i,lw=0.3,color='C%d'%e)
+                ax_dict["E"].axvline(x=i,lw=0.3,color='C%d'%e)
                 ax_dict["C"].axvline(x=i,lw=0.3,color='C%d'%e)
 
             markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt=".")
@@ -322,13 +388,13 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
 
 
 
-    if plot_hint == 'ds_with_refinement_info':
+
+    if plot_hint == 'refine_cell_params':
 
 
         label_x = 0.85,
         label_y = 0.8,
         label_y_shift = -0.2,
-        ylogscale=True
         yshift_multiplier = 0.01
 
 
@@ -359,10 +425,18 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
 
         if 'i2d' in ds.keys():
             ax = ax = ax_dict["A"]
-            if ylogscale:
-                np.log(ds.i2d-ds.i2d_baseline+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=yshift_multiplier*ds.i2d.attrs['normalized_to'])
+
+            if 'i2d_baseline' in ds.keys():
+                try:
+                    np.log(ds.i2d-ds.i2d_baseline+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=yshift_multiplier*ds.i2d.attrs['normalized_to'])
+                except:
+                    np.log(ds.i2d-ds.i2d_baseline).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
             else:
-                (ds.i2d-ds.i2d_baseline+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=yshift_multiplier*ds.i2d.attrs['normalized_to'])
+                try:
+                    np.log(ds.i2d+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=yshift_multiplier*ds.i2d.attrs['normalized_to'])
+                except:
+                    np.log(ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
+
             ax.set_xlabel(None)
             ax.set_ylabel('Azimuthal')
             ax.set_facecolor('#FFF7D9')
@@ -377,43 +451,38 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
                 pass
 
         ax = ax_dict["B"]
-        if ylogscale:
-            np.log(ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
-            np.log(ds.i1d_refined+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
-            np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Ybkg.')  
-            # ax.fill_between(ds.i1d.radial.values,
-            #                 ds.i1d.radial.values*0+np.log(yshift_multiplier*ds.i2d.attrs['normalized_to']),
-            #                 alpha=0.2,
-            #                 color='C7',
-            #                 )
-            
-            # ax.fill_between(ds.i1d.radial.values, 
-            #                 y1=np.log((yshift_multiplier*ds.i2d.attrs['normalized_to']+ds.i1d_gsas_background).values),
-            #                 y2=np.log((yshift_multiplier*ds.i2d.attrs['normalized_to'])),
-            #                 alpha=0.2,
-            #                 color='C9',
-            #                 label='Ybkg.'
-            #                 )
-            ax.set_ylabel('Log$_{10}$(data+10) (a.u.)')
+
+        if 'i1d_baseline' in ds.keys():
+            if 'normalized_to' in ds.i1d.attrs:
+                np.log(ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs. (i1d-i1d_baseline+%.f (norm.))'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+                np.log(ds.i1d_refined+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+            else:
+                np.log(ds.i1d-ds.i1d_baseline+10).plot(ax=ax,color='k',label='Yobs. (i1d-i1d_baseline+10)')
+                np.log(ds.i1d_refined+10).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+10 (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background+10).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+10')  
 
         else:
-            (ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs.')
-            (ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF']))   
-            ax.fill_between(ds.i1d.radial.values,
-                            ds.i1d.radial.values*0+yshift_multiplier*ds.i2d.attrs['normalized_to'],
-                            alpha=0.2,
-                            color='C7',
-                            )
-            
-            ax.fill_between(ds.i1d.radial.values, 
-                            y1=(yshift_multiplier*ds.i2d.attrs['normalized_to']+ds.i1d_gsas_background).values,
-                            y2=yshift_multiplier*ds.i2d.attrs['normalized_to'],
-                            alpha=0.2,
-                            color='C9',
-                            label='Ybkg.'
-                            )
-            ax.set_ylabel('data+10 (a.u.)')
+            if 'normalized_to' in ds.i1d.attrs:
+                np.log(ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs. (i1d+%.f (norm.))'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+                np.log(ds.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+            else:
+                np.log(ds.i1d).plot(ax=ax,color='k',label='Yobs. (i1d)')
+                np.log(ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.')  
 
+
+
+
+        if ('normalized_to' in ds.i1d.attrs) and ('i1d_baseline' in ds.keys()):
+            ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
+        elif ('i1d_baseline' in ds.keys()):
+            ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline) (a.u.)')
+        elif ('normalized_to' in ds.i1d.attrs):
+            ax.set_ylabel('Log$_{10}$(i1d+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
+        else:
+            ax.set_ylabel('Log$_{10}$(i1d) (a.u.)')
 
 
 
@@ -448,7 +517,7 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
                     ax_dict["A"].axvline(x=i,lw=0.3,color='C%d'%e)
                 ax_dict["B"].axvline(x=i,lw=0.3,color='C%d'%e)
                 ax_dict["C"].axvline(x=i,lw=0.3,color='C%d'%e)
-            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt=".")
+            markerline, stemlines, stem_baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt=".")
             plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
             plt.setp(markerline, color='C%d'%e)
 
@@ -475,7 +544,7 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
                     ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
                 ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
                 ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
+            markerline, stemlines, stem_baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
             plt.setp(stemlines, linewidth=0.5,linestyle='--', color='C%d'%e)
             plt.setp(markerline, color='C%d'%e)
 
@@ -486,6 +555,143 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
         ax_dict["C"].set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
         ax_dict["C"].set_ylim(bottom=1,top=120)
         ax_dict["C"].set_yscale('log')
+
+
+
+
+
+
+
+
+
+    if plot_hint == 'refine_background':
+
+
+        label_x = 0.85,
+        label_y = 0.8,
+        label_y_shift = -0.2,
+        yshift_multiplier = 0.01
+
+
+
+
+        fig = plt.figure(figsize=(8,4),dpi=128)
+        mosaic = """
+                    B
+                    B
+                    B
+                    B
+                """
+
+        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+
+
+
+
+
+        ax = ax_dict["B"]
+
+        if 'i1d_baseline' in ds.keys():
+            if 'normalized_to' in ds.i1d.attrs:
+                np.log(ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs. (i1d-i1d_baseline+%.f (norm.))'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+
+                np.log(ds_previous.i1d_refined+yshift_multiplier*ds_previous.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=2, color='y',linestyle='--',label='(old) Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds_previous.i1d.attrs['normalized_to'],ds_previous.attrs['Rwp'],ds_previous.attrs['GOF'])) 
+                np.log(ds.i1d_refined+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',linestyle='-',label='(new) Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds_previous.i1d_gsas_background+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=2, color='r',linestyle='--',label='(old) Y_gsas_bkg.+%.f'%(yshift_multiplier*ds_previous.i1d.attrs['normalized_to']))
+                np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',linestyle='-',label='(new) Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+
+
+            else:
+                np.log(ds.i1d-ds.i1d_baseline+10).plot(ax=ax,color='k',label='Yobs. (i1d-i1d_baseline+10)')
+
+                np.log(ds_previous.i1d_refined+10).plot(ax=ax, alpha=0.9, linewidth=2, color='y',linestyle='--',label='(old) Ycalc.+10 (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds_previous.i1d_gsas_background+10).plot(ax=ax, alpha=0.9, linewidth=2, color='r',linestyle='--',label='(old) Y_gsas_bkg.+10')  
+                np.log(ds.i1d_refined+10).plot(ax=ax, alpha=0.9, linewidth=1, color='y',linestyle='-',label='(new) Ycalc.+10 (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background+10).plot(ax=ax, alpha=0.9, linewidth=1, color='r',linestyle='-',label='(new) Y_gsas_bkg.+10')  
+
+        else:
+            if 'normalized_to' in ds.i1d.attrs:
+                np.log(ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs. (i1d+%.f (norm.))'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+
+                np.log(ds_previous.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=2, color='y',linestyle='--',label='(old) Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',linestyle='-',label='(new) Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds_previous.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=2, color='r',linestyle='--',label='(old) Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+                np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',linestyle='-',label='(new) Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+            else:
+                np.log(ds.i1d).plot(ax=ax,color='k',label='Yobs. (i1d)')
+
+                np.log(ds_previous.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',linestyle='--',label='(old) Ycalc. (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',linestyle='-',label='(new) Ycalc. (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds_previous.i1d_gsas_background).plot(ax=ax, alpha=0.9, linewidth=1, color='r',linestyle='--',label='(old) Y_gsas_bkg.')   
+                np.log(ds.i1d_gsas_background).plot(ax=ax, alpha=0.9, linewidth=1, color='r',linestyle='-',label='(new) Y_gsas_bkg.')  
+
+
+
+
+
+
+        ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
+        ax.set_xlabel(ds.i1d.attrs['xlabel'])
+
+
+        ax.legend(loc='upper right',fontsize=8)
+        ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        # ax.fill_between(ds.i1d.radial.values,
+        #                 ds.i1d.radial.values*0+np.log(yshift_multiplier*ds.i2d.attrs['normalized_to']),
+        #                 alpha=0.2,
+        #                 color='C7',
+        #                 )
+        
+        # ax.fill_between(ds.i1d.radial.values, 
+        #                 y1=np.log((yshift_multiplier*ds.i2d.attrs['normalized_to']+ds.i1d_gsas_background).values),
+        #                 y2=np.log((yshift_multiplier*ds.i2d.attrs['normalized_to'])),
+        #                 alpha=0.2,
+        #                 color='C9',
+        #                 label='Ybkg.'
+        #                 )
+        # ax.set_ylabel('Log$_{10}$(data+10) (a.u.)')
 
 
 
