@@ -249,7 +249,10 @@ def ds_plotter(ds, gpx=None, phases=None, plot_hint = '1st_loaded_data'):
 
         if 'i2d' in ds.keys():
             ax = ax = ax_dict["A"]
-            np.log(ds.i2d-ds.i2d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+            if 'i2d_baseline' in ds.keys():
+                np.log(ds.i2d-ds.i2d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
+            else:
+                np.log(ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
             ax.set_xlabel(None)
             ax.set_ylabel('Azimuthal')
             ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
