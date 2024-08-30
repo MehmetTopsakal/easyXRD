@@ -331,7 +331,7 @@ class exrd():
                      ):
         
 
-        i1d_atrs = self.ds.i1d.attrs
+
         
         if input_bkg is not None:
             if (('i2d' in self.ds.keys())) and ('i2d' in input_bkg.ds.keys()):
@@ -493,37 +493,44 @@ class exrd():
 
 
         if roi_radial_range is not None:
-            self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))
-        
+            self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1])).dropna(dim='radial')
+        else:
+            self.ds = self.ds.dropna(dim='radial')
 
 
 
 
-        # if normalize:
 
-        #     # find normalization scale from i1d
-        #     if ('i1d_baseline' in self.ds.keys()):
-        #         da_baseline_sub = (self.ds.i1d-self.ds.i1d_baseline)
-        #         normalization_multiplier = normalize_to*(1/max(da_baseline_sub.values))
-        #         self.ds.i1d_baseline.values = self.ds.i1d_baseline.values*normalization_multiplier
-        #         if ('i2d_baseline' in self.ds.keys()):
-        #             self.ds.i2d_baseline.values = self.ds.i2d_baseline.values*normalization_multiplier
-        #             self.ds.i2d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
-        #     else:  
-        #         da = (self.ds.i1d)
-        #         normalization_multiplier = normalize_to*(1/max(da.values))
+        if normalize:
 
-        #     self.ds.i1d.values = self.ds.i1d.values*normalization_multiplier
-        #     self.ds.i1d.attrs['normalization_multiplier'] = normalization_multiplier
-        #     self.ds.i1d.attrs['normalized_to'] = normalize_to
+            # find normalization scale from i1d
+            if ('i1d_baseline' in self.ds.keys()):
+                da_baseline_sub = (self.ds.i1d-self.ds.i1d_baseline)
+                normalization_multiplier = normalize_to*(1/max(da_baseline_sub.values))
+                self.ds.i1d_baseline.values = self.ds.i1d_baseline.values*normalization_multiplier
+                if ('i2d_baseline' in self.ds.keys()):
+                    self.ds.i2d_baseline.values = self.ds.i2d_baseline.values*normalization_multiplier
+                    self.ds.i2d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
+            else:  
+                da = (self.ds.i1d)
+                normalization_multiplier = normalize_to*(1/max(da.values))
+
+            self.ds.i1d.values = self.ds.i1d.values*normalization_multiplier
+            self.ds.i1d.attrs['normalization_multiplier'] = normalization_multiplier
+            self.ds.i1d.attrs['normalized_to'] = normalize_to
             
 
 
-        #     if ('i2d' in self.ds.keys()):
-        #         self.ds.i2d.values = self.ds.i2d.values*normalization_multiplier  
-        #         self.ds.i2d.attrs['normalization_multiplier'] = normalization_multiplier
-        #         self.ds.i2d.attrs['normalized_to'] = normalize_to
-
+            if ('i2d' in self.ds.keys()):
+                self.ds.i2d.values = self.ds.i2d.values*normalization_multiplier  
+                self.ds.i2d.attrs['normalization_multiplier'] = normalization_multiplier
+                self.ds.i2d.attrs['normalized_to'] = normalize_to
+        
+        else:
+            self.ds.i1d.attrs['normalized_to'] = max(self.ds.i1d.values)
+            self.ds.i2d.attrs['normalized_to'] = max(self.ds.i1d.values)
+            self.ds.i1d.attrs['normalization_multiplier'] = 1
+            self.ds.i2d.attrs['normalization_multiplier'] = 1
 
 
 
