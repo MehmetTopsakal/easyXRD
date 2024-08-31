@@ -30,7 +30,9 @@ import fabio
 import pyFAI
 
 
-
+import warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 import matplotlib.pyplot as plt
 plt.rcParams.update({'figure.max_open_warning': 0})
@@ -554,6 +556,7 @@ class exrd():
                                                                         ).interp(radial_i2d=da_i2d.radial_i2d).rename({'radial_i2d': 'radial'})
                                 self.ds['i1d_baseline'].attrs['baseline_note'] = 'baseline is estimated with arpls'
                                 self.ds['i1d_baseline'].attrs['arpls_lam'] = arpls_lam
+
                         else:
                             da_for_baseline = da_i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d')
                             baseline, params = pybaselines.Baseline(x_data=da_for_baseline.radial_i2d.values).arpls(da_for_baseline.values,lam=arpls_lam)
@@ -563,6 +566,7 @@ class exrd():
                                                                     ).interp(radial_i2d=da_i2d.radial_i2d).rename({'radial_i2d': 'radial'})
                             self.ds['i1d_baseline'].attrs['baseline_note'] = 'baseline is estimated with arpls'
                             self.ds['i1d_baseline'].attrs['arpls_lam'] = arpls_lam
+
 
                     else:
                         self.ds['i1d_baseline'] = (self.ds.i2d.mean(dim='azimuthal_i2d')*0)
@@ -583,6 +587,7 @@ class exrd():
                             'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
                             'roi_azimuthal_range':roi_azimuthal_range,
                         }
+                self.ds['i2d'].attrs['roi_azimuthal_range'] = roi_azimuthal_range
             else:
                 self.ds['i1d'] = self.ds['i2d'].mean(dim='azimuthal_i2d').rename({'radial_i2d': 'radial'})
                 self.ds['i1d'].attrs =  {
@@ -630,13 +635,6 @@ class exrd():
                 self.ds.i2d.attrs['normalization_multiplier'] = normalization_multiplier
                 self.ds.i2d.attrs['normalized_to'] = normalize_to
         
-        # else:
-        #     self.ds.i1d.attrs['normalized_to'] = None
-        #     self.ds.i2d.attrs['normalized_to'] = None
-        #     self.ds.i1d.attrs['normalization_multiplier'] = None
-        #     self.ds.i2d.attrs['normalization_multiplier'] = None
-
-
 
 
 
@@ -707,343 +705,6 @@ class exrd():
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def get_baseline_old(self,
-                     input_bkg_ds=None,
-                     use_arpls=True,
-                     arpls_lam=1e5,
-                     plot=True,
-                     roi_radial_range=None,
-                     roi_azimuthal_range=None,
-                     include_baseline_in_ds = True,
-                     normalize = True,
-                     normalize_to = 100,
-                     spotty_data_correction=False,
-                     spotty_data_correction_threshold=1,
-                     ):
-        
-
-        if roi_radial_range is not None:
-            if ('i2d' in self.ds.keys()):
-                for k in ['radial','i1d','i1d_baseline','i1d_refined','i1d_gsas_background']:
-                    if k in self.ds.keys():
-                        del self.ds[k]
-                self.ds = self.ds.sel(radial_i2d=slice(roi_radial_range[0],roi_radial_range[1]))
-                da_i1d_tmp = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
-            else:
-                for k in ['i1d_baseline','i1d_refined','i1d_gsas_background']:
-                    if k in self.ds.keys():
-                        del self.ds[k]
-                self.ds = self.ds.sel(radial=slice(roi_radial_range[0],roi_radial_range[1]))
-                da_i1d_tmp = self.ds.i1d
-        else:
-            if ('i2d' in self.ds.keys()):
-                for k in ['radial','i1d','i1d_baseline','i1d_refined','i1d_gsas_background']:
-                    if k in self.ds.keys():
-                        del self.ds[k]
-                da_i1d_tmp = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
-            else:
-                for k in ['i1d_baseline','i1d_refined','i1d_gsas_background']:
-                    if k in self.ds.keys():
-                        del self.ds[k]
-                da_i1d_tmp = self.ds.i1d
-
-
-
-
-
-        
-        if input_bkg is not None:
-
-
-
-
-
-            # check the limits
-            if not np.array_equal(input_bkg.radial,da_i1d_tmp.radial):
-                if (input_bkg.radial.values[0] > da_i1d_tmp.radial.values[0]) or (input_bkg.radial.values[-1] < da_i1d_tmp.radial.values[-1]):
-                    print('input_bkg is not useable. input_bkg is ignored and using arpls to find the baseline\n\n')
-                    input_bkg_useable = False
-                else:
-                    input_bkg = input_bkg.interp(radial=da_i1d_tmp.radial)
-                    input_bkg_useable = True
-
-            else:
-                input_bkg_useable = True
-
-        else:
-            input_bkg_useable = False
-
-
-        if input_bkg_useable:
-            bkg_scale = da_i1d_tmp.values[0]/input_bkg.values[0]
-            while (min((da_i1d_tmp.values-bkg_scale*input_bkg.values)) < 0):
-                bkg_scale = bkg_scale*0.99
-
-
-
-
-
-        # update i1d
-        if ('i2d' in self.ds.keys()):
-
-            # for k in ['radial','i1d','i1d_baseline','i1d_refined','i1d_gsas_background']:
-            #     if k in self.ds.keys():
-            #         del self.ds[k]
-
-            # get i2d_baseline
-            if input_bkg_useable:
-                i2d_baseline = copy.deepcopy(self.ds.i2d-bkg_scale*input_bkg.rename({'radial': 'radial_i2d'}))
-            else:
-                i2d_baseline = copy.deepcopy(self.ds.i2d)
-
-
-
-            # serial version (can be speed-up using threads)
-            for a_ind in range(self.ds.i2d.shape[0]):
-                # 
-                da_now = i2d_baseline.isel(azimuthal_i2d=a_ind)
-                da_now_dropna = da_now.dropna(dim='radial_i2d')
-                try:
-                    baseline_now, params = pybaselines.Baseline(x_data=da_now_dropna.radial_i2d.values).arpls(da_now_dropna.values,lam=arpls_lam)
-                    # create baseline da by copying
-                    da_now_dropna_baseline = copy.deepcopy(da_now_dropna)
-                    da_now_dropna_baseline.values = baseline_now
-                    # now interpolate baseline da to original i2d radial range
-                    da_now_dropna_baseline_interpolated = da_now_dropna_baseline.interp(radial_i2d=self.ds.i2d.radial_i2d)
-                    i2d_baseline[a_ind,:] = da_now_dropna_baseline_interpolated
-                except:
-                    # da_now.values[:] = np.nan
-                    i2d_baseline[a_ind,:] = da_now
-
-
-            if input_bkg_useable:
-                self.ds['i2d_baseline'] = 0.99*(i2d_baseline+bkg_scale*input_bkg.rename({'radial': 'radial_i2d'}))
-            else:
-                self.ds['i2d_baseline'] = 0.99*i2d_baseline
-
-            # if spotty_data_correction:
-            #     da_diff = self.ds.i2d-self.ds.i2d_baseline 
-            #     self.ds['i2d'] = self.ds.i2d.where(da_diff>spotty_data_correction_threshold)
-                # self.ds['i2d_baseline'] = self.ds.i2d_baseline.where(da_diff>spotty_data_correction_threshold)
-
-                # self.ds['i2d'] = self.ds['i2d'].where((self.ds['i2d']-self.ds['i2d_baseline']) > spotty_data_correction_threshold)
-
-
-            # if roi_azimuthal_range is not None:
-            #     if spotty_data_correction:
-            #         self.ds['i1d'] = (self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').fillna(spotty_data_correction_threshold)-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'})
-            #         self.ds['i1d_baseline'] = (self.ds.i2d_baseline.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').fillna(spotty_data_correction_threshold)-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'})
-            #     else:
-            #         self.ds['i1d'] = self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
-            #         self.ds['i1d_baseline'] = self.ds.i2d_baseline.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
-            #     self.ds['i1d'].attrs =  {
-            #                                 'radial_unit':'q_A^-1',
-            #                                 'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-            #                                 'ylabel':'Intensity (a.u.)',
-            #                                 'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-            #                                 'roi_azimuthal_range':roi_azimuthal_range
-            #                             }
-                
-            #     self.ds['i1d_baseline'].attrs =  {
-            #                                 'radial_unit':'q_A^-1',
-            #                                 'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-            #                                 'ylabel':'Intensity (a.u.)',
-            #                                 'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-            #                                 'roi_azimuthal_range':roi_azimuthal_range,
-            #                                 'arpls_lam':arpls_lam,
-            #                             }
-            # else:
-            # if spotty_data_correction:
-            #     self.ds['i1d'] = (self.ds.i2d.mean(dim='azimuthal_i2d').fillna(spotty_data_correction_threshold)-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'})
-            # else:
-            #     self.ds['i1d'] = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'}) 
-            # self.ds['i1d'].attrs =  {
-            #                             'radial_unit':'q_A^-1',
-            #                             'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-            #                             'ylabel':'Intensity (a.u.)',
-            #                             'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-            #                         }
-            
-            # self.ds['i1d_baseline'] = self.ds.i2d_baseline.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
-            # self.ds['i1d_baseline'].attrs =  {
-            #                             'radial_unit':'q_A^-1',
-            #                             'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-            #                             'ylabel':'Intensity (a.u.)',
-            #                             'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-            #                             'arpls_lam':arpls_lam,
-            #                         }
-                
-
-
-
-
-            if roi_azimuthal_range is not None:
-                self.ds['i1d'] = self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
-                self.ds['i1d'].attrs =  {
-                                            'radial_unit':'q_A^-1',
-                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-                                            'ylabel':'Intensity (a.u.)',
-                                            'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-                                            'roi_azimuthal_range':roi_azimuthal_range
-                                        }
-                self.ds['i1d_baseline'] = self.ds.i2d_baseline.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[-1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
-                self.ds['i1d_baseline'].attrs =  {
-                                            'radial_unit':'q_A^-1',
-                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-                                            'ylabel':'Intensity (a.u.)',
-                                            'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-                                            'roi_azimuthal_range':roi_azimuthal_range,
-                                            'arpls_lam':arpls_lam,
-                                        }
-            else:
-                self.ds['i1d'] = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})
-                self.ds['i1d'].attrs =  {
-                                            'radial_unit':'q_A^-1',
-                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-                                            'ylabel':'Intensity (a.u.)',
-                                            'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-                                        }
-                self.ds['i1d_baseline'] = self.ds.i2d_baseline.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d').rename({'radial_i2d': 'radial'})         
-                self.ds['i1d_baseline'].attrs =  {
-                                            'radial_unit':'q_A^-1',
-                                            'xlabel':'Scattering vector $q$ ($\AA^{-1}$)',
-                                            'ylabel':'Intensity (a.u.)',
-                                            'wavelength_in_angst':self.ds['i2d'].attrs['wavelength_in_meter']*10e9,
-                                            'arpls_lam':arpls_lam,
-                                        }
-                
-
-
-
-            if not include_baseline_in_ds:
-                del self.ds['i2d_baseline']
-
-                    
-
-
-
-
-              
-        # if i1d_bkg is not None:
-        #     # check the limits
-        #     if not np.array_equal(i1d_bkg.radial,self.ds.i1d.radial):
-        #         if (i1d_bkg.radial.values[0] > self.ds.i1d.radial.values[0]) or (i1d_bkg.radial.values[-1] < self.ds.i1d.radial.values[-1]):
-        #             print('i1d_bkg is not useable. i1d_bkg is ignored and using arpls to find the baseline\n\n')
-        #             i1d_bkg_useable = False
-        #         else:
-        #             i1d_bkg = i1d_bkg.interp(radial=self.ds.i1d.radial)
-        #             i1d_bkg_useable = True
-
-        #     else:
-        #         i1d_bkg_useable = True
-
-        #     if i1d_bkg_useable:
-        #         bkg_scale = self.ds['i1d'].values[0]/i1d_bkg.values[0]
-        #         while (min((self.ds['i1d'].values-bkg_scale*i1d_bkg.values)) < 0):
-        #             bkg_scale = bkg_scale*0.99
-        #         if use_arpls:
-        #             baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']-bkg_scale*i1d_bkg).values, 
-        #                                                                                        lam=arpls_lam)[0]
-        #             self.ds['i1d_baseline'] = xr.DataArray(data=(baseline+bkg_scale*i1d_bkg.values),
-        #                                                    dims=['radial'],
-        #                                                    coords={'radial':self.ds.i1d.radial},
-        #                                                    attrs={'arpls_lam':arpls_lam}
-        #                                                    )
-        #         else:
-        #             baseline = bkg_scale*i1d_bkg
-        #             self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),
-        #                                                    dims=['radial'],
-        #                                                    coords={'radial':self.ds.i1d.radial},
-        #                                                    attrs={'arpls_lam':arpls_lam}
-        #                                                    )
-        #     else:
-        #         baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
-        #                                                                                    lam=arpls_lam)[0]
-        #         self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
-        #                                                coords={'radial':self.ds.i1d.radial},
-        #                                                attrs={'arpls_lam':arpls_lam}
-        #                                                )
-        # else:
-        #     print('i1d_bkg is not provided. Using arpls to find the baseline\n\n')
-        #     baseline = pybaselines.Baseline(x_data=self.ds['i1d'].radial.values).arpls((self.ds['i1d']).values, 
-        #                                                                                lam=arpls_lam)[0]
-        #     self.ds['i1d_baseline'] = xr.DataArray(data=(baseline),dims=['radial'],
-        #                                            coords={'radial':self.ds.i1d.radial},
-        #                                            attrs={'arpls_lam':arpls_lam}
-        #                                            )
-            
-
-
-        if normalize:
-
-            # find normalization scale from i1d
-            da_baseline_sub = (self.ds.i1d-self.ds.i1d_baseline)
-            normalization_multiplier = normalize_to*(1/max(da_baseline_sub.values))
-
-            self.ds.i1d.values = self.ds.i1d.values*normalization_multiplier
-            self.ds.i1d.attrs['normalization_multiplier'] = normalization_multiplier
-            self.ds.i1d.attrs['normalized_to'] = normalize_to
-            self.ds.i1d_baseline.values = self.ds.i1d_baseline.values*normalization_multiplier
-            self.ds.i1d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
-
-            if ('i2d' in self.ds.keys()):
-                self.ds.i2d.values = self.ds.i2d.values*normalization_multiplier  
-                self.ds.i2d.attrs['normalization_multiplier'] = normalization_multiplier
-                self.ds.i2d.attrs['normalized_to'] = normalize_to
-                self.ds.i2d_baseline.values = self.ds.i2d_baseline.values*normalization_multiplier
-                self.ds.i2d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
-
-
-
-
-
-        if spotty_data_correction:
-            da_diff = self.ds.i2d-self.ds.i2d_baseline 
-
-            self.ds['i2d'] = (self.ds['i2d']).where(da_diff>=spotty_data_correction_threshold)
-
-            i1d_attrs = copy.deepcopy(self.ds.i1d.attrs)
-            self.ds['i1d'] = (((self.ds['i2d']).where(da_diff>=spotty_data_correction_threshold).mean(dim='azimuthal_i2d'))-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'}).fillna(0)   
-            self.ds['i1d'].attrs = i1d_attrs
-
-
-
-
-
-
-
-
-        # if smoothen:
-        #     self.ds['i1d_bkg'] = xr.DataArray(data=savgol_filter(i1d_bkg.interp(radial=self.ds.i1d.radial).values, window_length=savgol_filter_window_length, polyorder=2),
-        #                                     coords=[self.ds.i1d.radial],
-        #                                     dims=['radial'],
-        #                                     attrs={'savgol_filter_window_length': savgol_filter_window_length,
-        #                                             'savgol_filter_polyorder': 2,
-        #                                     } | i1d_bkg.attrs)
-        # else:
-        #     self.ds['i1d_bkg'] = i1d_bkg.interp(radial=self.ds.i1d.radial)
-
-
-        if plot:
-            ds_plotter(ds=self.ds,  plot_hint = 'get_baseline') # type: ignore
 
 
 
@@ -1368,6 +1029,38 @@ class exrd():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def refine_background(self,
                           num_coeffs=10,
                           background_type='chebyschev-1',
@@ -1382,7 +1075,7 @@ class exrd():
                                         }}}
         self.gpx.set_refinement(ParDict)
 
-        rwp_new, rwp_previous = self.gpx_refiner(self)
+        rwp_new, rwp_previous = self.gpx_refiner()
         print('Background is refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
 
         if set_to_false_after_refinement:
@@ -1426,7 +1119,7 @@ class exrd():
         """
         self.gpx.set_refinement({"set":{'LeBail': set_to}},phase=phase)
         if refine:
-            rwp_new, rwp_previous = self.gpx_refiner(self)
+            rwp_new, rwp_previous = self.gpx_refiner()
             if set_to:
                 print('After setting LeBail refinement to True, Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
             else:
@@ -1434,6 +1127,7 @@ class exrd():
         else:
             pass
         self.gpx_saver()
+
 
 
 
