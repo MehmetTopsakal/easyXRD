@@ -31,6 +31,7 @@ plt.rcParams.update({'figure.max_open_warning': 0})
 
 import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 
@@ -53,6 +54,171 @@ class HiddenPrints:
 
 
 
+def i2d_plotter(ds,
+                ax,
+                vmin=None,
+                logscale=False,
+                robust=True,
+                xlabel=False,
+                cbar=True,
+                cmap='Greys'
+                ):
+
+    if ('i2d_baseline' in ds.keys()) and ('roi_azimuthal_range' in ds.i2d.attrs):
+        da_i2d = (ds.i2d)
+    elif ('i2d_baseline' in ds.keys()):
+        da_i2d = (ds.i2d-ds.i2d_baseline)
+    else:
+        da_i2d = (ds.i2d)
+
+    if logscale:
+        da_i2d = np.log(da_i2d)
+
+
+    if cbar:
+        da_i2d.plot.imshow(ax=ax,
+                            robust=robust,
+                            add_colorbar=cbar,
+                            cbar_kwargs=dict(orientation="vertical", 
+                                            pad=0.02, 
+                                            shrink=0.8, 
+                                            label=None
+                                            ),
+                            cmap=cmap,
+                            vmin=vmin
+                                            )
+    else:
+        da_i2d.plot.imshow(ax=ax,
+                            robust=robust,
+                            add_colorbar=cbar,
+                            cmap=cmap,
+                            vmin=vmin
+                            )    
+
+
+    ax.set_xlabel(None)
+    ax.set_ylabel('Azimuthal')
+    ax.set_facecolor('#FFF7D9')
+    if xlabel:
+        ax.set_xlabel(ds.i2d.attrs['xlabel'])
+    else:
+        ax.set_xlabel(None)
+
+
+    if ('roi_azimuthal_range' in ds.i2d.attrs) and ('i1d' in ds.keys()):
+        roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
+        roi_width = ds.i1d.radial.values[-1] - ds.i1d.radial.values[0]
+        roi_height = ds.i1d.attrs['roi_azimuthal_range'][1] - ds.i1d.attrs['roi_azimuthal_range'][0]
+        rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
+        ax.add_patch(rect)
+
+
+
+
+
+
+
+
+
+def phases_plotter(ds,
+                   ax_main,
+                   line_axes=[],
+                   phase_label_x=0.9,
+                   phase_label_y=0.8,
+                   phase_label_yshift=-0.2,
+                   refined=True,
+                   unrefined=True,
+                   ):
+
+        xrdc = XRDCalculator(wavelength=ds.i1d.attrs['wavelength_in_angst'])
+
+
+        if unrefined:
+
+            ds_phases = {}
+            for a in ds.attrs.keys():
+                for aa in range(ds.attrs['num_phases']):
+                        if a == 'PhaseInd_%d_cif'%aa:
+                            with open("tmp.cif", "w") as cif_file:
+                                cif_file.write(ds.attrs[a])
+                            st = Structure.from_file('tmp.cif')
+                            ds_phases[ds.attrs['PhaseInd_%d_label'%aa]] = st
+            os.remove('tmp.cif')
+            for e,st in enumerate(ds_phases):
+                ps = xrdc.get_pattern(ds_phases[st],
+                                    scaled=True,
+                                    two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([ds.i1d.radial.values[0],ds.i1d.radial.values[-1]]) * ( (ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
+                                    )
+                refl_X, refl_Y = ((4 * np.pi) / (ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+                for i in refl_X:
+                    ax_main.axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+
+                    for a in line_axes:
+                        a.axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+
+                markerline, stemlines, stem_baseline = ax_main.stem(refl_X,refl_Y,markerfmt=".")
+                plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
+                plt.setp(markerline, color='C%d'%e)
+
+                ax_main.text(phase_label_x,phase_label_y+e*phase_label_yshift,st,color='C%d'%e,transform=ax_main.transAxes)
+
+
+
+        if refined:
+
+            ds_phases_refined = {}
+            for a in ds.attrs.keys():
+                for aa in range(ds.attrs['num_phases']):
+                        if a == 'PhaseInd_%d_refined_cif'%aa:
+                            with open("tmp.cif", "w") as cif_file:
+                                cif_file.write(ds.attrs[a])
+                            st = Structure.from_file('tmp.cif')
+                            ds_phases_refined[ds.attrs['PhaseInd_%d_label'%aa]] = st
+            os.remove('tmp.cif')
+            for e,st in enumerate(ds_phases_refined):
+                ps = xrdc.get_pattern(ds_phases_refined[st],
+                                    scaled=True,
+                                    two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([ds.i1d.radial.values[0],ds.i1d.radial.values[-1]]) * ( (ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
+                                    )
+                refl_X, refl_Y = ((4 * np.pi) / (ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+                for i in refl_X:
+                    ax_main.axvline(x=i,lw=0.3,color='C%d'%e)
+
+                    for a in line_axes:
+                        a.axvline(x=i,lw=0.3,color='C%d'%e)
+
+                markerline, stemlines, stem_baseline = ax_main.stem(refl_X,refl_Y,markerfmt="+")
+                plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
+                plt.setp(markerline, color='C%d'%e)
+
+                ax_main.text(phase_label_x,phase_label_y+e*phase_label_yshift,st,color='C%d'%e,transform=ax_main.transAxes)
+
+        ax_main.set_xlabel(ds.i1d.attrs['xlabel'])
+        ax_main.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
+        ax_main.set_ylim(bottom=1,top=120)
+        ax_main.set_yscale('log')
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, plot_hint = '1st_loaded_data'):
 
 
@@ -63,28 +229,18 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
                         B
                         C
                         C
-                        C
                         """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
             ax = ax_dict["B"]
-            np.log(ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=0)
-            ax.set_xlabel(None)
-            ax.set_ylabel('Azimuthal')
-            ax.set_facecolor('#FFF7D9')
 
-            try:
-                roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
-                roi_width = ds.i1d.radial.values[-1] - ds.i1d.radial.values[0]
-                roi_height = ds.i1d.attrs['roi_azimuthal_range'][1] - ds.i1d.attrs['roi_azimuthal_range'][0]
-                rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
-                ax.add_patch(rect)
-            except:
-                pass
+            i2d_plotter(ds,ax,cbar=True)
+
 
             ax =  ax_dict["C"]
             np.log(ds.i2d.mean(dim='azimuthal_i2d')).plot(ax=ax,color='k')
             ax.set_xlabel(ds.i1d.attrs['xlabel'])
             ax.set_ylabel(ds.i1d.attrs['ylabel'])
+            ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
 
 
         else:
@@ -97,7 +253,7 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
             ax = ax_dict["C"]
             np.log(ds.i1d).plot(ax=ax,color='k')
             ax.set_xlabel(ds.i1d.attrs['xlabel'])
-            ax.set_ylabel(ds.i1d.attrs['ylabel'])
+            ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
 
 
         
@@ -175,34 +331,8 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
 
             ax = ax_dict["D"]
 
-            if 'i2d_baseline' in ds.keys():
-                da_i2d = ds.i2d-ds.i2d_baseline
-            else:
-                da_i2d = ds.i2d
+            i2d_plotter(ds,ax,cbar=True,vmin=0)
 
-            (da_i2d).plot.imshow(ax=ax,
-                                robust=True,
-                                add_colorbar=True,
-                                cbar_kwargs=dict(orientation="vertical", 
-                                                pad=0.02, 
-                                                shrink=0.8, 
-                                                label=None),
-                                                cmap='Greys',
-                                                vmin=0
-                                                )
-
-            ax.set_xlabel(None)
-            ax.set_ylabel(None)
-            ax.set_facecolor('#FFF7D9')
-
-            try:
-                roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
-                roi_width = ds.i1d.radial.values[-1] - ds.i1d.radial.values[0]
-                roi_height = ds.i1d.attrs['roi_azimuthal_range'][1] - ds.i1d.attrs['roi_azimuthal_range'][0]
-                rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
-                ax.add_patch(rect)
-            except:
-                pass
 
         ax = ax_dict["E"]
 
@@ -216,7 +346,6 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
             ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
             ax.legend(fontsize=8)
         ax.set_xlabel(ds.i1d.attrs['xlabel'])
-
 
 
 
@@ -285,35 +414,9 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
 
 
             ax = ax_dict["D"]
+            i2d_plotter(ds,ax,cbar=True,vmin=0)
 
-            if 'i2d_baseline' in ds.keys():
-                da_i2d = ds.i2d-ds.i2d_baseline
-            else:
-                da_i2d = ds.i2d
 
-            (da_i2d).plot.imshow(ax=ax,
-                                robust=True,
-                                add_colorbar=True,
-                                cbar_kwargs=dict(orientation="vertical", 
-                                                pad=0.02, 
-                                                shrink=0.8, 
-                                                label=None),
-                                                cmap='Greys',
-                                                vmin=0
-                                                )
-
-            ax.set_xlabel(None)
-            ax.set_ylabel(None)
-            ax.set_facecolor('#FFF7D9')
-
-            try:
-                roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
-                roi_width = ds.i1d.radial.values[-1] - ds.i1d.radial.values[0]
-                roi_height = ds.i1d.attrs['roi_azimuthal_range'][1] - ds.i1d.attrs['roi_azimuthal_range'][0]
-                rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
-                ax.add_patch(rect)
-            except:
-                pass
 
         ax = ax_dict["E"]
 
@@ -370,193 +473,6 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
         ax_dict["C"].set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
         ax_dict["C"].set_ylim(bottom=1,top=120)
         ax_dict["C"].set_yscale('log')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    if plot_hint == 'refine_cell_params':
-
-
-        label_x = 0.85,
-        label_y = 0.8,
-        label_y_shift = -0.2,
-        yshift_multiplier = 0.01
-
-
-
-
-        if 'i2d' in ds.keys():
-            fig = plt.figure(figsize=(8,6),dpi=128)
-            mosaic = """
-                        A
-                        A
-                        B
-                        B
-                        B
-                        B
-                        C
-                        """
-        else:
-            fig = plt.figure(figsize=(8,4),dpi=128)
-            mosaic = """
-                        B
-                        B
-                        B
-                        B
-                        C
-                        """
-
-        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-        if 'i2d' in ds.keys():
-            ax = ax = ax_dict["A"]
-
-            if 'i2d_baseline' in ds.keys():
-                try:
-                    np.log(ds.i2d-ds.i2d_baseline+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=yshift_multiplier*ds.i2d.attrs['normalized_to'])
-                except:
-                    np.log(ds.i2d-ds.i2d_baseline).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
-            else:
-                try:
-                    np.log(ds.i2d+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys',vmin=yshift_multiplier*ds.i2d.attrs['normalized_to'])
-                except:
-                    np.log(ds.i2d).plot.imshow(ax=ax,robust=True,add_colorbar=False,cmap='Greys')
-
-            ax.set_xlabel(None)
-            ax.set_ylabel('Azimuthal')
-            ax.set_facecolor('#FFF7D9')
-
-            try:
-                roi_xy = [ds.i1d.radial.values[0],ds.i1d.attrs['roi_azimuthal_range'][0]]
-                roi_width = ds.i1d.radial.values[-1] - ds.i1d.radial.values[0]
-                roi_height = ds.i1d.attrs['roi_azimuthal_range'][1] - ds.i1d.attrs['roi_azimuthal_range'][0]
-                rect = matplotlib.patches.Rectangle(xy = roi_xy, width=roi_width, height=roi_height,color ='r',alpha=0.1)
-                ax.add_patch(rect)
-            except:
-                pass
-
-        ax = ax_dict["B"]
-
-        if 'i1d_baseline' in ds.keys():
-            if 'normalized_to' in ds.i1d.attrs:
-                np.log(ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs. (i1d-i1d_baseline+%.f (norm.))'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
-                np.log(ds.i1d_refined+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
-                np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
-            else:
-                np.log(ds.i1d-ds.i1d_baseline+10).plot(ax=ax,color='k',label='Yobs. (i1d-i1d_baseline+10)')
-                np.log(ds.i1d_refined+10).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+10 (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
-                np.log(ds.i1d_gsas_background+10).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+10')  
-
-        else:
-            if 'normalized_to' in ds.i1d.attrs:
-                np.log(ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs. (i1d+%.f (norm.))'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
-                np.log(ds.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
-                np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
-            else:
-                np.log(ds.i1d).plot(ax=ax,color='k',label='Yobs. (i1d)')
-                np.log(ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
-                np.log(ds.i1d_gsas_background).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.')  
-
-
-
-
-        if ('normalized_to' in ds.i1d.attrs) and ('i1d_baseline' in ds.keys()):
-            ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
-        elif ('i1d_baseline' in ds.keys()):
-            ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline) (a.u.)')
-        elif ('normalized_to' in ds.i1d.attrs):
-            ax.set_ylabel('Log$_{10}$(i1d+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
-        else:
-            ax.set_ylabel('Log$_{10}$(i1d) (a.u.)')
-
-
-
-
-        ax.set_xlabel(None)
-
-
-        ax.legend(loc='upper right',fontsize=8)
-        ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
-
-
-
-        xrdc = XRDCalculator(wavelength=ds.i1d.attrs['wavelength_in_angst'])
-
-        ds_phases = {}
-        for a in ds.attrs.keys():
-            for aa in range(ds.attrs['num_phases']):
-                    if a == 'PhaseInd_%d_cif'%aa:
-                        with open("tmp.cif", "w") as cif_file:
-                            cif_file.write(ds.attrs[a])
-                        st = Structure.from_file('tmp.cif')
-                        ds_phases[ds.attrs['PhaseInd_%d_label'%aa]] = st
-        os.remove('tmp.cif')
-        for e,st in enumerate(ds_phases):
-            ps = xrdc.get_pattern(ds_phases[st],
-                                scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([ds.i1d.radial.values[0],ds.i1d.radial.values[-1]]) * ( (ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
-                                )
-            refl_X, refl_Y = ((4 * np.pi) / (ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
-            for i in refl_X:
-                if 'i2d' in ds.keys():
-                    ax_dict["A"].axvline(x=i,lw=0.3,color='C%d'%e)
-                ax_dict["B"].axvline(x=i,lw=0.3,color='C%d'%e)
-                ax_dict["C"].axvline(x=i,lw=0.3,color='C%d'%e)
-            markerline, stemlines, stem_baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt=".")
-            plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
-            plt.setp(markerline, color='C%d'%e)
-
-
-
-        ds_phases_refined = {}
-        for a in ds.attrs.keys():
-            for aa in range(ds.attrs['num_phases']):
-
-                if a == 'PhaseInd_%d_refined_cif'%aa:
-                    with open("tmp.cif", "w") as cif_file:
-                        cif_file.write(ds.attrs[a])
-                    st = Structure.from_file('tmp.cif')
-                    ds_phases_refined[ds.attrs['PhaseInd_%d_label'%aa]] = st
-        os.remove('tmp.cif')
-        for e,st in enumerate(ds_phases_refined):
-            ps = xrdc.get_pattern(ds_phases_refined[st],
-                                scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([ds.i1d.radial.values[0],ds.i1d.radial.values[-1]]) * ( (ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
-                                )
-            refl_X, refl_Y = ((4 * np.pi) / (ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
-            for i in refl_X:
-                if 'i2d' in ds.keys():
-                    ax_dict["A"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-                ax_dict["B"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-                ax_dict["C"].axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
-            markerline, stemlines, stem_baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt="+")
-            plt.setp(stemlines, linewidth=0.5,linestyle='--', color='C%d'%e)
-            plt.setp(markerline, color='C%d'%e)
-
-
-
-
-        ax_dict["C"].set_xlabel(ds.i1d.attrs['xlabel'])
-        ax_dict["C"].set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
-        ax_dict["C"].set_ylim(bottom=1,top=120)
-        ax_dict["C"].set_yscale('log')
-
-
 
 
 
@@ -638,6 +554,83 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
         ax.legend(loc='upper right',fontsize=8)
         ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
+
+
+
+
+
+
+
+
+
+
+
+
+    if plot_hint == 'refine_cell_params':
+
+
+        label_x = 0.85,
+        label_y = 0.8,
+        label_y_shift = -0.2,
+        yshift_multiplier = 0.01
+
+
+
+
+
+
+        fig = plt.figure(figsize=(8,4),dpi=128)
+        mosaic = """
+                    A
+                    A
+                    A
+                    B
+                    """
+
+        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+        ax = ax_dict["A"]
+
+        if 'i1d_baseline' in ds.keys():
+            if 'normalized_to' in ds.i1d.attrs:
+                np.log(ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs. (i1d-i1d_baseline+%.f (norm.))'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+                np.log(ds.i1d_refined+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+            else:
+                np.log(ds.i1d-ds.i1d_baseline+10).plot(ax=ax,color='k',label='Yobs. (i1d-i1d_baseline+10)')
+                np.log(ds.i1d_refined+10).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+10 (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background+10).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+10')  
+
+        else:
+            if 'normalized_to' in ds.i1d.attrs:
+                np.log(ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Yobs. (i1d+%.f (norm.))'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+                np.log(ds.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc.+%.f (Rwp=%.3f,GoF=%.3f)'%(yshift_multiplier*ds.i1d.attrs['normalized_to'],ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.+%.f'%(yshift_multiplier*ds.i1d.attrs['normalized_to']))
+            else:
+                np.log(ds.i1d).plot(ax=ax,color='k',label='Yobs. (i1d)')
+                np.log(ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Ycalc. (Rwp=%.3f,GoF=%.3f)'%(ds.attrs['Rwp'],ds.attrs['GOF'])) 
+                np.log(ds.i1d_gsas_background).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y_gsas_bkg.')  
+
+
+        if ('normalized_to' in ds.i1d.attrs) and ('i1d_baseline' in ds.keys()):
+            ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
+        elif ('i1d_baseline' in ds.keys()):
+            ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline) (a.u.)')
+        elif ('normalized_to' in ds.i1d.attrs):
+            ax.set_ylabel('Log$_{10}$(i1d+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']))
+        else:
+            ax.set_ylabel('Log$_{10}$(i1d) (a.u.)')
+
+
+
+
+        ax.set_xlabel(None)
+
+
+        ax.legend(loc='upper right',fontsize=8)
+        ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
+
+        phases_plotter(ds,ax_main=ax_dict["B"],line_axes=[ax_dict["A"]])
 
 
 
