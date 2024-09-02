@@ -1138,7 +1138,8 @@ class exrd():
     def refine_cell_params(self,
                            phase='all',
                            set_to_false_after_refinement=True,
-                           update_ds_attrs = True,
+                           update_ds_phases = True,
+                           update_phases = True,
                            plot=False,
                            ):
         """
@@ -1158,15 +1159,26 @@ class exrd():
         self.gpx_saver()
 
 
-        if update_ds_attrs:
+        if update_ds_phases or update_phases:
             for e,p in enumerate(self.gpx.phases()):
                 p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
-                with open('%s/%s_refined.cif'%(self.gsasii_run_directory,p.name), 'r') as ciffile:
-                    ciffile_content = ciffile.read()
-                self.ds.attrs['PhaseInd_%d_refined_cif'%(e)] = ciffile_content
+                if update_ds_phases:
+                    with open('%s/%s_refined.cif'%(self.gsasii_run_directory,p.name), 'r') as ciffile:
+                        ciffile_content = ciffile.read()
+                        self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
+                if update_phases:
+                    st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
+                    self.phases[p.name] = st
+
+
+    #     # refined phases
+    #     self.refined_phases = {}
+    #     for p in self.phases:
+    #             st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
+    #             self.refined_phases[p] = st
 
         if plot:
-            ds_plotter(ds=self.ds,  plot_hint = 'refine_cell_params') # type: ignore
+            ds_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_cell_params') # type: ignore
             
 
 
