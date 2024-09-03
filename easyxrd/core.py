@@ -102,15 +102,38 @@ class exrd():
 
         if update_ds:
             histogram = self.gpx.histograms()[0]
-            if 'normalized_to' in self.ds.i1d.attrs:
-                Ycalc     = histogram.getdata('ycalc').astype('float32')-self.yshift_multiplier*self.ds.i2d.attrs['normalized_to'] # this includes gsas background
-                Ybkg      = histogram.getdata('Background').astype('float32')-self.yshift_multiplier*self.ds.i2d.attrs['normalized_to']
+
+            if 'i1d_baseline' in self.ds.keys():
+                if 'normalized_to' in self.ds.i1d.attrs:
+                    Ycalc = histogram.getdata('ycalc').astype('float32')-self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] # this includes gsas background
+                    Ybkg  = histogram.getdata('Background').astype('float32')-self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']
+                    self.ds['i1d_refined'] = xr.DataArray(data=(self.ds.i1d_baseline.values+Ycalc/self.ds.i1d.attrs['normalization_multiplier']),dims=['radial'],coords={'radial':self.ds.i1d.radial})
+                    self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg/self.ds.i1d.attrs['normalization_multiplier'],dims=['radial'],coords={'radial':self.ds.i1d.radial})
+                    self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+                else:
+                    Ycalc = histogram.getdata('ycalc').astype('float32')-max((self.ds.i1d-self.ds.i1d_baseline).values)*self.yshift_multiplier
+                    Ybkg  = histogram.getdata('Background').astype('float32')-max((self.ds.i1d-self.ds.i1d_baseline).values)*self.yshift_multiplier
+                    self.ds['i1d_refined'] = xr.DataArray(data=(self.ds.i1d_baseline.values+Ycalc),dims=['radial'],coords={'radial':self.ds.i1d.radial})
+                    self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
+                    self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
             else:
-                Ycalc     = histogram.getdata('ycalc').astype('float32') -10 # this includes gsas background
-                Ybkg      = histogram.getdata('Background').astype('float32') -10
-            self.ds['i1d_refined'] = xr.DataArray(data=Ycalc,dims=['radial'],coords={'radial':self.ds.i1d.radial})
-            self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
-            self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+                if 'normalized_to' in self.ds.i1d.attrs:
+                    Ycalc = histogram.getdata('ycalc').astype('float32')-self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] # this includes gsas background
+                    Ybkg  = histogram.getdata('Background').astype('float32')-self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']
+                    self.ds['i1d_refined'] = xr.DataArray(data=(Ycalc/self.ds.i1d.attrs['normalization_multiplier']),dims=['radial'],coords={'radial':self.ds.i1d.radial})
+                    self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg/self.ds.i1d.attrs['normalization_multiplier'],dims=['radial'],coords={'radial':self.ds.i1d.radial})
+                    self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+                else:
+                    Ycalc = histogram.getdata('ycalc').astype('float32')# this includes gsas background
+                    Ybkg  = histogram.getdata('Background').astype('float32')
+                    self.ds['i1d_refined'] = xr.DataArray(data=(Ycalc),dims=['radial'],coords={'radial':self.ds.i1d.radial})
+                    self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
+                    self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+
+
+            # self.ds['i1d_refined'] = xr.DataArray(data=Ycalc+self.ds.i1d_baseline,dims=['radial'],coords={'radial':self.ds.i1d.radial})
+            # self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
+            # self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
 
         return rwp_new, rwp_previous
     
@@ -323,7 +346,7 @@ class exrd():
 
 
         if plot:
-            ds_plotter(self.ds, plot_hint = '1st_loaded_data') # type: ignore
+            exrd_plotter(self.ds, plot_hint = '1st_loaded_data') # type: ignore
 
 
 
@@ -390,8 +413,6 @@ class exrd():
                      roi_radial_range=None,
                      roi_azimuthal_range=None,
                      include_baseline_in_ds = True,
-                     normalize = True,
-                     normalize_to = 100,
                      spotty_data_correction=False,
                      spotty_data_correction_threshold=1,
                      ):
@@ -610,30 +631,30 @@ class exrd():
 
 
 
-        if normalize:
+        # if normalize:
 
-            # find normalization scale from i1d
-            if ('i1d_baseline' in self.ds.keys()):
-                da_baseline_sub = (self.ds.i1d-self.ds.i1d_baseline)
-                normalization_multiplier = normalize_to*(1/max(da_baseline_sub.values))
-                self.ds.i1d_baseline.values = self.ds.i1d_baseline.values*normalization_multiplier
-                if ('i2d_baseline' in self.ds.keys()):
-                    self.ds.i2d_baseline.values = self.ds.i2d_baseline.values*normalization_multiplier
-                    self.ds.i2d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
-            else:  
-                da = (self.ds.i1d)
-                normalization_multiplier = normalize_to*(1/max(da.values))
+        #     # find normalization scale from i1d
+        #     if ('i1d_baseline' in self.ds.keys()):
+        #         da_baseline_sub = (self.ds.i1d-self.ds.i1d_baseline)
+        #         normalization_multiplier = normalize_to*(1/max(da_baseline_sub.values))
+        #         self.ds.i1d_baseline.values = self.ds.i1d_baseline.values*normalization_multiplier
+        #         if ('i2d_baseline' in self.ds.keys()):
+        #             self.ds.i2d_baseline.values = self.ds.i2d_baseline.values*normalization_multiplier
+        #             self.ds.i2d_baseline.attrs['normalization_multiplier'] = normalization_multiplier
+        #     else:  
+        #         da = (self.ds.i1d)
+        #         normalization_multiplier = normalize_to*(1/max(da.values))
 
-            self.ds.i1d.values = self.ds.i1d.values*normalization_multiplier
-            self.ds.i1d.attrs['normalization_multiplier'] = normalization_multiplier
-            self.ds.i1d.attrs['normalized_to'] = normalize_to
+        #     self.ds.i1d.values = self.ds.i1d.values*normalization_multiplier
+        #     self.ds.i1d.attrs['normalization_multiplier'] = normalization_multiplier
+        #     self.ds.i1d.attrs['normalized_to'] = normalize_to
             
 
 
-            if ('i2d' in self.ds.keys()):
-                self.ds.i2d.values = self.ds.i2d.values*normalization_multiplier  
-                self.ds.i2d.attrs['normalization_multiplier'] = normalization_multiplier
-                self.ds.i2d.attrs['normalized_to'] = normalize_to
+        #     if ('i2d' in self.ds.keys()):
+        #         self.ds.i2d.values = self.ds.i2d.values*normalization_multiplier  
+        #         self.ds.i2d.attrs['normalization_multiplier'] = normalization_multiplier
+        #         self.ds.i2d.attrs['normalized_to'] = normalize_to
         
 
 
@@ -650,7 +671,7 @@ class exrd():
 
 
         if plot:
-            ds_plotter(ds=self.ds,  plot_hint = 'get_baseline') # type: ignore
+            exrd_plotter(ds=self.ds,  plot_hint = 'get_baseline') # type: ignore
 
 
 
@@ -762,7 +783,7 @@ class exrd():
             
                 
         if plot:
-            ds_plotter(ds=self.ds, phases=self.phases,  plot_hint = 'load_phases') # type: ignore
+            exrd_plotter(ds=self.ds, phases=self.phases,  plot_hint = 'load_phases') # type: ignore
 
 
 
@@ -786,7 +807,29 @@ class exrd():
 
 
 
-    def setup_gsas2_calculator(self,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def setup_gsas2_refiner(self,
                                gsasii_lib_directory=None,
                                gsasii_scratch_directory=None,
                                instprm_from_gpx=None,
@@ -802,6 +845,9 @@ class exrd():
                                instprm_SHL=0.002,   
                                do_1st_refinement=True,
                                yshift_multiplier=0.01,
+                               normalize = True,
+                               normalize_to = 100,
+                               plot=True,
                         ):
         
 
@@ -899,29 +945,56 @@ class exrd():
 
 
 
+        if normalize:
+            # find normalization scale from i1d
+            if ('i1d_baseline' in self.ds.keys()):
+                da_baseline_sub = (self.ds.i1d-self.ds.i1d_baseline)
+                normalization_multiplier = normalize_to*(1/max(da_baseline_sub.values))
+            else:  
+                da = (self.ds.i1d)
+                normalization_multiplier = normalize_to*(1/max(da.values))
 
-        # np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-        #            fmt='%.7e',
-        #            X=np.column_stack( (self.ds.i1d.radial.values, (self.ds.i1d-self.ds.i1d_baseline).values) ))
-
+            self.ds.i1d.attrs['normalization_multiplier'] = normalization_multiplier
+            self.ds.i1d.attrs['normalized_to'] = normalize_to
+            
+        data_x = np.rad2deg(2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))))
         if 'i1d_baseline' in self.ds.keys():
             if 'normalized_to' in self.ds.i1d.attrs:
-                np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-                        fmt='%.7e',
-                        X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] ) ))   
+                data_y = self.ds.i1d.attrs['normalization_multiplier']*(self.ds.i1d-self.ds.i1d_baseline).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']
             else:
-                np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-                        fmt='%.7e',
-                        X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+10 ) ))  
+                data_y = (self.ds.i1d-self.ds.i1d_baseline).values
+                data_y = data_y + max(data_y)*self.yshift_multiplier
         else:
             if 'normalized_to' in self.ds.i1d.attrs:
-                np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-                        fmt='%.7e',
-                        X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] ) ))   
+                data_y = self.ds.i1d.attrs['normalization_multiplier']*(self.ds.i1d).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']  
             else:
-                np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-                        fmt='%.7e',
-                        X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d).values ) ))  
+                data_y = self.ds.i1d.values
+
+        np.savetxt(
+            '%s/data.xy'%self.gsasii_run_directory,
+            fmt='%.7e',
+            X=np.column_stack(( data_x, data_y ))
+            ) 
+        
+
+        # if 'i1d_baseline' in self.ds.keys():
+        #     if 'normalized_to' in self.ds.i1d.attrs:
+        #         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
+        #                 fmt='%.7e',
+        #                 X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] ) ))   
+        #     else:
+        #         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
+        #                 fmt='%.7e',
+        #                 X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+10 ) ))  
+        # else:
+        #     if 'normalized_to' in self.ds.i1d.attrs:
+        #         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
+        #                 fmt='%.7e',
+        #                 X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] ) ))   
+        #     else:
+        #         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
+        #                 fmt='%.7e',
+        #                 X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d).values ) ))  
 
 
         if instprm_from_gpx is not None:
@@ -1005,23 +1078,45 @@ class exrd():
             matching = fnmatch.filter(l, pattern)
             if matching != []:
                 pwdr_name = matching[0]
-        if 'normalized_to' in self.ds.i1d.attrs:
-            self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'], 0.0, 0.0]
+
+
+
+        # if 'normalized_to' in self.ds.i1d.attrs:
+        #     self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'], 0.0, 0.0]
+        # else:
+        #     self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, 0.0, 0.0, 0.0]
+
+
+                      
+        if 'i1d_baseline' in self.ds.keys():
+            if 'normalized_to' in self.ds.i1d.attrs:
+                self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']]
+            else:
+                self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, max((self.ds.i1d-self.ds.i1d_baseline).values)*self.yshift_multiplier]
         else:
-            self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, 0.0, 0.0, 0.0]
+            if 'normalized_to' in self.ds.i1d.attrs:
+                self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, self.ds.i1d.attrs['normalization_multiplier']*min(self.ds.i1d.values)+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']] 
+            else:
+                self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, min(self.ds.i1d.values)] 
+
 
 
         if do_1st_refinement:
+
+            rwp_new, _ = self.gpx_refiner(remember_previous_ds=False,remember_previous_gpx=False)
             ParDict = {'set': {'Background': {'refine': False,'type': 'chebyschev-1','no. coeffs': 1},
                                }
                         }
             self.gpx.set_refinement(ParDict)
-            rwp_new, _ = self.gpx_refiner(remember_previous_ds=False,remember_previous_gpx=False)
 
             self.gpx.set_refinement({"set":{'LeBail': True}},phase='all')
             rwp_new, _ = self.gpx_refiner(remember_previous_ds=False,remember_previous_gpx=False)
 
-            print('\nRwp from 1st refinement is = %.3f \n '%(rwp_new))
+            print('\nRwp from 1st refinement with LeBail is = %.3f \n '%(rwp_new))
+
+            if plot:
+                exrd_plotter(ds=self.ds, ds_previous=None, plot_hint = '1st_refinement') # type: ignore
+
 
 
 
@@ -1083,7 +1178,7 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            ds_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'refine_background') # type: ignore
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'refine_background') # type: ignore
 
 
 
@@ -1178,7 +1273,7 @@ class exrd():
     #             self.refined_phases[p] = st
 
         if plot:
-            ds_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_cell_params') # type: ignore
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_cell_params') # type: ignore
             
 
 
