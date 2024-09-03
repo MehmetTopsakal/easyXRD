@@ -53,9 +53,11 @@ class HiddenPrints:
 def i1d_plotter(ds,
                 ax,
                 ds_previous=None,
+                ylogscale=True,
                 xlabel=True,
                 return_da = False
                 ):
+    
 
     label_x = 0.85,
     label_y = 0.8,
@@ -65,38 +67,61 @@ def i1d_plotter(ds,
 
     if 'i1d_baseline' in ds.keys():
         if 'normalized_to' in ds.i1d.attrs:
-            np.log(ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Y$_{obs.}$')
-            np.log(ds.i1d_refined+yshift_multiplier*ds.i2d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Y$_{calc.}$')
-            np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y$_{bkg.}$')
-            da_for_return = ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
+            da_Y_obs = ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
+            da_Y_calc= ds.i1d_refined-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
+            da_Y_bkg = ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']
         else:
-            np.log(ds.i1d-ds.i1d_baseline+10).plot(ax=ax,color='k',label='Y$_{obs.}$')
-            np.log(ds.i1d_refined+10).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Y$_{calc.}$')
-            np.log(ds.i1d_gsas_background+10).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y$_{bkg.}$') 
-            da_for_return = ds.i1d-ds.i1d_baseline+10
-
+            da_Y_obs = ds.i1d-ds.i1d_baseline+10
+            da_Y_calc= ds.i1d_refined-ds.i1d_baseline+10
+            da_Y_bkg = ds.i1d_gsas_background+10
     else:
         if 'normalized_to' in ds.i1d.attrs:
-            np.log(ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='Y$_{obs.}$')
-            np.log(ds.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Y$_{calc.}$')
-            np.log(ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y$_{bkg.}$')
-            da_for_return = ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']
+            da_Y_obs = ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']
+            da_Y_calc= ds.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']
+            da_Y_bkg = ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']
         else:
-            np.log(ds.i1d).plot(ax=ax,color='k',label='Y$_{obs.}$')
-            np.log(ds.i1d_refined).plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Y$_{calc.}$')
-            np.log(ds.i1d_gsas_background).plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y$_{bkg.}$') 
-            da_for_return = ds.i1d
+            da_Y_obs = ds.i1d
+            da_Y_calc= ds.i1d_refined
+            da_Y_bkg = ds.i1d_gsas_background
 
 
-    if ('normalized_to' in ds.i1d.attrs) and ('i1d_baseline' in ds.keys()):
-        ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']),fontsize=8)
-    elif ('i1d_baseline' in ds.keys()):
-        ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline) (a.u.)',fontsize=8)
-    elif ('normalized_to' in ds.i1d.attrs):
-        ax.set_ylabel('Log$_{10}$(i1d+%d) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']),fontsize=8)
+    if ylogscale:
+            da_Y_obs =  np.log(da_Y_obs )
+            da_Y_calc=  np.log(da_Y_calc)
+            da_Y_bkg =  np.log(da_Y_bkg )
+
+
+
+    da_Y_obs.plot(ax=ax,color='k',label='Y$_{obs.}$')
+    da_Y_calc.plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Y$_{calc.}$')
+    da_Y_bkg.plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y$_{bkg.}$')
+
+
+
+
+    if ylogscale:
+        if 'i1d_baseline' in ds.keys():
+            if 'normalized_to' in ds.i1d.attrs:
+                ax.set_ylabel('Log$_{10}$(i1d - i1d_baseline + %.f) (norm.)'%(0.01*ds.i1d.attrs['normalized_to']),fontsize=8)
+            else:
+                ax.set_ylabel('Log$_{10}$(i1d - i1d_baseline) (norm.)',fontsize=8)
+        else:
+            if 'normalized_to' in ds.i1d.attrs:
+                ax.set_ylabel('Log$_{10}$(i1d + %.f) (a.u.)'%(0.01*ds.i1d.attrs['normalized_to']),fontsize=8)  
+            else:
+                ax.set_ylabel('Log$_{10}$(i1d) (a.u.)',fontsize=8)
+
     else:
-        ax.set_ylabel('Log$_{10}$(i1d) (a.u.)',fontsize=8)
-
+        if 'i1d_baseline' in ds.keys():
+            if 'normalized_to' in ds.i1d.attrs:
+                ax.set_ylabel('(i1d - i1d_baseline + %.f) (norm.)'%(0.01*ds.i1d.attrs['normalized_to']),fontsize=8)
+            else:
+                ax.set_ylabel('(i1d - i1d_baseline) (a.u.)',fontsize=8)
+        else:
+            if 'normalized_to' in ds.i1d.attrs:
+                ax.set_ylabel('(i1d + %.f) (norm.)'%(0.01*ds.i1d.attrs['normalized_to']),fontsize=8)  
+            else:
+                ax.set_ylabel('(i1d) (a.u.)',fontsize=8)
 
 
     if ds_previous is not None:
@@ -120,7 +145,7 @@ def i1d_plotter(ds,
         ax.set_xlabel(None)
 
     if return_da:
-        return da_for_return
+        return [da_Y_obs,da_Y_calc,da_Y_bkg]
 
 
 
@@ -251,7 +276,7 @@ def phases_plotter(ds,
 
 
 
-def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, plot_hint = '1st_loaded_data'):
+def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, plot_hint = '1st_loaded_data'):
 
 
     if plot_hint == '1st_loaded_data':
@@ -517,6 +542,38 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
 
 
 
+    if plot_hint == '1st_refinement':
+        fig = plt.figure(figsize=(6,4),dpi=128)
+        mosaic = """
+                    A
+                    """
+        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+        [da_Y_obs,da_Y_calc,da_Y_bkg] = i1d_plotter(ds,
+                    ax=ax_dict["A"],
+                    ds_previous=ds_previous,
+                    xlabel=True,
+                    return_da = True,
+                    ylogscale=False
+                    )
+        ax_dict["A"].set_xlabel(None)
+
+        # da = i1d_plotter(ds,
+        #             ax=ax_dict["B"],
+        #             ds_previous=ds_previous,
+        #             xlabel=True,
+        #             return_da = True
+        #             )        
+        # ax_dict["B"].set_ylim(top=np.log(max(da.values)/20))
+        # ax_dict["B"].set_title(None)
+
+
+
+
+
+
+
+
     if plot_hint == 'refine_background':
         fig = plt.figure(figsize=(6,4),dpi=128)
         mosaic = """
@@ -526,22 +583,34 @@ def ds_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, p
                     """
         ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
 
-        da = i1d_plotter(ds,
+        i1d_plotter(ds,
                     ax=ax_dict["A"],
                     ds_previous=ds_previous,
                     xlabel=True,
-                    return_da = True
+                    ylogscale=False,
+                    return_da = False
                     )
         ax_dict["A"].set_xlabel(None)
+        ax_dict["A"].set_ylabel(None)
+        ax_dict["A"].get_legend().remove()
 
-        da = i1d_plotter(ds,
+        [da_Y_obs,da_Y_calc,da_Y_bkg] = i1d_plotter(ds,
                     ax=ax_dict["B"],
                     ds_previous=ds_previous,
                     xlabel=True,
-                    return_da = True
-                    )        
-        ax_dict["B"].set_ylim(top=np.log(max(da.values)/20))
+                    ylogscale=False,
+                    return_da = True,
+                    )  
+
+        bkg_limits =  min(da_Y_bkg.values),max(da_Y_bkg.values)  
+        if bkg_limits[1] < 0:
+            ax_dict["B"].set_ylim(bottom=bkg_limits[0]*2, top=bkg_limits[1]*2)
+        else:
+            ax_dict["B"].set_ylim(bottom=bkg_limits[0]*0.5, top=bkg_limits[1]*2)
         ax_dict["B"].set_title(None)
+
+
+
 
 
 
