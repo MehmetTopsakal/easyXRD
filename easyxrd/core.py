@@ -41,8 +41,29 @@ plt.rcParams.update({'figure.max_open_warning': 0})
 from scipy.ndimage import median_filter
 
 
-from .plotters import *
+
  
+
+
+from . import easyxrd_defaults
+# from .gsasii_methods import *
+from .plotters import *
+
+
+
+
+
+
+"""
+https://gsas-ii.readthedocs.io/en/latest/GSASIIscriptable.html#specifying-refinement-parameters
+h.setHistEntryValue(['Sample Parameters', 'Type'], 'Bragg-Brentano')
+"""
+
+
+
+
+
+
 
 
 
@@ -72,25 +93,21 @@ class exrd():
 
 
 
-
+ 
 
 
     def gpx_refiner(self, 
-                    remember_previous_ds = True, 
-                    remember_previous_gpx = True, 
-                    update_ds=True
+                    update_ds=True,
+                    update_ds_phases=False,
+                    update_phases=False,
+                    update_previous_ds = True, 
+                    update_previous_gpx = True,
+                    update_previous_phases = False, 
                     ):
-
-        if remember_previous_gpx:
-            self.gpx_previous = copy.deepcopy(self.gpx)
-            rwp_previous = self.gpx_previous['Covariance']['data']['Rvals']['Rwp']
-        else:
-            rwp_previous = None
-
-
-        if remember_previous_ds:
-            self.ds_previous = copy.deepcopy(self.ds)
-
+        
+        gpx_previous = copy.deepcopy(self.gpx)
+        ds_previous = copy.deepcopy(self.ds)
+        phases_previous = copy.deepcopy(self.phases)
 
         if self.verbose:
             print('\n\n\n\n\n')
@@ -98,8 +115,7 @@ class exrd():
         else:
             with HiddenPrints():
                 self.gpx.refine()
-        rwp_new = self.gpx['Covariance']['data']['Rvals']['Rwp']
-
+        
         if update_ds:
             histogram = self.gpx.histograms()[0]
 
@@ -118,8 +134,8 @@ class exrd():
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
             else:
                 if 'normalized_to' in self.ds.i1d.attrs:
-                    Ycalc = histogram.getdata('ycalc').astype('float32')-self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] # this includes gsas background
-                    Ybkg  = histogram.getdata('Background').astype('float32')-self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']
+                    Ycalc = histogram.getdata('ycalc').astype('float32') # this includes gsas background
+                    Ybkg  = histogram.getdata('Background').astype('float32')
                     self.ds['i1d_refined'] = xr.DataArray(data=(Ycalc/self.ds.i1d.attrs['normalization_multiplier']),dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg/self.ds.i1d.attrs['normalization_multiplier'],dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
@@ -130,12 +146,50 @@ class exrd():
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
 
+        if update_phases or update_ds_phases:
+            for e,p in enumerate(self.gpx.phases()):
+                p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
+                if update_ds_phases:
+                    with open('%s/%s_refined.cif'%(self.gsasii_run_directory,p.name), 'r') as ciffile:
+                        ciffile_content = ciffile.read()
+                        self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
+                if update_phases:
+                    st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
+                    self.phases[p.name] = st
 
-            # self.ds['i1d_refined'] = xr.DataArray(data=Ycalc+self.ds.i1d_baseline,dims=['radial'],coords={'radial':self.ds.i1d.radial})
-            # self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
-            # self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+        if update_previous_gpx:
+            self.gpx_previous = gpx_previous
+        if update_previous_ds:
+            self.ds_previous = ds_previous
+        if update_previous_phases:
+            self.phases_previous = phases_previous
 
-        return rwp_new, rwp_previous
+        try:
+            gof_change = 100*(self.gpx['Covariance']['data']['Rvals']['GOF'] - self.gpx_previous['Covariance']['data']['Rvals']['GOF'])/self.gpx_previous['Covariance']['data']['Rvals']['GOF']
+            if gof_change < -10:
+                gof_symbol = '✨' #https://www.compart.com/en/unicode/category/So
+            elif gof_change > -1:
+                gof_symbol = '❗' 
+            else:
+                gof_symbol = ''
+            refinement_str = 'Rwp/GoF is now %.3f/%.3f on %d variable(s) (was %.3f(%.2f%%)/%.3f(%.2f%%%s))'%(
+                                                            self.gpx['Covariance']['data']['Rvals']['Rwp'],
+                                                            self.gpx['Covariance']['data']['Rvals']['GOF'],  
+                                                            self.gpx['Covariance']['data']['Rvals']['Nvars'],  
+                                                            self.gpx_previous['Covariance']['data']['Rvals']['Rwp'],
+                                                            100*(self.gpx['Covariance']['data']['Rvals']['Rwp'] - self.gpx_previous['Covariance']['data']['Rvals']['Rwp'])/self.gpx_previous['Covariance']['data']['Rvals']['Rwp'],
+                                                            self.gpx_previous['Covariance']['data']['Rvals']['GOF'],  
+                                                            gof_change,  
+                                                            gof_symbol,                                                            
+            )
+        except:
+            refinement_str = 'Rwp/GoF is %.3f/%.3f on %d variable(s)'%(
+                                                            self.gpx['Covariance']['data']['Rvals']['Rwp'],
+                                                            self.gpx['Covariance']['data']['Rvals']['GOF'],  
+                                                            self.gpx['Covariance']['data']['Rvals']['Nvars'],      
+            )     
+
+        return refinement_str
     
 
 
@@ -264,7 +318,7 @@ class exrd():
                     elif from_txt_file_radial_unit.lower()[0] == 'q':
                         pass
                     else:
-                        print('Unable to determine radial unit. Check the radial_unit in txt file\n\n')
+                        print('Unable to determine radial unit. Check the radial_unit\n\n')
                         return
                     self.ds = xr.Dataset()
                     self.ds['i1d'] = xr.DataArray(data=Y.astype('float32'),
@@ -346,7 +400,7 @@ class exrd():
 
 
         if plot:
-            exrd_plotter(self.ds, plot_hint = '1st_loaded_data') # type: ignore
+            exrd_plotter(self.ds, plot_hint = '1st_loaded_data') 
 
 
 
@@ -671,7 +725,7 @@ class exrd():
 
 
         if plot:
-            exrd_plotter(ds=self.ds,  plot_hint = 'get_baseline') # type: ignore
+            exrd_plotter(ds=self.ds,  plot_hint = 'get_baseline') 
 
 
 
@@ -783,7 +837,7 @@ class exrd():
             
                 
         if plot:
-            exrd_plotter(ds=self.ds, phases=self.phases,  plot_hint = 'load_phases') # type: ignore
+            exrd_plotter(ds=self.ds, phases=self.phases,  plot_hint = 'load_phases') 
 
 
 
@@ -866,8 +920,10 @@ class exrd():
 
         self.yshift_multiplier = yshift_multiplier
 
-        if gsasii_lib_directory is None:
 
+
+
+        if easyxrd_defaults['gsasii_lib_path'] == 'not found':
             try:
                 default_install_path = os.path.join(os.path.expanduser('~'),'g2full/GSAS-II/GSASII')
                 sys.path += [default_install_path]
@@ -890,16 +946,13 @@ class exrd():
                         self.gsasii_lib_directory = user_loc
                     except:
                         print("\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html")
-                # else:
-                    #clear_output()
-                    # self.gsasii_lib_directory = gsasii_lib_directory
         else:
-            if os.path.isdir(gsasii_lib_directory):
-                sys.path += [gsasii_lib_directory]
+            if os.path.isdir(easyxrd_defaults['gsasii_lib_path']):
+                sys.path += [easyxrd_defaults['gsasii_lib_path']]
                 try:
                     import GSASIIscriptable as G2sc
                     import GSASIIlattice as G2lat
-                    self.gsasii_lib_directory = gsasii_lib_directory
+                    self.gsasii_lib_directory = easyxrd_defaults['gsasii_lib_path']
                 except:
                     try:
                         gsasii_lib_directory = input("\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n")
@@ -921,25 +974,12 @@ class exrd():
 
 
 
-        if gsasii_scratch_directory is None:
-            user_home = os.path.expanduser('~')
-            if not os.path.isdir(os.path.join(user_home,'.gsasii_scratch')):
-                os.mkdir(os.path.join(user_home,'.gsasii_scratch'))
-            self.gsasii_scratch_directory = os.path.join(user_home,'.gsasii_scratch')
-        else:
-            try:
-                os.makedirs(gsasii_scratch_directory,exist_ok=True)
-            except Exception as exc:
-                print(exc)
-                print('Unable to creat or use gsasii_scratch_directory. Please check.')
-                return
-            else:
-                self.gsasii_scratch_directory = gsasii_scratch_directory
+        self.easyxrd_scratch_directory = easyxrd_defaults['easyxrd_scratch_path']
 
         # randstr = ''.join(random.choices(string.ascii_uppercase+string.digits, k=7))
-        # self.gsasii_run_directory = '%s/%.2f_%s.gsastmp'%(self.gsasii_scratch_directory,time.time(),randstr)
+        # self.gsasii_run_directory = '%s/%.2f_%s.gsastmp'%(self.easyxrd_scratch_directory,time.time(),randstr)
         randstr ='test'
-        self.gsasii_run_directory = '%s/%.2f_%s.gsastmp'%(self.gsasii_scratch_directory,10.0,randstr)
+        self.gsasii_run_directory = '%s/%.2f_%s.gsastmp'%(self.easyxrd_scratch_directory,10.0,randstr)
 
         os.makedirs(self.gsasii_run_directory,exist_ok=True)
 
@@ -966,7 +1006,7 @@ class exrd():
                 data_y = data_y + max(data_y)*self.yshift_multiplier
         else:
             if 'normalized_to' in self.ds.i1d.attrs:
-                data_y = self.ds.i1d.attrs['normalization_multiplier']*(self.ds.i1d).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']  
+                data_y = self.ds.i1d.attrs['normalization_multiplier']*(self.ds.i1d).values 
             else:
                 data_y = self.ds.i1d.values
 
@@ -976,25 +1016,6 @@ class exrd():
             X=np.column_stack(( data_x, data_y ))
             ) 
         
-
-        # if 'i1d_baseline' in self.ds.keys():
-        #     if 'normalized_to' in self.ds.i1d.attrs:
-        #         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-        #                 fmt='%.7e',
-        #                 X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] ) ))   
-        #     else:
-        #         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-        #                 fmt='%.7e',
-        #                 X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d-self.ds.i1d_baseline).values+10 ) ))  
-        # else:
-        #     if 'normalized_to' in self.ds.i1d.attrs:
-        #         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-        #                 fmt='%.7e',
-        #                 X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'] ) ))   
-        #     else:
-        #         np.savetxt('%s/data.xy'%self.gsasii_run_directory,
-        #                 fmt='%.7e',
-        #                 X=np.column_stack( (np.rad2deg( 2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) ), (self.ds.i1d).values ) ))  
 
 
         if instprm_from_gpx is not None:
@@ -1081,12 +1102,6 @@ class exrd():
 
 
 
-        # if 'normalized_to' in self.ds.i1d.attrs:
-        #     self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, self.yshift_multiplier*self.ds.i1d.attrs['normalized_to'], 0.0, 0.0]
-        # else:
-        #     self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', True, 3, 0.0, 0.0, 0.0]
-
-
                       
         if 'i1d_baseline' in self.ds.keys():
             if 'normalized_to' in self.ds.i1d.attrs:
@@ -1095,7 +1110,7 @@ class exrd():
                 self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, max((self.ds.i1d-self.ds.i1d_baseline).values)*self.yshift_multiplier]
         else:
             if 'normalized_to' in self.ds.i1d.attrs:
-                self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, self.ds.i1d.attrs['normalization_multiplier']*min(self.ds.i1d.values)+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']] 
+                self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, self.ds.i1d.attrs['normalization_multiplier']*min(self.ds.i1d.values)] 
             else:
                 self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, min(self.ds.i1d.values)] 
 
@@ -1103,19 +1118,17 @@ class exrd():
 
         if do_1st_refinement:
 
-            rwp_new, _ = self.gpx_refiner(remember_previous_ds=False,remember_previous_gpx=False)
-            ParDict = {'set': {'Background': {'refine': False,'type': 'chebyschev-1','no. coeffs': 1},
-                               }
-                        }
-            self.gpx.set_refinement(ParDict)
+            _ = self.gpx_refiner(update_ds=False,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=False,update_previous_phases=False)
 
+            self.gpx.set_refinement({'set': {'Background': {'refine': False,'type': 'chebyschev-1','no. coeffs': 1}}})
             self.gpx.set_refinement({"set":{'LeBail': True}},phase='all')
-            rwp_new, _ = self.gpx_refiner(remember_previous_ds=False,remember_previous_gpx=False)
 
-            print('\nRwp from 1st refinement with LeBail is = %.3f \n '%(rwp_new))
+            ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=True,update_phases=False,update_previous_ds=True,update_previous_gpx=False,update_previous_phases=False)
+
+            print('\n ⏩--1st refinement with LeBail is completed: %s \n'%(ref_str))
 
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=None, plot_hint = '1st_refinement') # type: ignore
+                exrd_plotter(ds=self.ds, ds_previous=None, plot_hint = '1st_refinement', title_str='1st refinement with LeBail is completed: %s '%(ref_str)) 
 
 
 
@@ -1138,220 +1151,221 @@ class exrd():
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+###############################################################################################
+###############################################################################################
+###############################################################################################
     def refine_background(self,
-                          num_coeffs=10,
-                          background_type='chebyschev-1',
-                          set_to_false_after_refinement=True,
-                          plot=False,
-                          ):
+                            num_coeffs=10,
+                            background_type='chebyschev-1',
+                            set_to_false_after_refinement=True,
+                            plot=False,
+                            ):
         """
         """
-        ParDict = {'set': {'Background': {'refine': True,
-                                        'type': background_type,
-                                        'no. coeffs': num_coeffs
-                                        }}}
-        self.gpx.set_refinement(ParDict)
 
-        rwp_new, rwp_previous = self.gpx_refiner()
-        print('Background is refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+        self.gpx.set_refinement({'set': {'Background': {'refine': True,'type': background_type,'no. coeffs': num_coeffs,}}})
+
+        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=True,update_previous_phases=False)
+        title_str = 'Background is refined. %s'%ref_str
+        print(' ✅--'+title_str)
 
         if set_to_false_after_refinement:
             self.gpx.set_refinement({'set': {'Background': {'refine': False}}})
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'refine_background') # type: ignore
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'refine_background', title_str=title_str.replace('✨','').replace('❗',''))
 
 
-
-
-
+###############################################################################################
+###############################################################################################
+###############################################################################################
     def refine_inst_parameters(self,
-                               inst_pars_to_refine=['U', 'V', 'W'],
-                               set_to_false_after_refinement=True,
-                               verbose=False
-                               ):
+                                inst_pars_to_refine=['U', 'V', 'W'],
+                                set_to_false_after_refinement=True,
+                                plot=False,
+                                ):
         """
         inst_pars_to_refine=['U', 'V', 'W',   'X', 'Y', 'Z', 'Zero', 'SH/L']
         """
+
         self.gpx.set_refinement({"set": {'Instrument Parameters': inst_pars_to_refine}})
 
-        rwp_new, rwp_previous = self.gpx_refiner(self)
-        print('Instrument parameters %s are refined. Rwp is now %.3f (was %.3f)'%(inst_pars_to_refine,rwp_new,rwp_previous))
+        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=True,update_previous_phases=False)
+        title_str = 'Instrument parameters %s are refined. %s'%(inst_pars_to_refine,ref_str)
+        print(' ✅--'+title_str)
 
         if set_to_false_after_refinement:
             ParDict = {"clear": {'Instrument Parameters': ['X', 'Y', 'Z', 'Zero', 'SH/L', 'U', 'V', 'W']}}
             self.gpx.set_refinement(ParDict)
         self.gpx_saver()
 
+        if plot:
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'refine_inst_params', title_str=title_str.replace('✨','').replace('❗','').replace('✨','').replace('❗',''))
 
 
+###############################################################################################
+###############################################################################################
+###############################################################################################
     def set_LeBail(self,
-                   set_to=True,
-                   phase='all',
-                   refine=False,
-                   
-                   ):
+                    set_to=True,
+                    phase='all',
+                    refine=True,
+                    plot=False
+                    
+                    ):
         """
         """
+
         self.gpx.set_refinement({"set":{'LeBail': set_to}},phase=phase)
+
         if refine:
-            rwp_new, rwp_previous = self.gpx_refiner()
+            ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=False)
             if set_to:
-                print('After setting LeBail refinement to True, Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+                title_str = 'After setting LeBail refinement to True, %s'%(ref_str)
+                print('\n ✅--'+title_str)
+
             else:
-                print('After setting LeBail refinement to False, Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+                title_str = 'After setting LeBail refinement to True, %s'%(ref_str)
+                print('\n ✅--'+title_str)
         else:
             pass
         self.gpx_saver()
 
 
+        if plot:
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'set_LeBail', title_str=title_str.replace('✨','').replace('❗',''))
 
 
-
-
-                
+###############################################################################################
+###############################################################################################
+###############################################################################################
 
     def refine_cell_params(self,
-                           phase='all',
-                           set_to_false_after_refinement=True,
-                           update_ds_phases = True,
-                           update_phases = True,
-                           plot=False,
-                           ):
+                            phase='all',
+                            set_to_false_after_refinement=True,
+                            plot=False,
+                            ):
         """
         """
 
         self.gpx.set_refinement({"set":{'Cell': True}},phase=phase)
-        rwp_new, rwp_previous = self.gpx_refiner(self)
 
+        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=True,update_phases=True,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
         if (phase=='all') or (phase==None):
-            print('Cell parameters of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+            title_str = ('Cell parameters of all phases are refined. %s'%(ref_str))
+            print(' ✅--'+title_str)
+            if plot:
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_cell_params', title_str=title_str.replace('✨','').replace('❗','')) 
         else:
-            print('Cell parameters of %s phase is refined. Rwp is now %.3f (was %.3f)'%(self.gpx.phases()[phase].name,rwp_new,rwp_previous))
-
+            title_str = ('Cell parameters of %s phase is refined. %s'%(self.gpx.phases()[phase].name,ref_str))
+            print(' ✅--'+title_str)
+            if plot:
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_cell_params', title_str=title_str.replace('✨','').replace('❗','')) 
         if set_to_false_after_refinement:
             self.gpx.set_refinement({"set":{'Cell': False}},phase=phase)
-
         self.gpx_saver()
 
 
-        if update_ds_phases or update_phases:
-            for e,p in enumerate(self.gpx.phases()):
-                p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
-                if update_ds_phases:
-                    with open('%s/%s_refined.cif'%(self.gsasii_run_directory,p.name), 'r') as ciffile:
-                        ciffile_content = ciffile.read()
-                        self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
-                if update_phases:
-                    st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
-                    self.phases[p.name] = st
-
-
-    #     # refined phases
-    #     self.refined_phases = {}
-    #     for p in self.phases:
-    #             st = Structure.from_file('%s/%s_refined.cif'%(self.gsasii_run_directory,p))
-    #             self.refined_phases[p] = st
-
-        if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_cell_params') # type: ignore
-            
-
-
-
-
+###############################################################################################
+###############################################################################################
+###############################################################################################
     def refine_strain_broadening(self,
-                           phase='all',
-                           set_to_false_after_refinement=True,
-                           ):
+                            phase='all',
+                            set_to_false_after_refinement=True,
+                            plot=False
+                            ):
         """
         """
 
         self.gpx.set_refinement({"set":{'Mustrain': {'refine':True}}},phase=phase)
-        rwp_new, rwp_previous = self.gpx_refiner(self)
 
+        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
         if (phase=='all') or (phase==None):
-            print('Strain broadening of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+            title_str = ('Strain broadening of all phases are refined. %s'%(ref_str))
+            print(' ✅--'+title_str)
+            if plot:
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_strain_broadenin', title_str='Strain broadening of all phases are refined. %s'%(ref_str)) 
         else:
-            print('Strain broadening of %s phase is refined. Rwp is now %.3f (was %.3f)'%(self.gpx.phases()[phase].name,rwp_new,rwp_previous))
-
+            title_str = ('Strain broadening of %s phase is refined. %s'%(self.gpx.phases()[phase].name,ref_str))
+            print(' ✅--'+title_str)
+            if plot:
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_strain_broadenin', title_str=title_str.replace('✨','').replace('❗','')) 
         if set_to_false_after_refinement:
             self.gpx.set_refinement({"set":{'Mustrain': {'refine':False}}},phase=phase)
-
         self.gpx_saver()
 
 
+###############################################################################################
+###############################################################################################
+###############################################################################################
     def refine_size_broadening(self,
-                           phase='all',
-                           set_to_false_after_refinement=True,
-                           ):
+                            phase='all',
+                            set_to_false_after_refinement=True,
+                            plot=False
+                            ):
         """
         """
 
         self.gpx.set_refinement({"set":{'Size': {'refine':True}}},phase=phase)
-        rwp_new, rwp_previous = self.gpx_refiner(self)
 
+        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
         if (phase=='all') or (phase==None):
-            print('Size broadening of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+            title_str = ('Size broadening of all phases are refined. %s'%(ref_str))
+            print(' ✅--'+title_str)
+            if plot:
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_strain_broadenin', title_str=title_str.replace('✨','').replace('❗','')) 
         else:
-            print('Size broadening of %s phase is refined. Rwp is now %.3f (was %.3f)'%(self.gpx.phases()[phase].name,rwp_new,rwp_previous))
-
+            title_str = ('Size broadening of %s phase is refined. %s'%(self.gpx.phases()[phase].name,ref_str))
+            print(' ✅--'+title_str)
+            if plot:
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_strain_broadenin', title_str=title_str.replace('✨','').replace('❗','')) 
         if set_to_false_after_refinement:
             self.gpx.set_refinement({"set":{'Size': {'refine':False}}},phase=phase)
-
         self.gpx_saver()
 
 
-
-
-
+###############################################################################################
+###############################################################################################
+###############################################################################################
     def refine_phase_fractions(self,
-                           set_to_false_after_refinement=True,
-                           ):
+                            set_to_false_after_refinement=True,
+                            plot=False
+                            ):
         """
         """
+
         self.gpx['PWDR data.xy']['Sample Parameters']['Scale'][1]=False
         for e,p in enumerate(self.phases):
             self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=True
 
-        rwp_new, rwp_previous = self.gpx_refiner(self)
-        print('Phase fractions of all phases are refined. Rwp is now %.3f (was %.3f)'%(rwp_new,rwp_previous))
+        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+        title_str = ('Phase fractions of phases are refined. %s'%(ref_str))
+        print(' ✅--'+title_str)
 
         if set_to_false_after_refinement:
-            self.gpx['PWDR data.xy']['Sample Parameters']['Scale'][1]=False
+            self.gpx['PWDR data.xy']['Sample Parameters']['Scale'][1]=True
             for e,p in enumerate(self.phases):
-                self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=True
+                self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=False
 
         self.gpx_saver()
 
+        if plot:
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_phase_fractions', title_str=title_str.replace('✨','').replace('❗','')) 
 
 
-
+###############################################################################################
+###############################################################################################
+###############################################################################################
     def refine_preferred_orientation(self,
                                     phase='all',
                                     harmonics_order=4,
                                     set_to_false_after_refinement=True,
+                                    plot=False
                                     ):
-        
+        """
+        """
+
         import GSASIIlattice as G2lat
         phase_ind = phase
         L=harmonics_order
@@ -1370,11 +1384,68 @@ class exrd():
 
                 self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'] = ['SH', 1.0, True, [0, 0, 1], L, coef_dict, [''], 0.1]
                 
-                rwp_new, rwp_previous = self.gpx_refiner(self)
-                print('Preferred orientation for %s phase is refined. Rwp is now %.3f (was %.3f)'%(self.gpx.phases()[phase].name,rwp_new,rwp_previous)) 
+                ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+                title_str = ('Preferred orientation for %s phase is refined. %s'%(self.gpx.phases()[phase].name,ref_str)) 
+                print(' ✅--'+title_str)
 
                 if set_to_false_after_refinement:     
                     self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
+
+        self.gpx_saver()
+
+        if plot:
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_preferred_orientation', title_str=title_str.replace('✨','').replace('❗','')) 
+
+
+###############################################################################################
+###############################################################################################
+###############################################################################################
+    def refine_site_property(self,
+                                phase_ind=0,
+                                site_ind=0,
+                                refinement_flags='',
+                                set_to_false_after_refinement=True,
+                                plot=True
+                                ):
+        """
+        """
+
+        site_label = self.gpx.phases()[phase_ind]['Atoms'][site_ind][0]
+        self.gpx.phases()[phase_ind].atom(site_label).refinement_flags = refinement_flags
+
+        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=True,update_phases=True,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+        title_str = ('%s property of site %s of %s phase is refined. %s'%(refinement_flags,site_label,self.gpx.phases()[phase_ind].name,ref_str)) 
+        print(' ✅--'+title_str)
+
+        if set_to_false_after_refinement:     
+            self.gpx.phases()[phase_ind].atom(site_label).refinement_flags = ''
+        
+        self.gpx_saver()
+
+        if plot:
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_site_properties', title_str=title_str.replace('✨','').replace('❗','')) 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1401,15 +1472,17 @@ class exrd():
         self.gpx.refine()
 
 
+
     def replace_gpx_with(self,
                          newgpx_to_replace
                          ):
         """
         """
-        shutil.copy(newgpx_to_replace,'%s/gsas.gpx'%self.gsasii_lib_directory)
+        shutil.copy(newgpx_to_replace,'%s/gsas.gpx'%self.gsasii_run_directory)
         import GSASIIscriptable as G2sc
         self.gpx = G2sc.G2Project(gpxfile='%s/gsas.gpx'%self.gsasii_run_directory)
         self.gpx.refine()
+
 
 
     def export_gpx_to(self,
