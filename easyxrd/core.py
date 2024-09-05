@@ -84,9 +84,10 @@ class HiddenPrints:
 
 
 class exrd():
-    def __init__(self, verbose=False):
-        self.verbose = verbose
+    def __init__(self, verbose=False,figsize=(8,6)):
 
+        self.verbose = verbose
+        self.figsize = figsize
 
         # super(exrd, self).__init__()
 
@@ -96,20 +97,22 @@ class exrd():
  
 
 
-    def gpx_refiner(self, 
+    def refine(self, 
                     update_ds=True,
-                    update_ds_phases=False,
-                    update_phases=False,
+                    update_ds_phases=True,
+                    update_phases=True,
                     update_previous_ds = True, 
                     update_previous_gpx = True,
-                    update_previous_phases = False, 
+                    update_previous_phases = True, 
+                    verbose = False,
+                    plot=False
                     ):
         
         gpx_previous = copy.deepcopy(self.gpx)
         ds_previous = copy.deepcopy(self.ds)
         phases_previous = copy.deepcopy(self.phases)
 
-        if self.verbose:
+        if self.verbose or verbose:
             print('\n\n\n\n\n')
             self.gpx.refine()
         else:
@@ -188,6 +191,10 @@ class exrd():
                                                             self.gpx['Covariance']['data']['Rvals']['GOF'],  
                                                             self.gpx['Covariance']['data']['Rvals']['Nvars'],      
             )     
+
+
+        if plot:
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, figsize=self.figsize, plot_hint = 'refine', title_str=refinement_str.replace('✨','').replace('❗','')) 
 
         return refinement_str
     
@@ -400,7 +407,7 @@ class exrd():
 
 
         if plot:
-            exrd_plotter(self.ds, plot_hint = '1st_loaded_data') 
+            exrd_plotter(self.ds,  figsize=self.figsize, plot_hint = '1st_loaded_data') 
 
 
 
@@ -497,9 +504,30 @@ class exrd():
 
                         da_i1d.values = median_filter(da_i1d.values,size=3)
                         da_i1d_bkg.values = median_filter(da_i1d_bkg.values,size=3)
-                        bkg_scale = da_i1d.values[0]/da_i1d_bkg.values[0]
-                        while (min((da_i1d.values-bkg_scale*da_i1d_bkg.values)) < 0):
-                            bkg_scale = bkg_scale*0.99
+
+                        if roi_radial_range is not None:
+                            bkg_scale = 1
+                            diff_now = (da_i1d.sel(radial_i2d=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial_i2d=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                            if min(diff_now) > 0:
+                                while (min(diff_now) > 0):
+                                    bkg_scale = bkg_scale*1.01
+                                    diff_now = (da_i1d.sel(radial_i2d=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial_i2d=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                            else:
+                                while (min(diff_now) < 0):
+                                    bkg_scale = bkg_scale*0.99
+                                    diff_now = (da_i1d.sel(radial_i2d=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial_i2d=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                        else:
+                            bkg_scale = 1
+                            diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+                            if min(diff_now) > 0:
+                                while (min(diff_now) > 0):
+                                    bkg_scale = bkg_scale*1.01
+                                    diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+                            else:
+                                while (min(diff_now) < 0):
+                                    bkg_scale = bkg_scale*0.99
+                                    diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+
                         if use_arpls:
                             if roi_azimuthal_range is not None:
                                 da_i2d_diff = (self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1]))-bkg_scale*input_bkg.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1]))) 
@@ -578,10 +606,8 @@ class exrd():
                     else:
                         #TODO
                         print('dimensions do not match.... ignoring input_bkg and getting baseline via arpls')
-
-
-
             else:
+
 
                 if ('i2d' in self.ds.keys()):
 
@@ -645,7 +671,9 @@ class exrd():
 
                     else:
                         self.ds['i1d_baseline'] = (self.ds.i2d.mean(dim='azimuthal_i2d')*0)
-
+                        bkg_scale = da_i1d.values[0]/da_i1d_bkg.values[0]
+                        while (min((da_i1d.values-bkg_scale*da_i1d_bkg.values)) < 0):
+                            bkg_scale = bkg_scale*0.99
 
 
                         
@@ -725,7 +753,7 @@ class exrd():
 
 
         if plot:
-            exrd_plotter(ds=self.ds,  plot_hint = 'get_baseline') 
+            exrd_plotter(ds=self.ds,  figsize=self.figsize,  plot_hint = 'get_baseline') 
 
 
 
@@ -837,7 +865,7 @@ class exrd():
             
                 
         if plot:
-            exrd_plotter(ds=self.ds, phases=self.phases,  plot_hint = 'load_phases') 
+            exrd_plotter(ds=self.ds,  figsize=self.figsize, phases=self.phases,  plot_hint = 'load_phases') 
 
 
 
@@ -1118,17 +1146,17 @@ class exrd():
 
         if do_1st_refinement:
 
-            _ = self.gpx_refiner(update_ds=False,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=False,update_previous_phases=False)
+            _ = self.refine(update_ds=False,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=False,update_previous_phases=False,verbose=False)
 
             self.gpx.set_refinement({'set': {'Background': {'refine': False,'type': 'chebyschev-1','no. coeffs': 1}}})
             self.gpx.set_refinement({"set":{'LeBail': True}},phase='all')
 
-            ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=True,update_phases=False,update_previous_ds=True,update_previous_gpx=False,update_previous_phases=False)
+            ref_str = self.refine(update_ds=True,update_ds_phases=True,update_phases=False,update_previous_ds=True,update_previous_gpx=False,update_previous_phases=False,verbose=False)
 
             print('\n ⏩--1st refinement with LeBail is completed: %s \n'%(ref_str))
 
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=None, plot_hint = '1st_refinement', title_str='1st refinement with LeBail is completed: %s '%(ref_str)) 
+                exrd_plotter(ds=self.ds, ds_previous=None,  figsize=self.figsize, plot_hint = '1st_refinement', title_str='1st refinement with LeBail is completed: %s '%(ref_str)) 
 
 
 
@@ -1165,7 +1193,7 @@ class exrd():
 
         self.gpx.set_refinement({'set': {'Background': {'refine': True,'type': background_type,'no. coeffs': num_coeffs,}}})
 
-        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=True,update_previous_phases=False)
+        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=True,update_previous_phases=False)
         title_str = 'Background is refined. %s'%ref_str
         print(' ✅--'+title_str)
 
@@ -1174,13 +1202,39 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'refine_background', title_str=title_str.replace('✨','').replace('❗',''))
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize, plot_hint = 'refine_background', title_str=title_str.replace('✨','').replace('❗',''))
 
 
+    def set_background_refinement(self,
+                        set_num_coeffs_to=10,
+                        set_background_type_to='chebyschev-1',
+                        set_refine_to=True,
+                        save_gpx=True
+                            ):
+        """
+        """
+
+        self.gpx.set_refinement({'set': {'Background': {'refine': set_refine_to,'type': set_background_type_to,'no. coeffs': set_num_coeffs_to,}}})
+
+        if save_gpx:
+            self.gpx_saver()
+
+
+    def clear_background_refinement(self,
+                        save_gpx=True
+                            ):
+        """
+        """
+
+        self.gpx.set_refinement({'set': {'Background': {'refine': False,}}})
+
+        if save_gpx:
+            self.gpx_saver()
+
 ###############################################################################################
 ###############################################################################################
 ###############################################################################################
-    def refine_inst_parameters(self,
+    def refine_instrument_parameters(self,
                                 inst_pars_to_refine=['U', 'V', 'W'],
                                 set_to_false_after_refinement=True,
                                 plot=False,
@@ -1191,7 +1245,7 @@ class exrd():
 
         self.gpx.set_refinement({"set": {'Instrument Parameters': inst_pars_to_refine}})
 
-        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=True,update_previous_phases=False)
+        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=True,update_previous_phases=False)
         title_str = 'Instrument parameters %s are refined. %s'%(inst_pars_to_refine,ref_str)
         print(' ✅--'+title_str)
 
@@ -1201,26 +1255,54 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'refine_inst_params', title_str=title_str.replace('✨','').replace('❗','').replace('✨','').replace('❗',''))
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize, plot_hint = 'refine_inst_params', title_str=title_str.replace('✨','').replace('❗','').replace('✨','').replace('❗',''))
 
+
+    def set_instrument_parameters_refinement(self,
+                        set_inst_pars_to_refine=['U', 'V', 'W'],
+                        set_refine_to=True,
+                        save_gpx=True
+                            ):
+        """
+        """
+
+        self.gpx.set_refinement({"set": {'Instrument Parameters': set_inst_pars_to_refine}})
+
+        if save_gpx:
+            self.gpx_saver()
+
+
+    def clear_instrument_parameters_refinement(self,
+                        save_gpx=True
+                            ):
+        """
+        """
+
+        self.gpx.set_refinement({"clear": {'Instrument Parameters': ['X', 'Y', 'Z', 'Zero', 'SH/L', 'U', 'V', 'W']}})
+
+        if save_gpx:
+            self.gpx_saver()
 
 ###############################################################################################
 ###############################################################################################
 ###############################################################################################
     def set_LeBail(self,
                     set_to=True,
-                    phase='all',
-                    refine=True,
+                    phase_ind='all',
+                    refine=False,
                     plot=False
-                    
                     ):
         """
         """
 
-        self.gpx.set_refinement({"set":{'LeBail': set_to}},phase=phase)
+        if (phase_ind=='all') or (phase_ind==None):
+            self.gpx.set_refinement({"set":{'LeBail': set_to}})
+        else:
+            self.gpx.set_refinement({"set":{'LeBail': set_to}},phase=phase_ind)
+            
 
         if refine:
-            ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=False)
+            ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=False)
             if set_to:
                 title_str = 'After setting LeBail refinement to True, %s'%(ref_str)
                 print('\n ✅--'+title_str)
@@ -1230,100 +1312,188 @@ class exrd():
                 print('\n ✅--'+title_str)
         else:
             pass
+
         self.gpx_saver()
 
 
-        if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous, plot_hint = 'set_LeBail', title_str=title_str.replace('✨','').replace('❗',''))
+        if plot and refine:
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize, plot_hint = 'set_LeBail', title_str=title_str.replace('✨','').replace('❗',''))
 
 
 ###############################################################################################
 ###############################################################################################
 ###############################################################################################
-
-    def refine_cell_params(self,
-                            phase='all',
+    def refine_cell_parameters(self,
+                            phase_ind='all',
                             set_to_false_after_refinement=True,
                             plot=False,
                             ):
         """
         """
 
-        self.gpx.set_refinement({"set":{'Cell': True}},phase=phase)
+        self.gpx.set_refinement({"set":{'Cell': True}},phase=phase_ind)
 
-        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=True,update_phases=True,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
-        if (phase=='all') or (phase==None):
+        ref_str = self.refine(update_ds=True,update_ds_phases=True,update_phases=True,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+        if (phase_ind=='all') or (phase_ind==None):
             title_str = ('Cell parameters of all phases are refined. %s'%(ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_cell_params', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_cell_params', title_str=title_str.replace('✨','').replace('❗','')) 
         else:
-            title_str = ('Cell parameters of %s phase is refined. %s'%(self.gpx.phases()[phase].name,ref_str))
+            title_str = ('Cell parameters of %s phase is refined. %s'%(self.gpx.phases()[phase_ind].name,ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_cell_params', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_cell_params', title_str=title_str.replace('✨','').replace('❗','')) 
         if set_to_false_after_refinement:
-            self.gpx.set_refinement({"set":{'Cell': False}},phase=phase)
+            self.gpx.set_refinement({"set":{'Cell': False}},phase=phase_ind)
         self.gpx_saver()
+
+    def set_cell_parameters_refinement(self,
+                        set_refine_to=True,
+                        phase_ind = 'all',
+                        save_gpx=True
+                    ):
+        """
+        """
+
+        if (phase_ind=='all') or (phase_ind==None):
+            self.gpx.set_refinement({"set":{'Cell': set_refine_to}})
+        else:
+            self.gpx.set_refinement({"set":{'Cell': set_refine_to}},phase=phase_ind)
+
+        if save_gpx:
+            self.gpx_saver()
+
+
+    def clear_cell_parameters_refinement(self,
+                        save_gpx=True
+                    ):
+        """
+        """
+
+        self.gpx.set_refinement({"set":{'Cell': False}})
+
+        if save_gpx:
+            self.gpx_saver()
 
 
 ###############################################################################################
 ###############################################################################################
 ###############################################################################################
     def refine_strain_broadening(self,
-                            phase='all',
+                            phase_ind='all',
                             set_to_false_after_refinement=True,
                             plot=False
                             ):
         """
         """
 
-        self.gpx.set_refinement({"set":{'Mustrain': {'refine':True}}},phase=phase)
+        self.gpx.set_refinement({"set":{'Mustrain': {'refine':True}}},phase=phase_ind)
 
-        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
-        if (phase=='all') or (phase==None):
+        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+        if (phase_ind=='all') or (phase_ind==None):
             title_str = ('Strain broadening of all phases are refined. %s'%(ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_strain_broadenin', title_str='Strain broadening of all phases are refined. %s'%(ref_str)) 
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_strain_broadening', title_str=title_str.replace('✨','').replace('❗','')) 
         else:
-            title_str = ('Strain broadening of %s phase is refined. %s'%(self.gpx.phases()[phase].name,ref_str))
+            title_str = ('Strain broadening of %s phase is refined. %s'%(self.gpx.phases()[phase_ind].name,ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_strain_broadenin', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_strain_broadening', title_str=title_str.replace('✨','').replace('❗','')) 
         if set_to_false_after_refinement:
-            self.gpx.set_refinement({"set":{'Mustrain': {'refine':False}}},phase=phase)
+            self.gpx.set_refinement({"set":{'Mustrain': {'refine':False}}},phase=phase_ind)
         self.gpx_saver()
+
+
+    def set_strain_broadening_refinement(self,
+                        set_refine_to=True,
+                        phase_ind = 'all',
+                        save_gpx=True
+                    ):
+        """
+        """
+        if (phase_ind=='all') or (phase_ind==None):
+            self.gpx.set_refinement({"set":{'Mustrain': {'refine':set_refine_to}}})
+        else:
+            self.gpx.set_refinement({"set":{'Mustrain': {'refine':set_refine_to}}},phase=phase_ind)
+
+        if save_gpx:
+            self.gpx_saver()
+
+
+    def clear_strain_broadening_refinement(self,
+                        save_gpx=True
+                    ):
+        """
+        """
+
+        self.gpx.set_refinement({"set":{'Mustrain': {'refine':False}}})
+
+
+        if save_gpx:
+            self.gpx_saver()
+
+
 
 
 ###############################################################################################
 ###############################################################################################
 ###############################################################################################
     def refine_size_broadening(self,
-                            phase='all',
+                            phase_ind='all',
                             set_to_false_after_refinement=True,
                             plot=False
                             ):
         """
         """
 
-        self.gpx.set_refinement({"set":{'Size': {'refine':True}}},phase=phase)
+        self.gpx.set_refinement({"set":{'Size': {'refine':True}}},phase=phase_ind)
 
-        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
-        if (phase=='all') or (phase==None):
+        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+        if (phase_ind=='all') or (phase_ind==None):
             title_str = ('Size broadening of all phases are refined. %s'%(ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_strain_broadenin', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_strain_broadening', title_str=title_str.replace('✨','').replace('❗','')) 
         else:
-            title_str = ('Size broadening of %s phase is refined. %s'%(self.gpx.phases()[phase].name,ref_str))
+            title_str = ('Size broadening of %s phase is refined. %s'%(self.gpx.phases()[phase_ind].name,ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_strain_broadenin', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_strain_broadening', title_str=title_str.replace('✨','').replace('❗','')) 
         if set_to_false_after_refinement:
-            self.gpx.set_refinement({"set":{'Size': {'refine':False}}},phase=phase)
+            self.gpx.set_refinement({"set":{'Size': {'refine':False}}},phase=phase_ind)
         self.gpx_saver()
 
+
+    def set_size_broadening_refinement(self,
+                        set_refine_to=True,
+                        phase_ind = 'all',
+                        save_gpx=True
+                    ):
+        """
+        """
+        if (phase_ind=='all') or (phase_ind==None):
+            self.gpx.set_refinement({"set":{'Size': {'refine':set_refine_to}}})
+        else:
+            self.gpx.set_refinement({"set":{'Size': {'refine':set_refine_to}}},phase=phase_ind)
+
+        if save_gpx:
+            self.gpx_saver()
+
+
+
+    def clear_size_broadening_refinement(self,
+                        save_gpx=True
+                    ):
+        """
+        """
+
+        self.gpx.set_refinement({"set":{'Size': {'refine':False}}})
+
+
+        if save_gpx:
+            self.gpx_saver()   
 
 ###############################################################################################
 ###############################################################################################
@@ -1339,8 +1509,8 @@ class exrd():
         for e,p in enumerate(self.phases):
             self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=True
 
-        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
-        title_str = ('Phase fractions of phases are refined. %s'%(ref_str))
+        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+        title_str = ('Phase fractions of all phases are refined. %s'%(ref_str))
         print(' ✅--'+title_str)
 
         if set_to_false_after_refinement:
@@ -1351,27 +1521,51 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_phase_fractions', title_str=title_str.replace('✨','').replace('❗','')) 
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_phase_fractions', title_str=title_str.replace('✨','').replace('❗','')) 
 
+
+    def set_phase_fractions_refinement(self,
+                            set_refine_to=True,
+                            save_gpx=True
+                            ):
+        """
+        """
+
+        if set_refine_to:
+            self.gpx['PWDR data.xy']['Sample Parameters']['Scale'][1]=False
+            for e,p in enumerate(self.phases):
+                self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=True
+        else:
+            self.gpx['PWDR data.xy']['Sample Parameters']['Scale'][1]=True
+            for e,p in enumerate(self.phases):
+                self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=False
+        if save_gpx:
+            self.gpx_saver()   
+
+    def clear_phase_fractions_refinement(self,
+                                        save_gpx=True
+                            ):       
+        self.gpx['PWDR data.xy']['Sample Parameters']['Scale'][1]=True
+        for e,p in enumerate(self.phases):
+            self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][1]=False
+        if save_gpx:
+            self.gpx_saver() 
 
 ###############################################################################################
 ###############################################################################################
 ###############################################################################################
     def refine_preferred_orientation(self,
-                                    phase='all',
+                                    phase_ind='all',
                                     harmonics_order=4,
                                     set_to_false_after_refinement=True,
                                     plot=False
                                     ):
         """
         """
-
         import GSASIIlattice as G2lat
-        phase_ind = phase
         L=harmonics_order
-
         for e,st in enumerate(self.phases):
-            if e==phase_ind:
+            if (phase_ind=='all') or (phase_ind==None):
                 coef_dict = {}
                 sytsym=self.gpx['Phases'][st]['General']['SGData']['SGLaue']
                 for l in range(2,L+1):
@@ -1381,21 +1575,100 @@ class exrd():
                         coef_dict[cst]=0.0
                     except:
                         pass
-
                 self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'] = ['SH', 1.0, True, [0, 0, 1], L, coef_dict, [''], 0.1]
-                
-                ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
-                title_str = ('Preferred orientation for %s phase is refined. %s'%(self.gpx.phases()[phase].name,ref_str)) 
-                print(' ✅--'+title_str)
+            else:
+                if e==phase_ind:
+                    coef_dict = {}
+                    sytsym=self.gpx['Phases'][st]['General']['SGData']['SGLaue']
+                    for l in range(2,L+1):
+                        coeffs = G2lat.GenShCoeff(sytsym=sytsym,L=l)
+                        try:
+                            cst = coeffs[0][0][:6]
+                            coef_dict[cst]=0.0
+                        except:
+                            pass
+                    self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'] = ['SH', 1.0, True, [0, 0, 1], L, coef_dict, [''], 0.1]
 
-                if set_to_false_after_refinement:     
+
+        if (phase_ind=='all') or (phase_ind==None):
+            ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+            title_str = ('Preferred orientation for all phases are refined. %s'%(ref_str)) 
+            print(' ✅--'+title_str)
+        else:
+            ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+            title_str = ('Preferred orientation for %s phase is refined. %s'%(self.gpx.phases()[phase_ind].name,ref_str)) 
+            print(' ✅--'+title_str)
+
+
+        if set_to_false_after_refinement:     
+            # self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
+            for e,st in enumerate(self.phases):
+                if (phase_ind=='all') or (phase_ind==None):
                     self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
+                else:
+                    if e==phase_ind:
+                        self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
+
 
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_preferred_orientation', title_str=title_str.replace('✨','').replace('❗','')) 
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_preferred_orientation', title_str=title_str.replace('✨','').replace('❗','')) 
 
+
+
+
+
+    def set_preferred_orientation_refinement(self,
+                                            set_refine_to=True,
+                                            phase_ind=0,
+                                            harmonics_order_to=4,
+                                            save_gpx=True
+                                            ):
+        
+        import GSASIIlattice as G2lat
+
+        L=harmonics_order_to
+
+        for e,st in enumerate(self.phases):
+            if (phase_ind=='all') or (phase_ind==None):
+                coef_dict = {}
+                sytsym=self.gpx['Phases'][st]['General']['SGData']['SGLaue']
+                for l in range(2,L+1):
+                    coeffs = G2lat.GenShCoeff(sytsym=sytsym,L=l)
+                    try:
+                        cst = coeffs[0][0][:6]
+                        coef_dict[cst]=0.0
+                    except:
+                        pass
+                self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'] = ['SH', 1.0, set_refine_to, [0, 0, 1], L, coef_dict, [''], 0.1]
+            else:
+                if e==phase_ind:
+                    coef_dict = {}
+                    sytsym=self.gpx['Phases'][st]['General']['SGData']['SGLaue']
+                    for l in range(2,L+1):
+                        coeffs = G2lat.GenShCoeff(sytsym=sytsym,L=l)
+                        try:
+                            cst = coeffs[0][0][:6]
+                            coef_dict[cst]=0.0
+                        except:
+                            pass
+                    self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'] = ['SH', 1.0, True, [0, 0, 1], L, coef_dict, [''], 0.1]
+
+        if save_gpx:
+            self.gpx_saver()
+
+    def clear_preferred_orientation_refinement(self,
+                                            save_gpx=True
+                                            ):
+        
+
+        for st in self.phases:
+            self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
+
+
+        if save_gpx:
+            self.gpx_saver()
 
 ###############################################################################################
 ###############################################################################################
@@ -1405,7 +1678,7 @@ class exrd():
                                 site_ind=0,
                                 refinement_flags='',
                                 set_to_false_after_refinement=True,
-                                plot=True
+                                plot=False
                                 ):
         """
         """
@@ -1413,8 +1686,8 @@ class exrd():
         site_label = self.gpx.phases()[phase_ind]['Atoms'][site_ind][0]
         self.gpx.phases()[phase_ind].atom(site_label).refinement_flags = refinement_flags
 
-        ref_str = self.gpx_refiner(update_ds=True,update_ds_phases=True,update_phases=True,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
-        title_str = ('%s property of site %s of %s phase is refined. %s'%(refinement_flags,site_label,self.gpx.phases()[phase_ind].name,ref_str)) 
+        ref_str = self.refine(update_ds=True,update_ds_phases=True,update_phases=True,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
+        title_str = ('%s property of %s site of %s phase is refined. %s'%(refinement_flags,site_label,self.gpx.phases()[phase_ind].name,ref_str)) 
         print(' ✅--'+title_str)
 
         if set_to_false_after_refinement:     
@@ -1423,8 +1696,36 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  plot_hint = 'refine_site_properties', title_str=title_str.replace('✨','').replace('❗','')) 
+            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_site_properties', title_str=title_str.replace('✨','').replace('❗','')) 
 
+    def set_site_property_refinement(self,
+                                phase_ind=0,
+                                site_ind=0,
+                                refinement_flags='',
+                                save_gpx = True
+                                ):
+        """
+        """
+
+        site_label = self.gpx.phases()[phase_ind]['Atoms'][site_ind][0]
+        self.gpx.phases()[phase_ind].atom(site_label).refinement_flags = refinement_flags
+        if save_gpx:
+            self.gpx_saver()   
+
+    def clear_site_property_refinement(self,
+                                phase_ind=0,
+                                site_ind=0,
+                                save_gpx = True
+                                ):
+        """
+        """
+
+        site_label = self.gpx.phases()[phase_ind]['Atoms'][site_ind][0]
+        self.gpx.phases()[phase_ind].atom(site_label).refinement_flags = ''
+
+
+        if save_gpx:
+            self.gpx_saver()   
 
 
 
