@@ -282,6 +282,7 @@ def phases_plotter(ds,
 
             ax_main.set_xlabel(ds.i1d.attrs['xlabel'])
 
+        ax_main.set_ylim(bottom=1,top=120)
 
 
 
@@ -300,12 +301,13 @@ def phases_plotter(ds,
 
 
 
-def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None, plot_hint = '1st_loaded_data', title_str=None):
+
+def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, figsize=(8,6), phases=None, plot_hint = '1st_loaded_data', title_str=None):
 
 
     if plot_hint == '1st_loaded_data':
         if 'i2d' in ds.keys():
-            fig = plt.figure(figsize=(8,5),dpi=128)
+            fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
                         B
                         C
@@ -325,7 +327,7 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
 
 
         else:
-            fig = plt.figure(figsize=(8,5),dpi=128)
+            fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
                         C
                         """
@@ -364,7 +366,7 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
 
     elif plot_hint == 'get_baseline':
         if 'i2d' in ds.keys():
-            fig = plt.figure(figsize=(8,5),dpi=128)
+            fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
                         AADDD
                         AADDD
@@ -378,7 +380,7 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
             ax = ax_dict["A"]
             ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
         else:
-            fig = plt.figure(figsize=(8,5),dpi=128)
+            fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
                         AACCC
                         AACCC
@@ -412,7 +414,7 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
 
             ax = ax_dict["D"]
 
-            i2d_plotter(ds,ax,cbar=True,vmin=0)
+            i2d_plotter(ds,ax,cbar=False,vmin=0)
 
 
         ax = ax_dict["E"]
@@ -468,7 +470,7 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
         plot_label_y_shift = -0.2
 
         if 'i2d' in ds.keys():
-            fig = plt.figure(figsize=(8,5),dpi=128)
+            fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
                         D
                         D
@@ -479,7 +481,7 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
                         C
                         """
         else:
-            fig = plt.figure(figsize=(8,5),dpi=128)
+            fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
                         E
                         E
@@ -495,7 +497,7 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
 
 
             ax = ax_dict["D"]
-            i2d_plotter(ds,ax,cbar=True,vmin=0)
+            i2d_plotter(ds,ax,cbar=False,vmin=0)
 
 
 
@@ -506,12 +508,12 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
             ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
             ax.set_ylim(bottom=np.log(0.01*0.9*ds.i2d.attrs['normalized_to']))
             ax.legend(fontsize=8)
-            ax.set_ylim(bottom=-0.02)
+            # ax.set_ylim(bottom=-0.02)
         elif ('i1d_baseline' in ds.keys()):
             np.log(ds.i1d-ds.i1d_baseline +1).plot(ax=ax,color='k',label='i1d - i1d_baseline + 1')
             ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
             ax.legend(fontsize=8)
-            ax.set_ylim(bottom=-0.02)
+            # ax.set_ylim(bottom=-0.02)
         else:
             np.log(ds.i1d).plot(ax=ax,color='k',label='i1d')
             ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
@@ -570,9 +572,10 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
 
 
     else:
-        fig = plt.figure(figsize=(9,5),dpi=128)
+        fig = plt.figure(figsize=figsize,dpi=128)
         mosaic = """
                     2
+                    1
                     1
                     1
                     P
@@ -594,9 +597,9 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, phases=None,
                 ax=ax_dict["2"],
                 vmin=0,
                 logscale=True,
-                robust=True,
+                robust=False,
                 xlabel=False,
-                cbar=True,
+                cbar=False,
                 cmap='Greys',
                 title_str=title_str,
                 )
