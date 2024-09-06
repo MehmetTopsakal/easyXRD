@@ -149,6 +149,28 @@ class exrd():
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
 
+
+            for e,p in enumerate(self.gpx.phases()):
+                self.ds.attrs['PhaseInd_%d_SGSys'%(e)] = self.gpx['Phases'][p.name]['General']['SGData']['SGSys']
+                self.ds.attrs['PhaseInd_%d_SpGrp'%(e)] = self.gpx['Phases'][p.name]['General']['SGData']['SpGrp']
+
+                self.ds.attrs['PhaseInd_%d_cell_a'%(e)] = self.gpx['Phases'][p.name]['General']['Cell'][1]
+                self.ds.attrs['PhaseInd_%d_cell_b'%(e)] = self.gpx['Phases'][p.name]['General']['Cell'][2]
+                self.ds.attrs['PhaseInd_%d_cell_c'%(e)] = self.gpx['Phases'][p.name]['General']['Cell'][3]    
+                self.ds.attrs['PhaseInd_%d_cell_alpha'%(e)] = self.gpx['Phases'][p.name]['General']['Cell'][4]
+                self.ds.attrs['PhaseInd_%d_cell_beta'%(e)] = self.gpx['Phases'][p.name]['General']['Cell'][5]
+                self.ds.attrs['PhaseInd_%d_cell_gamma'%(e)] = self.gpx['Phases'][p.name]['General']['Cell'][6]           
+
+                self.ds.attrs['PhaseInd_%d_size_broadening_type'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Size'][0]
+                self.ds.attrs['PhaseInd_%d_size_0'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Size'][1][0]
+                self.ds.attrs['PhaseInd_%d_size_1'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Size'][1][1]
+                self.ds.attrs['PhaseInd_%d_size_2'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Size'][1][2]
+                self.ds.attrs['PhaseInd_%d_strain_broadening_type'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][0]
+                self.ds.attrs['PhaseInd_%d_mustrain_0'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][0]
+                self.ds.attrs['PhaseInd_%d_mustrain_1'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][1]
+                self.ds.attrs['PhaseInd_%d_mustrain_2'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][2]
+
+
         if update_phases or update_ds_phases:
             for e,p in enumerate(self.gpx.phases()):
                 p.export_CIF(outputname='%s/%s_refined.cif'%(self.gsasii_run_directory,p.name))
@@ -821,6 +843,7 @@ class exrd():
                     phases,
                     mp_rester_api_key='dHgNQRNYSpuizBPZYYab75iJNMJYCklB',
                     plot = True,
+                    store_initial_phases_in_ds=True,
                     ):
         
         self.phases = {}
@@ -857,11 +880,16 @@ class exrd():
             # read cif
             with open('%s.cif'%randstr, 'r') as ciffile:
                 ciffile_content = ciffile.read()
-            self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
+                self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
+                if store_initial_phases_in_ds:
+                    self.ds.attrs['PhaseInd_%d_cif_initial'%(e)] = ciffile_content
             self.ds.attrs['PhaseInd_%d_label'%(e)] = p['label']
             os.remove('%s.cif'%randstr)
 
         self.ds.attrs['num_phases'] = e+1
+
+
+        self.phases_initial = deepcopy(self.phases)
             
                 
         if plot:
@@ -1382,13 +1410,14 @@ class exrd():
 ###############################################################################################
     def refine_strain_broadening(self,
                             phase_ind='all',
+                            type='isotropic',
                             set_to_false_after_refinement=True,
                             plot=False
                             ):
         """
         """
 
-        self.gpx.set_refinement({"set":{'Mustrain': {'refine':True}}},phase=phase_ind)
+        self.gpx.set_refinement({"set":{'Mustrain': {'refine':True,'type':type}}},phase=phase_ind)
 
         ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
         if (phase_ind=='all') or (phase_ind==None):
@@ -1409,14 +1438,15 @@ class exrd():
     def set_strain_broadening_refinement(self,
                         set_refine_to=True,
                         phase_ind = 'all',
+                        type='isotropic',
                         save_gpx=True
                     ):
         """
         """
         if (phase_ind=='all') or (phase_ind==None):
-            self.gpx.set_refinement({"set":{'Mustrain': {'refine':set_refine_to}}})
+            self.gpx.set_refinement({"set":{'Mustrain': {'refine':set_refine_to,'type':type}}})
         else:
-            self.gpx.set_refinement({"set":{'Mustrain': {'refine':set_refine_to}}},phase=phase_ind)
+            self.gpx.set_refinement({"set":{'Mustrain': {'refine':set_refine_to,'type':type}}},phase=phase_ind)
 
         if save_gpx:
             self.gpx_saver()
@@ -1442,13 +1472,14 @@ class exrd():
 ###############################################################################################
     def refine_size_broadening(self,
                             phase_ind='all',
+                            type='isotropic',
                             set_to_false_after_refinement=True,
                             plot=False
                             ):
         """
         """
 
-        self.gpx.set_refinement({"set":{'Size': {'refine':True}}},phase=phase_ind)
+        self.gpx.set_refinement({"set":{'Size': {'refine':True,'type':type}}},phase=phase_ind)
 
         ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=True)
         if (phase_ind=='all') or (phase_ind==None):
@@ -1469,14 +1500,15 @@ class exrd():
     def set_size_broadening_refinement(self,
                         set_refine_to=True,
                         phase_ind = 'all',
+                        type='isotropic',
                         save_gpx=True
                     ):
         """
         """
         if (phase_ind=='all') or (phase_ind==None):
-            self.gpx.set_refinement({"set":{'Size': {'refine':set_refine_to}}})
+            self.gpx.set_refinement({"set":{'Size': {'refine':set_refine_to,'type':type}}})
         else:
-            self.gpx.set_refinement({"set":{'Size': {'refine':set_refine_to}}},phase=phase_ind)
+            self.gpx.set_refinement({"set":{'Size': {'refine':set_refine_to,'type':type}}},phase=phase_ind)
 
         if save_gpx:
             self.gpx_saver()
