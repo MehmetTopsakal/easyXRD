@@ -66,6 +66,9 @@ def i1d_plotter(ds,
     yshift_multiplier = 0.01
 
 
+
+
+
     if 'i1d_baseline' in ds.keys():
         if 'normalized_to' in ds.i1d.attrs:
             da_Y_obs = ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
@@ -84,8 +87,6 @@ def i1d_plotter(ds,
             da_Y_obs = ds.i1d
             da_Y_calc= ds.i1d_refined
             da_Y_bkg = ds.i1d_gsas_background
-
-
     # check negative data boundaries
     min_obs = min(da_Y_obs.values)
     min_calc = min(da_Y_calc.values)
@@ -101,14 +102,38 @@ def i1d_plotter(ds,
             da_Y_obs =  np.log(da_Y_obs+extra_yshift )
             da_Y_calc=  np.log(da_Y_calc+extra_yshift)
             da_Y_bkg =  np.log(da_Y_bkg+extra_yshift )
-
-
-
     da_Y_obs.plot(ax=ax,color='k',label='Y$_{obs.}$')
     da_Y_calc.plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Y$_{calc.}$')
     da_Y_bkg.plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y$_{bkg.}$')
 
 
+    if ds_previous is not None:
+        # try:
+        if 'i1d_baseline' in ds_previous.keys():
+            if 'normalized_to' in ds_previous.i1d.attrs:
+                da_Y_obs = ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
+                da_Y_calc= ds_previous.i1d_refined-ds_previous.i1d_baseline+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']
+                da_Y_bkg = ds_previous.i1d_gsas_background+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']
+            else:
+                da_Y_obs = ds.i1d-ds.i1d_baseline+10
+                da_Y_calc= ds_previous.i1d_refined-ds_previous.i1d_baseline+10
+                da_Y_bkg = ds_previous.i1d_gsas_background+10
+        else:
+            if 'normalized_to' in ds_previous.i1d.attrs:
+                da_Y_obs = ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']
+                da_Y_calc= ds_previous.i1d_refined+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']
+                da_Y_bkg = ds_previous.i1d_gsas_background+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']
+            else:
+                da_Y_obs = ds.i1d
+                da_Y_calc= ds_previous.i1d_refined
+                da_Y_bkg = ds_previous.i1d_gsas_background
+        if ylogscale:
+                da_Y_calc=  np.log(da_Y_calc+extra_yshift)
+                da_Y_bkg =  np.log(da_Y_bkg+extra_yshift )
+        da_Y_calc.plot(ax=ax, alpha=0.9, linewidth=1.2, linestyle='--', color='y',label='Y$_{calc.}$ (old)')
+        da_Y_bkg.plot(ax=ax, alpha=0.9, linewidth=1.2, linestyle='--', color='r',label='Y$_{bkg.}$ (old)')
+        # except:
+        #     pass
 
 
     if ylogscale:
@@ -159,7 +184,7 @@ def i1d_plotter(ds,
     ax.set_title(title_str,fontsize=8,color='r')
 
 
-    ax.legend(loc='upper right',fontsize=8)
+    ax.legend(loc='upper right',fontsize=8,ncol=5)
     ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
     if xlabel:
@@ -240,48 +265,68 @@ def i2d_plotter(ds,
 
 
 
-def phases_plotter(ds,
-                   ax_main,
-                   line_axes=[],
-                   phase_label_x=0.9,
-                   phase_label_y=0.8,
-                   phase_label_yshift=-0.2,
-                   ):
+def phases_plotter(
+        ds,
+        ax_main,
+        phases=None,
+        line_axes=[],
+        phase_label_x=0.9,
+        phase_label_y=0.8,
+        phase_label_yshift=-0.2,
+        ):
 
         xrdc = XRDCalculator(wavelength=ds.i1d.attrs['wavelength_in_angst'])
 
 
 
+        if phases is not None:
+            for e,st in enumerate(phases):
+                ps = xrdc.get_pattern(phases[st],
+                                    scaled=True,
+                                    two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([ds.i1d.radial.values[0],ds.i1d.radial.values[-1]]) * ( (ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
+                                    )
+                refl_X, refl_Y = ((4 * np.pi) / (ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+                for i in refl_X:
+                    ax_main.axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+                    for a in line_axes:
+                        a.axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
 
-        ds_phases = {}
-        for a in ds.attrs.keys():
-            for aa in range(ds.attrs['num_phases']):
-                    if a == 'PhaseInd_%d_cif'%aa:
-                        with open("tmp.cif", "w") as cif_file:
-                            cif_file.write(ds.attrs[a])
-                        st = Structure.from_file('tmp.cif')
-                        ds_phases[ds.attrs['PhaseInd_%d_label'%aa]] = st
-        os.remove('tmp.cif')
-        for e,st in enumerate(ds_phases):
-            ps = xrdc.get_pattern(ds_phases[st],
-                                scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([ds.i1d.radial.values[0],ds.i1d.radial.values[-1]]) * ( (ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
-                                )
-            refl_X, refl_Y = ((4 * np.pi) / (ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
-            for i in refl_X:
-                ax_main.axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+                markerline, stemlines, stem_baseline = ax_main.stem(refl_X,refl_Y,markerfmt=".")
+                plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
+                plt.setp(markerline, color='C%d'%e)
 
-                for a in line_axes:
-                    a.axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+                ax_main.text(phase_label_x,phase_label_y+e*phase_label_yshift,st,color='C%d'%e,transform=ax_main.transAxes)
 
-            markerline, stemlines, stem_baseline = ax_main.stem(refl_X,refl_Y,markerfmt=".")
-            plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
-            plt.setp(markerline, color='C%d'%e)
+        else:
+            ds_phases = {}
+            for a in ds.attrs.keys():
+                for aa in range(ds.attrs['num_phases']):
+                        if a == 'PhaseInd_%d_cif'%aa:
+                            with open("tmp.cif", "w") as cif_file:
+                                cif_file.write(ds.attrs[a])
+                            st = Structure.from_file('tmp.cif')
+                            ds_phases[ds.attrs['PhaseInd_%d_label'%aa]] = st
+            os.remove('tmp.cif')
+            for e,st in enumerate(ds_phases):
+                ps = xrdc.get_pattern(ds_phases[st],
+                                    scaled=True,
+                                    two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([ds.i1d.radial.values[0],ds.i1d.radial.values[-1]]) * ( (ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
+                                    )
+                refl_X, refl_Y = ((4 * np.pi) / (ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+                for i in refl_X:
+                    ax_main.axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
+                    for a in line_axes:
+                        a.axvline(x=i,lw=0.3,linestyle='--',color='C%d'%e)
 
-            ax_main.text(phase_label_x,phase_label_y+e*phase_label_yshift,st,color='C%d'%e,transform=ax_main.transAxes)
+                markerline, stemlines, stem_baseline = ax_main.stem(refl_X,refl_Y,markerfmt=".")
+                plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
+                plt.setp(markerline, color='C%d'%e)
 
-            ax_main.set_xlabel(ds.i1d.attrs['xlabel'])
+                ax_main.text(phase_label_x,phase_label_y+e*phase_label_yshift,st,color='C%d'%e,transform=ax_main.transAxes)
 
+
+
+        ax_main.set_xlabel(ds.i1d.attrs['xlabel'])
         ax_main.set_ylim(bottom=1,top=120)
 
 
@@ -302,7 +347,15 @@ def phases_plotter(ds,
 
 
 
-def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, figsize=(8,6), phases=None, plot_hint = '1st_loaded_data', title_str=None):
+def exrd_plotter(ds, 
+                 ds_previous=None, 
+                 phases=None,
+                 gpx=None, 
+                 gpx_previous=None, 
+                 figsize=(8,6), 
+                 plot_hint = '1st_loaded_data', 
+                 title_str=None
+                 ):
 
 
     if plot_hint == '1st_loaded_data':
@@ -368,13 +421,12 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, figsize=(8,6
         if 'i2d' in ds.keys():
             fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
-                        AADDD
-                        AADDD
-                        AADDD
-                        AAEEE
-                        AAEEE
-                        AAEEE
-                        AAEEE
+                        AA222
+                        AA222
+                        AA111
+                        AA111
+                        AA111
+                        AA111
                         """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
             ax = ax_dict["A"]
@@ -410,14 +462,11 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, figsize=(8,6
         
 
         if 'i2d' in ds.keys():
-
-
-            ax = ax_dict["D"]
-
+            ax = ax_dict["2"]
             i2d_plotter(ds,ax,cbar=False,vmin=0)
 
 
-        ax = ax_dict["E"]
+        ax = ax_dict["1"]
 
         if ('i1d_baseline' in ds.keys()) and ('normalized_to' in ds.i1d.attrs):
             np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='i1d - i1d_baseline + %.f'%(0.01*ds.i1d.attrs['normalized_to']))
@@ -494,19 +543,15 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, figsize=(8,6
 
 
         if 'i2d' in ds.keys():
-
-
             ax = ax_dict["D"]
             i2d_plotter(ds,ax,cbar=False,vmin=0)
-
-
 
         ax = ax_dict["E"]
 
         if ('i1d_baseline' in ds.keys()) and ('normalized_to' in ds.i1d.attrs):
             np.log(ds.i1d-ds.i1d_baseline+0.01*ds.i1d.attrs['normalized_to']).plot(ax=ax,color='k',label='i1d - i1d_baseline + %.f  (norm.)'%(0.01*ds.i1d.attrs['normalized_to']))
             ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
-            ax.set_ylim(bottom=np.log(0.01*0.9*ds.i2d.attrs['normalized_to']))
+            ax.set_ylim(bottom=np.log(0.01*0.9*ds.i1d.attrs['normalized_to']))
             ax.legend(fontsize=8)
             # ax.set_ylim(bottom=-0.02)
         elif ('i1d_baseline' in ds.keys()):
@@ -528,34 +573,9 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, figsize=(8,6
         
         ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
-        xrdc = XRDCalculator(wavelength=ds.i1d.attrs['wavelength_in_angst'])
 
-        for e,st in enumerate(phases):
-            ps = xrdc.get_pattern(phases[st],
-                                scaled=True,
-                                two_theta_range=np.rad2deg( 2 * np.arcsin( np.array([ds.i1d.radial.values[0],ds.i1d.radial.values[-1]]) * ( (ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))   ) )
-                                )
-            refl_X, refl_Y = ((4 * np.pi) / (ds.i1d.attrs['wavelength_in_angst'])) * np.sin(np.deg2rad(ps.x) / 2), ps.y
+        phases_plotter(ds,ax_main=ax_dict["C"],phases=phases,line_axes=[ax_dict["D"],ax_dict["E"]])
 
-            for i in refl_X:
-                if 'i2d' in ds.keys():
-                    ax_dict["D"].axvline(x=i,lw=0.3,color='C%d'%e)
-                ax_dict["E"].axvline(x=i,lw=0.3,color='C%d'%e)
-                ax_dict["C"].axvline(x=i,lw=0.3,color='C%d'%e)
-
-            markerline, stemlines, baseline = ax_dict["C"].stem(refl_X,refl_Y,markerfmt=".")
-            ax_dict["C"].set_ylim(bottom=0)
-
-            plt.setp(stemlines, linewidth=0.5, color='C%d'%e)
-            plt.setp(markerline, color='C%d'%e)
-
-            # print([label_x[0]])
-            ax_dict["C"].text(plot_label_x[0],plot_label_y[0]+e*plot_label_y_shift,st,color='C%d'%e,transform=ax_dict["C"].transAxes)
-
-        ax_dict["C"].set_xlabel(ds.i1d.attrs['xlabel'])
-        ax_dict["C"].set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
-        ax_dict["C"].set_ylim(bottom=1,top=120)
-        ax_dict["C"].set_yscale('log')
 
 
 
@@ -582,7 +602,7 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, figsize=(8,6
                  """
         ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
 
-        phases_plotter(ds,ax_main=ax_dict["P"],line_axes=[ax_dict["2"],ax_dict["1"],ax_dict["P"]])
+        phases_plotter(ds,ax_main=ax_dict["P"],phases=phases,line_axes=[ax_dict["2"],ax_dict["1"],ax_dict["P"]])
 
         [da_Y_obs,da_Y_calc,da_Y_bkg] = i1d_plotter(ds,
                                                     ax=ax_dict["1"],
@@ -593,16 +613,18 @@ def exrd_plotter(ds, ds_previous=None, gpx=None, gpx_previous=None, figsize=(8,6
                                                     
                                                     )
         
-        i2d_plotter(ds,
-                ax=ax_dict["2"],
-                vmin=0,
-                logscale=True,
-                robust=False,
-                xlabel=False,
-                cbar=False,
-                cmap='Greys',
-                title_str=title_str,
-                )
+        # i2d_plotter(ds,
+        #         ax=ax_dict["2"],
+        #         vmin=0,
+        #         logscale=False,
+        #         robust=False,
+        #         xlabel=False,
+        #         cbar=False,
+        #         cmap='Greys',
+        #         title_str=title_str,
+        #         )
+
+        i2d_plotter(ds,ax=ax_dict["2"],cbar=False,vmin=0,title_str=title_str,)
 
 
 

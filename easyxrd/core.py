@@ -865,7 +865,7 @@ class exrd():
             
                 
         if plot:
-            exrd_plotter(ds=self.ds,  figsize=self.figsize, phases=self.phases,  plot_hint = 'load_phases') 
+            exrd_plotter(ds=self.ds, phases=self.phases, figsize=self.figsize,  plot_hint = 'load_phases') 
 
 
 
@@ -1146,7 +1146,7 @@ class exrd():
 
         if do_1st_refinement:
 
-            _ = self.refine(update_ds=False,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=False,update_previous_phases=False,verbose=False)
+            _ = self.refine(update_ds=False,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=False,update_previous_phases=False,verbose=False)
 
             self.gpx.set_refinement({'set': {'Background': {'refine': False,'type': 'chebyschev-1','no. coeffs': 1}}})
             self.gpx.set_refinement({"set":{'LeBail': True}},phase='all')
@@ -1193,7 +1193,7 @@ class exrd():
 
         self.gpx.set_refinement({'set': {'Background': {'refine': True,'type': background_type,'no. coeffs': num_coeffs,}}})
 
-        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=True,update_previous_phases=False)
+        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=False)
         title_str = 'Background is refined. %s'%ref_str
         print(' ✅--'+title_str)
 
@@ -1245,7 +1245,7 @@ class exrd():
 
         self.gpx.set_refinement({"set": {'Instrument Parameters': inst_pars_to_refine}})
 
-        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=False,update_previous_gpx=True,update_previous_phases=False)
+        ref_str = self.refine(update_ds=True,update_ds_phases=False,update_phases=False,update_previous_ds=True,update_previous_gpx=True,update_previous_phases=False)
         title_str = 'Instrument parameters %s are refined. %s'%(inst_pars_to_refine,ref_str)
         print(' ✅--'+title_str)
 
