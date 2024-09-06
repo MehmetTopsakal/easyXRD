@@ -184,7 +184,7 @@ def i1d_plotter(ds,
     ax.set_title(title_str,fontsize=8,color='r')
 
 
-    ax.legend(loc='upper right',fontsize=8,ncol=5)
+    ax.legend(loc='upper right',fontsize=6,ncol=2)
     ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
     if xlabel:
@@ -243,7 +243,7 @@ def i2d_plotter(ds,
 
 
     ax.set_xlabel(None)
-    ax.set_ylabel('Azimuthal')
+    ax.set_ylabel(None)
     ax.set_facecolor('#FFF7D9')
     if xlabel:
         ax.set_xlabel(ds.i2d.attrs['xlabel'])
@@ -595,6 +595,7 @@ def exrd_plotter(ds,
         fig = plt.figure(figsize=figsize,dpi=128)
         mosaic = """
                     2
+                    1
                     1
                     1
                     1
