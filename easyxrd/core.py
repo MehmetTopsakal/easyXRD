@@ -84,14 +84,18 @@ class HiddenPrints:
 
 
 class exrd():
-    def __init__(self, verbose=False,figsize=(8,6)):
+    def __init__(self, 
+                 verbose=False,figsize=(8,6), 
+                 i2d_robust=True,
+                 i1d_ylogscale=True,
+                 i2d_logscale=True,
+                 ):
 
         self.verbose = verbose
         self.figsize = figsize
-
-        # super(exrd, self).__init__()
-
-
+        self.i2d_robust = i2d_robust
+        self.i1d_ylogscale = i1d_ylogscale
+        self.i2d_logscale = i2d_logscale
 
 
  
@@ -169,6 +173,25 @@ class exrd():
                 self.ds.attrs['PhaseInd_%d_mustrain_0'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][0]
                 self.ds.attrs['PhaseInd_%d_mustrain_1'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][1]
                 self.ds.attrs['PhaseInd_%d_mustrain_2'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][2]
+
+
+            for e,p in enumerate(gpx_previous.phases()):
+                self.ds.attrs['PhaseInd_%d_cell_a_previous'%(e)] = gpx_previous['Phases'][p.name]['General']['Cell'][1]
+                self.ds.attrs['PhaseInd_%d_cell_b_previous'%(e)] = gpx_previous['Phases'][p.name]['General']['Cell'][2]
+                self.ds.attrs['PhaseInd_%d_cell_c_previous'%(e)] = gpx_previous['Phases'][p.name]['General']['Cell'][3]    
+                self.ds.attrs['PhaseInd_%d_cell_alpha_previous'%(e)] = gpx_previous['Phases'][p.name]['General']['Cell'][4]
+                self.ds.attrs['PhaseInd_%d_cell_beta_previous'%(e)] = gpx_previous['Phases'][p.name]['General']['Cell'][5]
+                self.ds.attrs['PhaseInd_%d_cell_gamma_previous'%(e)] = gpx_previous['Phases'][p.name]['General']['Cell'][6]     
+
+                self.ds.attrs['PhaseInd_%d_size_broadening_type_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Size'][0]
+                self.ds.attrs['PhaseInd_%d_size_0_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Size'][1][0]
+                self.ds.attrs['PhaseInd_%d_size_1_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Size'][1][1]
+                self.ds.attrs['PhaseInd_%d_size_2_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Size'][1][2]
+                self.ds.attrs['PhaseInd_%d_strain_broadening_type_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][0]
+                self.ds.attrs['PhaseInd_%d_mustrain_0_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][0]
+                self.ds.attrs['PhaseInd_%d_mustrain_1_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][1]
+                self.ds.attrs['PhaseInd_%d_mustrain_2_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][2]
+
 
 
         if update_phases or update_ds_phases:
@@ -427,12 +450,14 @@ class exrd():
 
 
 
-
         if plot:
-            exrd_plotter(self.ds,  figsize=self.figsize, plot_hint = '1st_loaded_data') 
-
-
-
+            exrd_plotter(self.ds,  
+                         figsize=self.figsize, 
+                         i2d_robust = self.i2d_robust, 
+                         i2d_logscale = self.i2d_logscale, 
+                         i1d_ylogscale = self.i1d_ylogscale, 
+                         plot_hint = 'load_xrd_data'
+                         )
 
 
 
@@ -507,6 +532,7 @@ class exrd():
             plot=False
 
         else:
+
 
             if input_bkg is not None:
                 if (('i2d' in self.ds.keys())) and ('i2d' in input_bkg.ds.keys()):
@@ -775,12 +801,14 @@ class exrd():
 
 
         if plot:
-            exrd_plotter(ds=self.ds,  figsize=self.figsize,  plot_hint = 'get_baseline') 
 
-
-
-
-
+            exrd_plotter(self.ds,  
+                         figsize=self.figsize, 
+                         i2d_robust = self.i2d_robust, 
+                         i2d_logscale = self.i2d_logscale, 
+                         i1d_ylogscale = self.i1d_ylogscale, 
+                         plot_hint = 'get_baseline'
+                         )
 
 
 
@@ -893,7 +921,13 @@ class exrd():
             
                 
         if plot:
-            exrd_plotter(ds=self.ds, phases=self.phases, figsize=self.figsize,  plot_hint = 'load_phases') 
+            exrd_plotter(self.ds,  
+                         figsize=self.figsize, 
+                         i2d_robust = self.i2d_robust, 
+                         i2d_logscale = self.i2d_logscale, 
+                         i1d_ylogscale = self.i1d_ylogscale, 
+                         plot_hint = 'load_phases'
+                         )
 
 
 
@@ -1183,8 +1217,18 @@ class exrd():
 
             print('\n ⏩--1st refinement with LeBail is completed: %s \n'%(ref_str))
 
+
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=None,  figsize=self.figsize, plot_hint = '1st_refinement', title_str='1st refinement with LeBail is completed: %s '%(ref_str)) 
+
+                exrd_plotter(self.ds,  
+                            ds_previous=None,
+                            figsize=self.figsize, 
+                            i2d_robust = self.i2d_robust, 
+                            i2d_logscale = self.i2d_logscale, 
+                            i1d_ylogscale = self.i1d_ylogscale, 
+                            plot_hint = '1st_refinement',
+                            title_str='1st refinement with LeBail is completed: %s '%(ref_str)
+                            )
 
 
 
@@ -1230,7 +1274,15 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize, plot_hint = 'refine_background', title_str=title_str.replace('✨','').replace('❗',''))
+            exrd_plotter(ds=self.ds, 
+                         ds_previous=self.ds_previous,  
+                         figsize=self.figsize, 
+                         i2d_robust = self.i2d_robust, 
+                         i2d_logscale = self.i2d_logscale, 
+                         i1d_ylogscale = self.i1d_ylogscale, 
+                         plot_hint = 'refine_background', 
+                         title_str=title_str.replace('✨','').replace('❗','')
+                         )
 
 
     def set_background_refinement(self,
@@ -1283,8 +1335,15 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize, plot_hint = 'refine_inst_params', title_str=title_str.replace('✨','').replace('❗','').replace('✨','').replace('❗',''))
-
+            exrd_plotter(ds=self.ds, 
+                         ds_previous=self.ds_previous,  
+                         figsize=self.figsize, 
+                         i2d_robust = self.i2d_robust, 
+                         i2d_logscale = self.i2d_logscale, 
+                         i1d_ylogscale = self.i1d_ylogscale, 
+                         plot_hint = 'refine_instrument_parameters', 
+                         title_str=title_str.replace('✨','').replace('❗','')
+                         )
 
     def set_instrument_parameters_refinement(self,
                         set_inst_pars_to_refine=['U', 'V', 'W'],
@@ -1345,8 +1404,15 @@ class exrd():
 
 
         if plot and refine:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize, plot_hint = 'set_LeBail', title_str=title_str.replace('✨','').replace('❗',''))
-
+            exrd_plotter(ds=self.ds, 
+                         ds_previous=self.ds_previous,  
+                         figsize=self.figsize, 
+                         i2d_robust = self.i2d_robust, 
+                         i2d_logscale = self.i2d_logscale, 
+                         i1d_ylogscale = self.i1d_ylogscale, 
+                         plot_hint = 'set_LeBail', 
+                         title_str=title_str.replace('✨','').replace('❗','')
+                         )
 
 ###############################################################################################
 ###############################################################################################
@@ -1355,6 +1421,7 @@ class exrd():
                             phase_ind='all',
                             set_to_false_after_refinement=True,
                             plot=False,
+                            report = True,
                             ):
         """
         """
@@ -1366,12 +1433,75 @@ class exrd():
             title_str = ('Cell parameters of all phases are refined. %s'%(ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_cell_params', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, 
+                            ds_previous=self.ds_previous,  
+                            figsize=self.figsize, 
+                            i2d_robust = self.i2d_robust, 
+                            i2d_logscale = self.i2d_logscale, 
+                            i1d_ylogscale = self.i1d_ylogscale, 
+                            plot_hint = 'refine_cell_parameters', 
+                            title_str=title_str.replace('✨','').replace('❗','')
+                            )
         else:
             title_str = ('Cell parameters of %s phase is refined. %s'%(self.gpx.phases()[phase_ind].name,ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_cell_params', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, 
+                            ds_previous=self.ds_previous,  
+                            figsize=self.figsize, 
+                            i2d_robust = self.i2d_robust, 
+                            i2d_logscale = self.i2d_logscale, 
+                            i1d_ylogscale = self.i1d_ylogscale, 
+                            plot_hint = 'refine_cell_parameters', 
+                            title_str=title_str.replace('✨','').replace('❗','')
+                            )  
+
+        if report:
+            for e,si in enumerate(range(self.ds.attrs['num_phases'])):
+                site_ind  =  si
+
+                site_label = self.ds.attrs['PhaseInd_%d_label'%site_ind]
+                site_SGSys = self.ds.attrs['PhaseInd_%d_SGSys'%site_ind]
+                site_SpGrp = self.ds.attrs['PhaseInd_%d_SpGrp'%site_ind]
+
+                site_a = self.ds.attrs['PhaseInd_%d_cell_a'%site_ind]
+                site_b = self.ds.attrs['PhaseInd_%d_cell_b'%site_ind]
+                site_c = self.ds.attrs['PhaseInd_%d_cell_c'%site_ind]
+                site_alpha = self.ds.attrs['PhaseInd_%d_cell_alpha'%site_ind]
+                site_beta = self.ds.attrs['PhaseInd_%d_cell_beta'%site_ind]
+                site_gamma = self.ds.attrs['PhaseInd_%d_cell_gamma'%site_ind]
+
+                site_a_previous = self.ds.attrs['PhaseInd_%d_cell_a_previous'%site_ind]
+                site_b_previous = self.ds.attrs['PhaseInd_%d_cell_b_previous'%site_ind]
+                site_c_previous = self.ds.attrs['PhaseInd_%d_cell_c_previous'%site_ind]
+                site_alpha_previous = self.ds.attrs['PhaseInd_%d_cell_alpha_previous'%site_ind]
+                site_beta_previous = self.ds.attrs['PhaseInd_%d_cell_beta_previous'%site_ind]
+                site_gamma_previous = self.ds.attrs['PhaseInd_%d_cell_gamma_previous'%site_ind]
+
+                report_str = '\n%s-phase\n\n%s (%s)\n\n     refined (old) \
+                    \n a=%.5f (%.5f) \n b=%.5f (%.5f) \n c=%.5f (%.5f) \
+                    \n \\alpha=%.2f (%.2f) \n \\beta=%.2f (%.2f) \n \\gamma=%.2f (%.2f) '%(
+                    site_label,
+                    site_SpGrp.replace(' ',''),
+                    site_SGSys,
+                    site_a,
+                    site_a_previous,
+                    site_b,
+                    site_b_previous,
+                    site_c,
+                    site_c_previous,
+                    site_alpha,
+                    site_alpha_previous,
+                    site_beta,
+                    site_beta_previous,
+                    site_gamma,
+                    site_gamma_previous
+                    )
+                
+                print(report_str+'\n')
+            
+
+
         if set_to_false_after_refinement:
             self.gpx.set_refinement({"set":{'Cell': False}},phase=phase_ind)
         self.gpx_saver()
@@ -1412,7 +1542,8 @@ class exrd():
                             phase_ind='all',
                             type='isotropic',
                             set_to_false_after_refinement=True,
-                            plot=False
+                            plot=False,
+                            report=True
                             ):
         """
         """
@@ -1424,12 +1555,62 @@ class exrd():
             title_str = ('Strain broadening of all phases are refined. %s'%(ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_strain_broadening', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, 
+                            ds_previous=self.ds_previous,  
+                            figsize=self.figsize, 
+                            i2d_robust = self.i2d_robust, 
+                            i2d_logscale = self.i2d_logscale, 
+                            i1d_ylogscale = self.i1d_ylogscale, 
+                            plot_hint = 'refine_strain_broadening', 
+                            title_str=title_str.replace('✨','').replace('❗','')
+                            )
         else:
             title_str = ('Strain broadening of %s phase is refined. %s'%(self.gpx.phases()[phase_ind].name,ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_strain_broadening', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, 
+                            ds_previous=self.ds_previous,  
+                            figsize=self.figsize, 
+                            i2d_robust = self.i2d_robust, 
+                            i2d_logscale = self.i2d_logscale, 
+                            i1d_ylogscale = self.i1d_ylogscale, 
+                            plot_hint = 'refine_strain_broadening', 
+                            title_str=title_str.replace('✨','').replace('❗','')
+                            )
+                
+
+        if report:
+            for e,si in enumerate(range(self.ds.attrs['num_phases'])):
+                site_ind  =  si
+
+                site_label = self.ds.attrs['PhaseInd_%d_label'%site_ind]
+                site_SGSys = self.ds.attrs['PhaseInd_%d_SGSys'%site_ind]
+                site_SpGrp = self.ds.attrs['PhaseInd_%d_SpGrp'%site_ind]
+
+                site_strain_broadening_type = self.ds.attrs['PhaseInd_%d_strain_broadening_type'%site_ind]
+                site_mustrain_0 = self.ds.attrs['PhaseInd_%d_mustrain_0'%site_ind]
+                site_mustrain_1 = self.ds.attrs['PhaseInd_%d_mustrain_1'%site_ind]
+                site_mustrain_2 = self.ds.attrs['PhaseInd_%d_mustrain_2'%site_ind]
+
+                site_strain_broadening_type_previous = self.ds.attrs['PhaseInd_%d_strain_broadening_type_previous'%site_ind]
+                site_mustrain_0_previous = self.ds.attrs['PhaseInd_%d_mustrain_0_previous'%site_ind]
+                site_mustrain_1_previous = self.ds.attrs['PhaseInd_%d_mustrain_1_previous'%site_ind]
+                site_mustrain_2_previous = self.ds.attrs['PhaseInd_%d_mustrain_2_previous'%site_ind]
+
+                report_str = '\n%s-phase\n\n%s (%s)\n\n     refined (old) \
+                    \n type=%s (%s) \n mustrain_0=%.5f (%.5f) \n mustrain_1=%.5f (%.5f) \n mustrain_2=%.5f (%.5f) '%(
+                    site_label,
+                    site_SpGrp.replace(' ',''),
+                    site_SGSys,
+                    site_strain_broadening_type,site_strain_broadening_type_previous,
+                    site_mustrain_0,site_mustrain_0_previous,
+                    site_mustrain_1,site_mustrain_1_previous,
+                    site_mustrain_2,site_mustrain_2_previous,
+                    )
+                
+                print(report_str+'\n')
+
+
         if set_to_false_after_refinement:
             self.gpx.set_refinement({"set":{'Mustrain': {'refine':False}}},phase=phase_ind)
         self.gpx_saver()
@@ -1474,7 +1655,8 @@ class exrd():
                             phase_ind='all',
                             type='isotropic',
                             set_to_false_after_refinement=True,
-                            plot=False
+                            plot=False,
+                            report=True
                             ):
         """
         """
@@ -1486,12 +1668,60 @@ class exrd():
             title_str = ('Size broadening of all phases are refined. %s'%(ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_strain_broadening', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, 
+                            ds_previous=self.ds_previous,  
+                            figsize=self.figsize, 
+                            i2d_robust = self.i2d_robust, 
+                            i2d_logscale = self.i2d_logscale, 
+                            i1d_ylogscale = self.i1d_ylogscale, 
+                            plot_hint = 'refine_size_broadening', 
+                            title_str=title_str.replace('✨','').replace('❗','')
+                            )
         else:
             title_str = ('Size broadening of %s phase is refined. %s'%(self.gpx.phases()[phase_ind].name,ref_str))
             print(' ✅--'+title_str)
             if plot:
-                exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_strain_broadening', title_str=title_str.replace('✨','').replace('❗','')) 
+                exrd_plotter(ds=self.ds, 
+                            ds_previous=self.ds_previous,  
+                            figsize=self.figsize, 
+                            i2d_robust = self.i2d_robust, 
+                            i2d_logscale = self.i2d_logscale, 
+                            i1d_ylogscale = self.i1d_ylogscale, 
+                            plot_hint = 'refine_size_broadening', 
+                            title_str=title_str.replace('✨','').replace('❗','')
+                            )
+                
+        if report:
+            for e,si in enumerate(range(self.ds.attrs['num_phases'])):
+                site_ind  =  si
+
+                site_label = self.ds.attrs['PhaseInd_%d_label'%site_ind]
+                site_SGSys = self.ds.attrs['PhaseInd_%d_SGSys'%site_ind]
+                site_SpGrp = self.ds.attrs['PhaseInd_%d_SpGrp'%site_ind]
+
+                site_strain_broadening_type = self.ds.attrs['PhaseInd_%d_size_broadening_type'%site_ind]
+                site_size_0 = self.ds.attrs['PhaseInd_%d_size_0'%site_ind]
+                site_size_1 = self.ds.attrs['PhaseInd_%d_size_1'%site_ind]
+                site_size_2 = self.ds.attrs['PhaseInd_%d_size_2'%site_ind]
+
+                site_strain_broadening_type_previous = self.ds.attrs['PhaseInd_%d_size_broadening_type_previous'%site_ind]
+                site_size_0_previous = self.ds.attrs['PhaseInd_%d_size_0_previous'%site_ind]
+                site_size_1_previous = self.ds.attrs['PhaseInd_%d_size_1_previous'%site_ind]
+                site_size_2_previous = self.ds.attrs['PhaseInd_%d_size_2_previous'%site_ind]
+
+                report_str = '\n%s-phase\n\n%s (%s)\n\n     refined (old) \
+                    \n type=%s (%s) \n size_0=%.5f (%.5f) \n size_1=%.5f (%.5f) \n size_2=%.5f (%.5f) '%(
+                    site_label,
+                    site_SpGrp.replace(' ',''),
+                    site_SGSys,
+                    site_strain_broadening_type,site_strain_broadening_type_previous,
+                    site_size_0,site_size_0_previous,
+                    site_size_1,site_size_1_previous,
+                    site_size_2,site_size_2_previous,
+                    )
+                
+                print(report_str+'\n')
+
         if set_to_false_after_refinement:
             self.gpx.set_refinement({"set":{'Size': {'refine':False}}},phase=phase_ind)
         self.gpx_saver()
@@ -1553,7 +1783,15 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_phase_fractions', title_str=title_str.replace('✨','').replace('❗','')) 
+            exrd_plotter(ds=self.ds, 
+                        ds_previous=self.ds_previous,  
+                        figsize=self.figsize, 
+                        i2d_robust = self.i2d_robust, 
+                        i2d_logscale = self.i2d_logscale, 
+                        i1d_ylogscale = self.i1d_ylogscale, 
+                        plot_hint = 'refine_phase_fractions', 
+                        title_str=title_str.replace('✨','').replace('❗','')
+                        )
 
 
     def set_phase_fractions_refinement(self,
@@ -1645,7 +1883,15 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_preferred_orientation', title_str=title_str.replace('✨','').replace('❗','')) 
+            exrd_plotter(ds=self.ds, 
+                        ds_previous=self.ds_previous,  
+                        figsize=self.figsize, 
+                        i2d_robust = self.i2d_robust, 
+                        i2d_logscale = self.i2d_logscale, 
+                        i1d_ylogscale = self.i1d_ylogscale, 
+                        plot_hint = 'refine_preferred_orientation', 
+                        title_str=title_str.replace('✨','').replace('❗','')
+                        )
 
 
 
@@ -1728,7 +1974,15 @@ class exrd():
         self.gpx_saver()
 
         if plot:
-            exrd_plotter(ds=self.ds, ds_previous=self.ds_previous,  figsize=self.figsize,  plot_hint = 'refine_site_properties', title_str=title_str.replace('✨','').replace('❗','')) 
+            exrd_plotter(ds=self.ds, 
+                        ds_previous=self.ds_previous,  
+                        figsize=self.figsize, 
+                        i2d_robust = self.i2d_robust, 
+                        i2d_logscale = self.i2d_logscale, 
+                        i1d_ylogscale = self.i1d_ylogscale, 
+                        plot_hint = 'refine_site_property', 
+                        title_str=title_str.replace('✨','').replace('❗','')
+                        )
 
     def set_site_property_refinement(self,
                                 phase_ind=0,
