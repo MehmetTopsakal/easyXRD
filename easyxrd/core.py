@@ -175,6 +175,24 @@ class exrd():
                 self.ds.attrs['PhaseInd_%d_mustrain_2'%(e)] = self.gpx['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][2]
 
 
+
+
+            wtSum = 0.0
+            for e,p in enumerate(self.phases):
+                mass = self.gpx['Phases'][p]['General']['Mass']
+                phFr = self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]
+                wtSum += mass*phFr
+            for e,p in enumerate(self.phases):
+                weightFr = self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]*self.gpx['Phases'][p]['General']['Mass']/wtSum
+                self.ds.attrs['PhaseInd_%d_wt_fraction'%(e)] = weightFr
+
+
+
+
+
+
+
+
             for e,p in enumerate(gpx_previous.phases()):
                 self.ds.attrs['PhaseInd_%d_cell_a_previous'%(e)] = gpx_previous['Phases'][p.name]['General']['Cell'][1]
                 self.ds.attrs['PhaseInd_%d_cell_b_previous'%(e)] = gpx_previous['Phases'][p.name]['General']['Cell'][2]
@@ -191,6 +209,11 @@ class exrd():
                 self.ds.attrs['PhaseInd_%d_mustrain_0_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][0]
                 self.ds.attrs['PhaseInd_%d_mustrain_1_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][1]
                 self.ds.attrs['PhaseInd_%d_mustrain_2_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][2]
+
+
+
+
+
 
 
 
@@ -789,32 +812,33 @@ class exrd():
 
 
 
-        # if spotty_data_correction:
-        #     da_diff = self.ds.i2d-self.ds.i2d_baseline 
+        if spotty_data_correction:
+            da_diff = self.ds.i2d-self.ds.i2d_baseline 
 
-        #     self.ds['i2d'] = (self.ds['i2d']).where(da_diff>=spotty_data_correction_threshold)
+            self.ds['i2d'] = (self.ds['i2d']).where(da_diff>=spotty_data_correction_threshold)
 
-        #     i1d_attrs = copy.deepcopy(self.ds.i1d.attrs)
-        #     self.ds['i1d'] = (((self.ds['i2d']).where(da_diff>=spotty_data_correction_threshold).mean(dim='azimuthal_i2d'))-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'}).fillna(0)   
-        #     self.ds['i1d'].attrs = i1d_attrs
+            i1d_attrs = copy.deepcopy(self.ds.i1d.attrs)
+            self.ds['i1d'] = (((self.ds['i2d']).where(da_diff>=spotty_data_correction_threshold).mean(dim='azimuthal_i2d'))-spotty_data_correction_threshold).rename({'radial_i2d': 'radial'}).fillna(0)   
+            self.ds['i1d'].attrs = i1d_attrs
 
 
 
         if plot:
-
-            exrd_plotter(self.ds,  
-                         figsize=self.figsize, 
-                         i2d_robust = self.i2d_robust, 
-                         i2d_logscale = self.i2d_logscale, 
-                         i1d_ylogscale = self.i1d_ylogscale, 
-                         plot_hint = 'get_baseline'
-                         )
-
-
-
-
-
-
+            exrd_plotter(
+                ds=self.ds,  
+                ds_previous=None, 
+                phases=None,
+                gpx=None, 
+                gpx_previous=None, 
+                figsize = self.figsize, 
+                i2d_robust = self.i2d_robust,
+                i2d_logscale = self.i2d_logscale, 
+                i1d_ylogscale= self.i1d_ylogscale, 
+                title_str=None,
+                export_fig_as = None,
+                plot_hint = 'get_baseline'
+                )
+            
 
 
 
@@ -920,14 +944,24 @@ class exrd():
         self.phases_initial = deepcopy(self.phases)
             
                 
+
+
         if plot:
-            exrd_plotter(self.ds,  
-                         figsize=self.figsize, 
-                         i2d_robust = self.i2d_robust, 
-                         i2d_logscale = self.i2d_logscale, 
-                         i1d_ylogscale = self.i1d_ylogscale, 
-                         plot_hint = 'load_phases'
-                         )
+            exrd_plotter(
+                ds=self.ds,  
+                ds_previous=None, 
+                phases=self.phases,
+                gpx=None, 
+                gpx_previous=None, 
+                figsize = self.figsize, 
+                i2d_robust = self.i2d_robust,
+                i2d_logscale = self.i2d_logscale, 
+                i1d_ylogscale= self.i1d_ylogscale, 
+                title_str=None,
+                export_fig_as = None,
+                plot_hint = 'load_phases'
+                )
+            
 
 
 
@@ -1218,19 +1252,22 @@ class exrd():
             print('\n ⏩--1st refinement with LeBail is completed: %s \n'%(ref_str))
 
 
+
             if plot:
-
-                exrd_plotter(self.ds,  
-                            ds_previous=None,
-                            figsize=self.figsize, 
-                            i2d_robust = self.i2d_robust, 
-                            i2d_logscale = self.i2d_logscale, 
-                            i1d_ylogscale = self.i1d_ylogscale, 
-                            plot_hint = '1st_refinement',
-                            title_str='1st refinement with LeBail is completed: %s '%(ref_str)
-                            )
-
-
+                exrd_plotter(
+                    ds=self.ds,  
+                    ds_previous=None, 
+                    phases=self.phases,
+                    gpx=None, 
+                    gpx_previous=None, 
+                    figsize = self.figsize, 
+                    i2d_robust = self.i2d_robust,
+                    i2d_logscale = self.i2d_logscale, 
+                    i1d_ylogscale= self.i1d_ylogscale, 
+                    title_str='1st refinement with LeBail is completed: %s '%(ref_str),
+                    export_fig_as = None,
+                    plot_hint = '1st_refinement'
+                    )
 
 
 
@@ -1421,7 +1458,7 @@ class exrd():
                             phase_ind='all',
                             set_to_false_after_refinement=True,
                             plot=False,
-                            report = True,
+                            report=False
                             ):
         """
         """
@@ -1543,7 +1580,7 @@ class exrd():
                             type='isotropic',
                             set_to_false_after_refinement=True,
                             plot=False,
-                            report=True
+                            report=False
                             ):
         """
         """
@@ -1656,7 +1693,7 @@ class exrd():
                             type='isotropic',
                             set_to_false_after_refinement=True,
                             plot=False,
-                            report=True
+                            report=False
                             ):
         """
         """
@@ -2025,8 +2062,50 @@ class exrd():
 
 
 
+    def plot(self,
+             plot_hint= 'plot-type-0',
+             figsize = None,
+             i2d_robust = None,
+             i2d_logscale = None,
+             i1d_ylogscale= None,
+             export_fig_as = None,
+             i1d_plot_radial_range = None,
+             i1d_plot_bottom = None,
+             i1d_plot_top = None,
+             title = None,
+             
+             ):
+        
+        if figsize is None:
+            figsize = self.figsize
+
+        if i2d_robust is None:
+            i2d_robust = self.i2d_robust
+
+        if i2d_logscale is None:
+            i2d_logscale = self.i2d_logscale
+
+        if i1d_ylogscale is None:
+            i1d_ylogscale = self.i1d_ylogscale
 
 
+
+
+        exrd_plotter(ds=self.ds, 
+                    ds_previous=self.ds_previous,  
+                    gpx=self.gpx,  
+                    gpx_previous=self.gpx_previous,  
+                    figsize=figsize, 
+                    i2d_robust = i2d_robust, 
+                    i2d_logscale = i2d_logscale, 
+                    i1d_ylogscale = i1d_ylogscale, 
+                    plot_hint = plot_hint, 
+                    export_fig_as = export_fig_as,
+                    i1d_plot_radial_range = i1d_plot_radial_range,
+                    i1d_plot_bottom = i1d_plot_bottom,  
+                    i1d_plot_top = i1d_plot_top, 
+                    title = title                  
+                    )
 
 
 

@@ -56,7 +56,8 @@ def i1d_plotter(ds,
                 i1d_ylogscale=True,
                 xlabel=True,
                 return_da = False,
-                title_str=''
+                title_str='',
+                ncol = 2
                 ):
     
 
@@ -112,7 +113,7 @@ def i1d_plotter(ds,
 
 
 
-    da_Y_obs.plot(ax=ax,color='k',label='Y$_{obs.}$')
+    da_Y_obs.plot(ax=ax,color='k',linewidth=2, label='Y$_{obs.}$')
     if 'i1d_refined' in ds.keys():
         da_Y_calc.plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Y$_{calc.}$')
         da_Y_bkg.plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y$_{bkg.}$')
@@ -200,7 +201,7 @@ def i1d_plotter(ds,
     ax.set_title(title_str,fontsize=8,color='r')
 
 
-    ax.legend(loc='upper right',fontsize=6,ncol=2)
+    ax.legend(loc='upper right',fontsize=8,ncol=ncol)
     ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
     if xlabel:
@@ -343,7 +344,7 @@ def phases_plotter(
                                 cif_file.write(ds.attrs[a])
                             st = Structure.from_file('tmp.cif')
                             ds_phases[ds.attrs['PhaseInd_%d_label'%aa]] = st
-            os.remove('tmp.cif')
+                            os.remove('tmp.cif')
             for e,st in enumerate(ds_phases):
                 ps = xrdc.get_pattern(ds_phases[st],
                                     scaled=True,
@@ -394,7 +395,12 @@ def exrd_plotter(ds,
                  i2d_logscale=True,
                  i1d_ylogscale=True,
                  plot_hint = '1st_loaded_data', 
-                 title_str=None
+                 title_str=None,
+                 export_fig_as = None,
+                 i1d_plot_radial_range = None,
+                 i1d_plot_bottom = None,
+                 i1d_plot_top = None,
+                 title = None,
                  ):
 
 
@@ -581,6 +587,152 @@ def exrd_plotter(ds,
                        line_axes=[ax_dict["D"],ax_dict["E"]],
                        )
 
+
+
+
+
+
+
+
+
+
+
+#############################################################################
+#############################################################################
+#############################################################################
+    elif plot_hint == 'plot-type-0':
+        fig = plt.figure(figsize=figsize,dpi=128)
+        mosaic = """
+                    2
+                    1
+                    1
+                    1
+                    1
+                    1
+                    1
+                    D
+                    P
+                 """
+        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+        i2d_plotter(ds,ax=ax_dict["2"],
+                    cbar=False,
+                    i2d_robust=i2d_robust,
+                    i2d_logscale=i2d_logscale,
+                    title_str=title_str,
+                    annotate=False,
+                    )
+        ax_dict["2"].set_title(title)
+        ax_dict["2"].set_yticks([])       
+
+        [da_Y_obs,da_Y_calc,da_Y_bkg] = i1d_plotter(ds,
+                    ax=ax_dict["1"],
+                    ds_previous=None,
+                    xlabel=False,
+                    i1d_ylogscale=i1d_ylogscale,
+                    return_da = True,
+                    ncol = 1
+                    )
+        phases_plotter(ds,
+                       ax_main=ax_dict["P"],
+                       phases=phases,
+                       line_axes=[ax_dict["2"],ax_dict["1"],ax_dict["D"],ax_dict["P"]],
+                       )
+        ax_dict["P"].set_yticks([])
+        
+
+        fit_str = 'Rwp/GoF = %.3f/%.3f'%(ds.attrs['Rwp'],ds.attrs['GOF'])
+        ax_dict["1"].annotate('%s'%(fit_str),
+                xy=(0.4,0.95),
+                xycoords='axes fraction',
+                xytext=(0,0),
+                textcoords='offset points',
+                color='k',fontsize=10,
+                rotation=0,
+            )        
+
+        for e,si in enumerate(range(ds.attrs['num_phases'])):
+            site_ind  =  si
+
+            site_label = ds.attrs['PhaseInd_%d_label'%site_ind]
+            site_SGSys = ds.attrs['PhaseInd_%d_SGSys'%site_ind]
+            site_SpGrp = ds.attrs['PhaseInd_%d_SpGrp'%site_ind]
+
+            site_a = ds.attrs['PhaseInd_%d_cell_a'%site_ind]
+            site_b = ds.attrs['PhaseInd_%d_cell_b'%site_ind]
+            site_c = ds.attrs['PhaseInd_%d_cell_c'%site_ind]
+            site_alpha = ds.attrs['PhaseInd_%d_cell_alpha'%site_ind]
+            site_beta = ds.attrs['PhaseInd_%d_cell_beta'%site_ind]
+            site_gamma = ds.attrs['PhaseInd_%d_cell_gamma'%site_ind]
+
+
+            site_size_broadening_type = ds.attrs['PhaseInd_%d_size_broadening_type'%site_ind]
+            site_size0 = ds.attrs['PhaseInd_%d_size_0'%site_ind]       
+            site_size1 = ds.attrs['PhaseInd_%d_size_1'%site_ind] 
+            site_size2 = ds.attrs['PhaseInd_%d_size_2'%site_ind] 
+            if site_size0 == 1.0:
+                size_str = ''
+            else:
+                size_str = 'Size: %.3f$\\mu$ (%s) '%(site_size0,site_size_broadening_type)
+            site_strain_broadening_type = ds.attrs['PhaseInd_%d_size_broadening_type'%site_ind]
+            site_mustrain0 = ds.attrs['PhaseInd_%d_mustrain_0'%site_ind]       
+            site_mustrain1 = ds.attrs['PhaseInd_%d_mustrain_1'%site_ind] 
+            site_mustrain2 = ds.attrs['PhaseInd_%d_mustrain_2'%site_ind] 
+            if site_mustrain0 == 1000.0:
+                strain_str = ''
+            else:
+                strain_str = '| Strain: %.3f (%s)'%(site_mustrain0,site_strain_broadening_type)
+
+            site_wt_fraction = ds.attrs['PhaseInd_%d_wt_fraction'%site_ind]
+
+
+
+            site_str = '\n%s-phase:   %s (%s)  | weight_fraction=%.3f \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n%s %s'%(
+                site_label,
+                site_SpGrp.replace(' ',''),
+                site_SGSys,
+                site_wt_fraction,
+                site_a,
+                site_b,
+                site_c,
+                site_alpha,
+                site_beta,
+                site_gamma,
+                size_str,
+                strain_str         
+                )
+            
+
+
+            ax_dict["1"].annotate('%s'%(site_str),
+                        xy=(0.4,0.75-0.15*e),
+                        xycoords='axes fraction',
+                        xytext=(0,0),
+                        textcoords='offset points',
+                        color='C%d'%e,fontsize=8,
+                        rotation=0,
+                    ) 
+
+
+
+        (da_Y_obs-da_Y_calc).plot(ax=ax_dict["D"],color='b')
+        ax_dict["D"].set_xlabel(None)
+
+
+
+        if i1d_plot_radial_range is not None:
+            ax_dict["1"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
+            ax_dict["2"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
+            ax_dict["P"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
+            ax_dict["D"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
+
+
+        ax_dict["1"].set_ylim(bottom = i1d_plot_bottom, top = i1d_plot_top)
+
+
+
+        if export_fig_as is not None:
+            plt.savefig(export_fig_as)
 
 
 
