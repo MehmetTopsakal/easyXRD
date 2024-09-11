@@ -123,6 +123,45 @@ class exrd():
             with HiddenPrints():
                 self.gpx.refine()
         
+
+
+
+
+        # if normalize:
+        #     # find normalization scale from i1d
+        #     if ('i1d_baseline' in self.ds.keys()):
+        #         da_baseline_sub = (self.ds.i1d-self.ds.i1d_baseline)
+        #         normalization_multiplier = normalize_to*(1/max(da_baseline_sub.values))
+        #     else:  
+        #         da = (self.ds.i1d)
+        #         normalization_multiplier = normalize_to*(1/max(da.values))
+
+        #     self.ds.i1d.attrs['normalization_multiplier'] = normalization_multiplier
+        #     self.ds.i1d.attrs['normalized_to'] = normalize_to
+            
+        # data_x = np.rad2deg(2 * np.arcsin( self.ds.i1d.radial.values * ( (self.ds.i1d.attrs['wavelength_in_angst']) / (4 * np.pi))))
+        # if 'i1d_baseline' in self.ds.keys():
+        #     if 'normalized_to' in self.ds.i1d.attrs:
+        #         data_y = self.ds.i1d.attrs['normalization_multiplier']*(self.ds.i1d-self.ds.i1d_baseline).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']
+        #     else:
+        #         data_y = (self.ds.i1d-self.ds.i1d_baseline).values
+        #         data_y = data_y + max(data_y)*self.yshift_multiplier
+        # else:
+        #     if 'normalized_to' in self.ds.i1d.attrs:
+        #         data_y = self.ds.i1d.attrs['normalization_multiplier']*(self.ds.i1d).values 
+        #     else:
+        #         data_y = self.ds.i1d.values
+
+        # np.savetxt(
+        #     '%s/data.xy'%self.gsasii_run_directory,
+        #     fmt='%.7e',
+        #     X=np.column_stack(( data_x, data_y ))
+        #     ) 
+
+
+
+
+
         if update_ds:
             histogram = self.gpx.histograms()[0]
 
@@ -134,8 +173,8 @@ class exrd():
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg/self.ds.i1d.attrs['normalization_multiplier'],dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
                 else:
-                    Ycalc = histogram.getdata('ycalc').astype('float32')-max((self.ds.i1d-self.ds.i1d_baseline).values)*self.yshift_multiplier
-                    Ybkg  = histogram.getdata('Background').astype('float32')-max((self.ds.i1d-self.ds.i1d_baseline).values)*self.yshift_multiplier
+                    Ycalc = histogram.getdata('ycalc').astype('float32')
+                    Ybkg  = histogram.getdata('Background').astype('float32')
                     self.ds['i1d_refined'] = xr.DataArray(data=(self.ds.i1d_baseline.values+Ycalc),dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
@@ -152,6 +191,9 @@ class exrd():
                     self.ds['i1d_refined'] = xr.DataArray(data=(Ycalc),dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+
+
+
 
 
             for e,p in enumerate(self.gpx.phases()):
@@ -566,15 +608,19 @@ class exrd():
                                 del self.ds[k]
 
                         if roi_azimuthal_range is not None:
-                            # da_i2d = (self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1]))) 
-                            da_i1d     = self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d')
-                            da_i1d_bkg = input_bkg.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d').dropna(dim='radial_i2d')
+                            da_i2d = self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])) 
+                            da_i2d.values = median_filter(da_i2d.values,size=3)
+                            da_i2d_bkg = input_bkg.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1]))
+                            da_i2d_bkg.values = median_filter(da_i2d_bkg.values,size=3)
+                            da_i1d     = da_i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d')
+                            da_i1d_bkg = da_i2d_bkg.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d')
                         else:
+                            da_i2d = self.ds.i2d
+                            da_i2d.values = median_filter(da_i2d.values,size=3)
+                            da_i2d_bkg = input_bkg.ds.i2d
+                            da_i2d_bkg.values = median_filter(da_i2d_bkg.values,size=3)
                             da_i1d     = self.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d')
                             da_i1d_bkg = input_bkg.ds.i2d.mean(dim='azimuthal_i2d').dropna(dim='radial_i2d')
-
-                        da_i1d.values = median_filter(da_i1d.values,size=3)
-                        da_i1d_bkg.values = median_filter(da_i1d_bkg.values,size=3)
 
                         if roi_radial_range is not None:
                             bkg_scale = 1
@@ -677,6 +723,115 @@ class exrd():
                     else:
                         #TODO
                         print('dimensions do not match.... ignoring input_bkg and getting baseline via arpls')
+
+
+                elif (('i2d' in self.ds.keys())) and ('i1d' in input_bkg.ds.keys()):
+
+                    if roi_azimuthal_range is not None:
+                        da_i2d = self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).rename({'radial_i2d': 'radial'}) 
+                        da_i2d.values = median_filter(da_i2d.values,size=3)
+                        da_i1d     = da_i2d.mean(dim='azimuthal_i2d').dropna(dim='radial')
+                        da_i1d_bkg = input_bkg.ds.i1d
+                    else:
+                        da_i2d = self.ds.i2d.rename({'radial_i2d': 'radial'})
+                        da_i2d.values = median_filter(da_i2d.values,size=3)
+                        da_i1d     = da_i2d.mean(dim='azimuthal_i2d').dropna(dim='radial')
+                        da_i1d_bkg = input_bkg.ds.i1d
+
+                    if roi_radial_range is not None:
+                        bkg_scale = 1
+                        diff_now = (da_i1d.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                        if min(diff_now) > 0:
+                            while (min(diff_now) > 0):
+                                bkg_scale = bkg_scale*1.01
+                                diff_now = (da_i1d.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                        else:
+                            while (min(diff_now) < 0):
+                                bkg_scale = bkg_scale*0.99
+                                diff_now = (da_i1d.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                    else:
+                        bkg_scale = 1
+                        diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+                        if min(diff_now) > 0:
+                            while (min(diff_now) > 0):
+                                bkg_scale = bkg_scale*1.01
+                                diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+                        else:
+                            while (min(diff_now) < 0):
+                                bkg_scale = bkg_scale*0.99
+                                diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+
+                    if use_arpls:
+
+                        # pass
+
+                        if roi_azimuthal_range is not None:
+                            da_i1d_diff = (self.ds.i2d.sel(azimuthal_i2d=slice(roi_azimuthal_range[0],roi_azimuthal_range[1])).mean(dim='azimuthal_i2d').rename({'radial_i2d': 'radial'})-bkg_scale*input_bkg.ds.i1d ) 
+                        else:
+                            da_i1d_diff = (self.ds.i2d.mean(dim='azimuthal_i2d').rename({'radial_i2d': 'radial'})-bkg_scale*input_bkg.ds.i1d ) 
+
+                        da_for_baseline = da_i1d_diff#.dropna(dim='radial')
+                        diff_baseline, params = pybaselines.Baseline(x_data=da_for_baseline.radial.values).arpls(da_for_baseline.values,lam=arpls_lam)
+
+
+                        self.ds['i1d_baseline'] = xr.DataArray(data=(diff_baseline+bkg_scale*input_bkg.ds.i1d.values),dims=['radial'],
+                                                                coords={'radial':input_bkg.ds.i1d.radial.values},
+                                                                attrs={'arpls_lam':arpls_lam}
+                                                                )
+                        self.ds['i1d_baseline'].attrs['baseline_note'] = 'baseline is from provided input_bkg i1d and arpls is used'
+                    else:
+                        self.ds['i1d_baseline'] = deepcopy(bkg_scale*input_bkg.ds.i1d)
+                        self.ds['i1d_baseline'].attrs['baseline_note'] = 'baseline is from provided input_bkg. i1d arpls is not used'
+
+
+                else:
+
+                    da_i1d     = self.ds.i1d
+                    da_i1d_bkg = input_bkg.ds.i1d
+
+                    if roi_radial_range is not None:
+                        bkg_scale = 1
+                        diff_now = (da_i1d.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                        if min(diff_now) > 0:
+                            while (min(diff_now) > 0):
+                                bkg_scale = bkg_scale*1.01
+                                diff_now = (da_i1d.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                        else:
+                            while (min(diff_now) < 0):
+                                bkg_scale = bkg_scale*0.99
+                                diff_now = (da_i1d.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))-bkg_scale*da_i1d_bkg.sel(radial=slice(roi_radial_range[0],roi_radial_range[-1]))).values
+                    else:
+                        bkg_scale = 1
+                        diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+                        if min(diff_now) > 0:
+                            while (min(diff_now) > 0):
+                                bkg_scale = bkg_scale*1.01
+                                diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+                        else:
+                            while (min(diff_now) < 0):
+                                bkg_scale = bkg_scale*0.99
+                                diff_now = (da_i1d-bkg_scale*da_i1d_bkg).values
+
+                    if use_arpls:
+
+                        da_i1d_diff = (self.ds.i1d-bkg_scale*input_bkg.ds.i1d) 
+
+                        da_for_baseline = da_i1d_diff#.dropna(dim='radial')
+                        diff_baseline, params = pybaselines.Baseline(x_data=da_for_baseline.radial.values).arpls(da_for_baseline.values,lam=arpls_lam)
+
+
+                        self.ds['i1d_baseline'] = xr.DataArray(data=(diff_baseline+bkg_scale*input_bkg.ds.i1d.values),dims=['radial'],
+                                                                coords={'radial':input_bkg.ds.i1d.radial.values},
+                                                                attrs={'arpls_lam':arpls_lam}
+                                                                )
+                        self.ds['i1d_baseline'].attrs['baseline_note'] = 'baseline is from provided input_bkg i1d and arpls is used'
+                    else:
+                        self.ds['i1d_baseline'] = deepcopy(bkg_scale*input_bkg.ds.i1d)
+                        self.ds['i1d_baseline'].attrs['baseline_note'] = 'baseline is from provided input_bkg. i1d arpls is not used'
+
+
+
+
             else:
 
 
@@ -1127,7 +1282,7 @@ class exrd():
                 data_y = self.ds.i1d.attrs['normalization_multiplier']*(self.ds.i1d-self.ds.i1d_baseline).values+self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']
             else:
                 data_y = (self.ds.i1d-self.ds.i1d_baseline).values
-                data_y = data_y + max(data_y)*self.yshift_multiplier
+                # data_y = data_y + max(data_y)*self.yshift_multiplier
         else:
             if 'normalized_to' in self.ds.i1d.attrs:
                 data_y = self.ds.i1d.attrs['normalization_multiplier']*(self.ds.i1d).values 
@@ -1231,7 +1386,7 @@ class exrd():
             if 'normalized_to' in self.ds.i1d.attrs:
                 self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, self.yshift_multiplier*self.ds.i1d.attrs['normalized_to']]
             else:
-                self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, max((self.ds.i1d-self.ds.i1d_baseline).values)*self.yshift_multiplier]
+                self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, 0]
         else:
             if 'normalized_to' in self.ds.i1d.attrs:
                 self.gpx[pwdr_name]['Background'][0] = ['chebyschev-1', False, 1, self.ds.i1d.attrs['normalization_multiplier']*min(self.ds.i1d.values)] 

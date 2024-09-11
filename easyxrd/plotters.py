@@ -67,49 +67,72 @@ def i1d_plotter(ds,
     yshift_multiplier = 0.01
 
 
+    # if 'i1d_baseline' in ds.keys():
+    #     if 'normalized_to' in ds.i1d.attrs:
+    #         da_Y_obs = ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
+    #         if 'i1d_refined' in ds.keys():
+    #             da_Y_calc= ds.i1d_refined-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
+    #             da_Y_bkg = ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']
+    #     else:
+    #         da_Y_obs = ds.i1d-ds.i1d_baseline
+    #         if 'i1d_refined' in ds.keys():
+    #             da_Y_calc= ds.i1d_refined-ds.i1d_baseline
+    #             da_Y_bkg = ds.i1d_gsas_background
+    # else:
+    #     if 'normalized_to' in ds.i1d.attrs:
+    #         da_Y_obs = ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']
+    #         if 'i1d_refined' in ds.keys():
+    #             da_Y_calc= ds.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']
+    #             da_Y_bkg = ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']
+    #     else:
+    #         da_Y_obs = ds.i1d
+    #         if 'i1d_refined' in ds.keys():
+    #             da_Y_calc= ds.i1d_refined
+    #             da_Y_bkg = ds.i1d_gsas_background
+
+
     if 'i1d_baseline' in ds.keys():
-        if 'normalized_to' in ds.i1d.attrs:
-            da_Y_obs = ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
-            if 'i1d_refined' in ds.keys():
-                da_Y_calc= ds.i1d_refined-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
-                da_Y_bkg = ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']
-        else:
-            da_Y_obs = ds.i1d-ds.i1d_baseline
-            if 'i1d_refined' in ds.keys():
-                da_Y_calc= ds.i1d_refined-ds.i1d_baseline
-                da_Y_bkg = ds.i1d_gsas_background
+        da_Y_obs = ds.i1d-ds.i1d_baseline
+        if 'i1d_refined' in ds.keys():
+            da_Y_calc= ds.i1d_refined-ds.i1d_baseline
+            da_Y_bkg = ds.i1d_gsas_background
+        ylabel = 'i1d - i1d_baseline'
     else:
-        if 'normalized_to' in ds.i1d.attrs:
-            da_Y_obs = ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']
-            if 'i1d_refined' in ds.keys():
-                da_Y_calc= ds.i1d_refined+yshift_multiplier*ds.i1d.attrs['normalized_to']
-                da_Y_bkg = ds.i1d_gsas_background+yshift_multiplier*ds.i1d.attrs['normalized_to']
-        else:
-            da_Y_obs = ds.i1d
-            if 'i1d_refined' in ds.keys():
-                da_Y_calc= ds.i1d_refined
-                da_Y_bkg = ds.i1d_gsas_background
-
-
-    # check negative data boundaries
-    if 'i1d_refined' in ds.keys():
-        min_obs = min(da_Y_obs.values)
-        min_calc = min(da_Y_calc.values)
-        min_bkg = min(da_Y_bkg.values)
-        min_all = min([min_obs,min_calc,min_bkg])
-    else:
-        min_all = min(da_Y_obs.values)
-
-    if min_all < 0:
-        extra_yshift = 1-min_all
-    else:
-        extra_yshift = 0
+        da_Y_obs = ds.i1d
+        if 'i1d_refined' in ds.keys():
+            da_Y_calc= ds.i1d_refined
+            da_Y_bkg = ds.i1d_gsas_background
+        ylabel = 'i1d'
 
     if i1d_ylogscale:
-            da_Y_obs =  np.log(da_Y_obs+extra_yshift )
-            if 'i1d_refined' in ds.keys():
-                da_Y_calc=  np.log(da_Y_calc+extra_yshift)
-                da_Y_bkg =  np.log(da_Y_bkg+extra_yshift )
+        # check negative data boundaries
+        if 'i1d_refined' in ds.keys():
+            min_obs = min(da_Y_obs.values)
+            min_calc = min(da_Y_calc.values)
+            min_bkg = min(da_Y_bkg.values)
+            min_all = min([min_obs,min_calc,min_bkg])
+        else:
+            min_all = min(da_Y_obs.values)
+
+        if min_all < 1:
+            extra_yshift = 1-min_all
+            ylabel = '%s +%.2f'%(ylabel,extra_yshift)
+        else:
+            extra_yshift = 0
+
+        da_Y_obs = da_Y_obs+extra_yshift
+        if 'i1d_refined' in ds.keys():
+            da_Y_calc = da_Y_calc+extra_yshift
+            da_Y_bkg  = da_Y_bkg+extra_yshift
+
+        da_Y_obs =  np.log(da_Y_obs)
+        if 'i1d_refined' in ds.keys():
+            da_Y_calc=  np.log(da_Y_calc)
+            da_Y_bkg =  np.log(da_Y_bkg)
+
+        ylabel = 'Log$_{10}$(%s)'%ylabel
+    else:
+        extra_yshift = 0
 
 
 
@@ -118,86 +141,73 @@ def i1d_plotter(ds,
         da_Y_calc.plot(ax=ax, alpha=0.9, linewidth=1, color='y',label='Y$_{calc.}$')
         da_Y_bkg.plot(ax=ax, alpha=0.9, linewidth=1, color='r',label='Y$_{bkg.}$')
 
-
-
-
-
-
-
-
     if ds_previous is not None:
-        # try:
         if 'i1d_baseline' in ds_previous.keys():
-            if 'normalized_to' in ds_previous.i1d.attrs:
-                da_Y_obs = ds.i1d-ds.i1d_baseline+yshift_multiplier*ds.i1d.attrs['normalized_to']
-                da_Y_calc= ds_previous.i1d_refined-ds_previous.i1d_baseline+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']
-                da_Y_bkg = ds_previous.i1d_gsas_background+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']
-            else:
-                da_Y_obs = ds.i1d-ds.i1d_baseline
-                da_Y_calc= ds_previous.i1d_refined-ds_previous.i1d_baseline
-                da_Y_bkg = ds_previous.i1d_gsas_background
+            if 'i1d_refined' in ds_previous.keys():
+                da_Y_calc_previous= ds_previous.i1d_refined-ds_previous.i1d_baseline
+                da_Y_bkg_previous = ds_previous.i1d_gsas_background
         else:
-            if 'normalized_to' in ds_previous.i1d.attrs:
-                da_Y_obs = ds.i1d+yshift_multiplier*ds.i1d.attrs['normalized_to']
-                da_Y_calc= ds_previous.i1d_refined+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']
-                da_Y_bkg = ds_previous.i1d_gsas_background+yshift_multiplier*ds_previous.i1d.attrs['normalized_to']
-            else:
-                da_Y_obs = ds.i1d
-                da_Y_calc= ds_previous.i1d_refined
-                da_Y_bkg = ds_previous.i1d_gsas_background
+            if 'i1d_refined' in ds_previous.keys():
+                da_Y_calc_previous= ds_previous.i1d_refined
+                da_Y_bkg_previous = ds_previous.i1d_gsas_background
+
+        if 'i1d_refined' in ds.keys():
+            da_Y_calc_previous= da_Y_calc_previous+extra_yshift
+            da_Y_bkg_previous  = da_Y_bkg_previous+extra_yshift
+
         if i1d_ylogscale:
-                da_Y_calc=  np.log(da_Y_calc+extra_yshift)
-                da_Y_bkg =  np.log(da_Y_bkg+extra_yshift )
-        da_Y_calc.plot(ax=ax, alpha=0.9, linewidth=1.2, linestyle='--', color='y',label='Y$_{calc.}$ (old)')
-        da_Y_bkg.plot(ax=ax, alpha=0.9, linewidth=1.2, linestyle='--', color='r',label='Y$_{bkg.}$ (old)')
+            da_Y_calc_previous=  np.log(da_Y_calc_previous)
+            da_Y_bkg_previous =  np.log(da_Y_bkg_previous)
+
+        da_Y_calc_previous.plot(ax=ax, alpha=0.9, linewidth=1.2, linestyle='--', color='y',label='Y$_{calc.}$ (old)')
+        da_Y_bkg_previous.plot(ax=ax, alpha=0.9, linewidth=1.2, linestyle='--', color='r',label='Y$_{bkg.}$ (old)')
 
 
 
-    if i1d_ylogscale:
-        if 'i1d_baseline' in ds.keys():
-            if 'normalized_to' in ds.i1d.attrs:
-                ax.set_ylabel('Log$_{10}$(i1d - i1d_baseline + %.3f) (norm.)'%(extra_yshift+0.01*ds.i1d.attrs['normalized_to']),fontsize=8)
-            else:
-                if extra_yshift > 0:
-                    ax.set_ylabel('Log$_{10}$(i1d - i1d_baseline +%.3f) (a.u.)'%extra_yshift,fontsize=8)
-                else:
-                    ax.set_ylabel('Log$_{10}$(i1d - i1d_baseline) (a.u.)',fontsize=8)
-        else:
-            if 'normalized_to' in ds.i1d.attrs:
-                if extra_yshift > 0:
-                    ax.set_ylabel('Log$_{10}$(i1d + %.3f) (norm.)'%(extra_yshift),fontsize=8)  
-                else:
-                    ax.set_ylabel('Log$_{10}$(i1d) (norm.)',fontsize=8)  
-            else:
-                if extra_yshift > 0:
-                    ax.set_ylabel('Log$_{10}$(i1d +%.3f) (a.u.)'%extra_yshift,fontsize=8)
-                else:
-                    ax.set_ylabel('Log$_{10}$(i1d) (a.u.)',fontsize=8)
+
+    # if i1d_ylogscale:
+    #     if 'i1d_baseline' in ds.keys():
+    #         if 'normalized_to' in ds.i1d.attrs:
+    #             ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline+%.3f) (a.u.)'%(extra_yshift+yshift_multiplier*ds.i1d.attrs['normalized_to']),fontsize=8)
+    #         else:
+    #             if extra_yshift > 0:
+    #                 ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline+%.3f) (a.u.)'%extra_yshift,fontsize=8)
+    #             else:
+    #                 ax.set_ylabel('Log$_{10}$(i1d-i1d_baseline) (a.u.)',fontsize=8)
+    #     else:
+    #         if 'normalized_to' in ds.i1d.attrs:
+    #             if extra_yshift > 0:
+    #                 ax.set_ylabel('Log$_{10}$(i1d+%.3f) (a.u.)'%(extra_yshift),fontsize=8)  
+    #             else:
+    #                 ax.set_ylabel('Log$_{10}$(i1d) (a.u.)',fontsize=8)  
+    #         else:
+    #             if extra_yshift > 0:
+    #                 ax.set_ylabel('Log$_{10}$(i1d+%.3f) (a.u.)'%extra_yshift,fontsize=8)
+    #             else:
+    #                 ax.set_ylabel('Log$_{10}$(i1d) (a.u.)',fontsize=8)
+    # else:
+    #     if 'i1d_baseline' in ds.keys():
+    #         if 'normalized_to' in ds.i1d.attrs:
+    #             ax.set_ylabel('(i1d-i1d_baseline+%.3f) (a.u.)'%(extra_yshift+yshift_multiplier*ds.i1d.attrs['normalized_to']),fontsize=8)
+    #         else:
+    #             if extra_yshift > 0:
+    #                 ax.set_ylabel('(i1d-i1d_baseline+%.3f) (a.u.)'%extra_yshift,fontsize=8)
+    #             else:
+    #                 ax.set_ylabel('(i1d-i1d_baseline) (a.u.)',fontsize=8)
+    #     else:
+    #         if 'normalized_to' in ds.i1d.attrs:
+    #             if extra_yshift > 0:
+    #                 ax.set_ylabel('(i1d+%.3f) (a.u.)'%(extra_yshift),fontsize=8)  
+    #             else:
+    #                 ax.set_ylabel('(i1d) (a.u.)',fontsize=8)
+    #         else:
+    #             if extra_yshift > 0:
+    #                 ax.set_ylabel('(i1d+%.3f) (a.u.)'%extra_yshift,fontsize=8)
+    #             else:
+    #                 ax.set_ylabel('(i1d) (a.u.)',fontsize=8)
 
 
-    else:
-        if 'i1d_baseline' in ds.keys():
-            if 'normalized_to' in ds.i1d.attrs:
-                ax.set_ylabel('(i1d - i1d_baseline + %.3f) (norm.)'%(extra_yshift+0.01*ds.i1d.attrs['normalized_to']),fontsize=8)
-            else:
-                if extra_yshift > 0:
-                    ax.set_ylabel('(i1d - i1d_baseline +%.3f) (a.u.)'%extra_yshift,fontsize=8)
-                else:
-                    ax.set_ylabel('(i1d - i1d_baseline) (a.u.)',fontsize=8)
-        else:
-            if 'normalized_to' in ds.i1d.attrs:
-                if extra_yshift > 0:
-                    ax.set_ylabel('(i1d + %.3f) (norm.)'%(extra_yshift),fontsize=8)  
-                else:
-                    ax.set_ylabel('(i1d) (norm.)',fontsize=8)
-            else:
-                if extra_yshift > 0:
-                    ax.set_ylabel('(i1d +%.3f) (a.u.)'%extra_yshift,fontsize=8)
-                else:
-                    ax.set_ylabel('(i1d) (a.u.)',fontsize=8)
-
-
-
+    ax.set_ylabel(ylabel)
     ax.set_title(title_str,fontsize=8,color='r')
 
 
@@ -483,11 +493,10 @@ def exrd_plotter(ds,
         else:
             fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
-                        AACCC
-                        AACCC
-                        AACCC
-                        AACCC
-                        AADDD
+                        AA111
+                        AA111
+                        AA111
+                        AA111
                         """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
             ax = ax_dict["A"]
@@ -540,27 +549,31 @@ def exrd_plotter(ds,
         if 'i2d' in ds.keys():
             fig = plt.figure(figsize=figsize,dpi=128)
             mosaic = """
-                        D
-                        D
-                        E
-                        E
-                        E
-                        E
-                        C
+                        2
+                        2
+                        1
+                        1
+                        1
+                        1
+                        P
                         """
-        else:
-            fig = plt.figure(figsize=figsize,dpi=128)
-            mosaic = """
-                        E
-                        E
-                        E
-                        E
-                        C
-                        """
-        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-        if 'i2d' in ds.keys():
-            ax = ax_dict["D"]
+            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+            ax = ax_dict["1"]
+            i1d_plotter(ds,
+                            ax,
+                            ds_previous=None,
+                            i1d_ylogscale=i1d_ylogscale,
+                            xlabel=True,
+                            return_da = False,
+                            title_str=''
+                            )
+            ax.set_xlabel(None)
+            phases_plotter(ds,
+                        ax_main=ax_dict["P"],
+                        phases=phases,
+                        line_axes=[ax_dict["1"],ax_dict["2"],ax_dict["P"]],
+                        )
+            ax = ax_dict["2"]
             i2d_plotter(ds,
                         ax,
                         cbar=True,
@@ -569,23 +582,39 @@ def exrd_plotter(ds,
                         annotate=True
                         )
 
-        ax = ax_dict["E"]
 
-        i1d_plotter(ds,
-                        ax,
-                        ds_previous=None,
-                        i1d_ylogscale=i1d_ylogscale,
-                        xlabel=True,
-                        return_da = False,
-                        title_str=''
+        else:
+            fig = plt.figure(figsize=figsize,dpi=128)
+            mosaic = """
+                        1
+                        1
+                        1
+                        1
+                        P
+                        """
+            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+            ax = ax_dict["1"]
+            i1d_plotter(ds,
+                            ax,
+                            ds_previous=None,
+                            i1d_ylogscale=i1d_ylogscale,
+                            xlabel=True,
+                            return_da = False,
+                            title_str=''
+                            )
+            ax.set_xlabel(None)
+            phases_plotter(ds,
+                        ax_main=ax_dict["P"],
+                        phases=phases,
+                        line_axes=[ax_dict["1"],ax_dict["P"]],
                         )
-        ax.set_xlabel(None)
+
+
+
+
+        # 
         
-        phases_plotter(ds,
-                       ax_main=ax_dict["C"],
-                       phases=phases,
-                       line_axes=[ax_dict["D"],ax_dict["E"]],
-                       )
+
 
 
 
@@ -602,28 +631,63 @@ def exrd_plotter(ds,
 #############################################################################
     elif plot_hint == 'plot-type-0':
         fig = plt.figure(figsize=figsize,dpi=128)
-        mosaic = """
-                    2
-                    1
-                    1
-                    1
-                    1
-                    1
-                    1
-                    D
-                    P
-                 """
-        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
 
-        i2d_plotter(ds,ax=ax_dict["2"],
-                    cbar=False,
-                    i2d_robust=i2d_robust,
-                    i2d_logscale=i2d_logscale,
-                    title_str=title_str,
-                    annotate=False,
-                    )
-        ax_dict["2"].set_title(title)
-        ax_dict["2"].set_yticks([])       
+
+
+        if 'i2d' in ds.keys():
+            mosaic = """
+                        2
+                        1
+                        1
+                        1
+                        1
+                        1
+                        1
+                        D
+                        P
+                    """
+            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+            i2d_plotter(ds,ax=ax_dict["2"],
+                        cbar=False,
+                        i2d_robust=i2d_robust,
+                        i2d_logscale=i2d_logscale,
+                        title_str=title_str,
+                        annotate=False,
+                        )
+            ax_dict["2"].set_title(title)
+            ax_dict["2"].set_yticks([])  
+
+            phases_plotter(ds,
+                        ax_main=ax_dict["P"],
+                        phases=phases,
+                        line_axes=[ax_dict["2"],ax_dict["1"],ax_dict["D"],ax_dict["P"]],
+                        )
+            ax_dict["P"].set_yticks([])
+
+
+        else:
+            mosaic = """
+                        1
+                        1
+                        1
+                        1
+                        1
+                        1
+                        D
+                        P
+                    """
+            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+            phases_plotter(ds,
+                        ax_main=ax_dict["P"],
+                        phases=phases,
+                        line_axes=[ax_dict["1"],ax_dict["D"],ax_dict["P"]],
+                        )
+            ax_dict["P"].set_yticks([])
+
+
+
 
         [da_Y_obs,da_Y_calc,da_Y_bkg] = i1d_plotter(ds,
                     ax=ax_dict["1"],
@@ -633,12 +697,7 @@ def exrd_plotter(ds,
                     return_da = True,
                     ncol = 1
                     )
-        phases_plotter(ds,
-                       ax_main=ax_dict["P"],
-                       phases=phases,
-                       line_axes=[ax_dict["2"],ax_dict["1"],ax_dict["D"],ax_dict["P"]],
-                       )
-        ax_dict["P"].set_yticks([])
+
         
 
         fit_str = 'Rwp/GoF = %.3f/%.3f'%(ds.attrs['Rwp'],ds.attrs['GOF'])
@@ -716,6 +775,9 @@ def exrd_plotter(ds,
 
 
         (da_Y_obs-da_Y_calc).plot(ax=ax_dict["D"],color='b')
+        ax_dict["D"].axhline(y=0,linestyle='--',color='k',lw=0.5)
+
+
         ax_dict["D"].set_xlabel(None)
 
 
@@ -745,38 +807,65 @@ def exrd_plotter(ds,
 #############################################################################
 #############################################################################
     else:
-        fig = plt.figure(figsize=figsize,dpi=128)
-        mosaic = """
-                    2
-                    1
-                    1
-                    1
-                    1
-                    P
-                 """
-        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+        
+        if 'i2d' in ds.keys():
+            fig = plt.figure(figsize=figsize,dpi=128)
+            mosaic = """
+                        2
+                        1
+                        1
+                        1
+                        1
+                        P
+                    """
+            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
 
-        i2d_plotter(ds,ax=ax_dict["2"],
-                    cbar=False,
-                    i2d_robust=i2d_robust,
-                    i2d_logscale=i2d_logscale,
-                    title_str=title_str,
-                    annotate=False,
-                    
-                    )
-        i1d_plotter(ds,
-                    ax=ax_dict["1"],
-                    ds_previous=ds_previous,
-                    xlabel=False,
-                    i1d_ylogscale=i1d_ylogscale,
-                    return_da = False,
-                    )
-        phases_plotter(ds,
-                       ax_main=ax_dict["P"],
-                       phases=phases,
-                       line_axes=[ax_dict["2"],ax_dict["1"],ax_dict["P"]],
-                       )
+            i2d_plotter(ds,ax=ax_dict["2"],
+                        cbar=False,
+                        i2d_robust=i2d_robust,
+                        i2d_logscale=i2d_logscale,
+                        title_str=title_str,
+                        annotate=False,
+                        
+                        )
+            i1d_plotter(ds,
+                        ax=ax_dict["1"],
+                        ds_previous=ds_previous,
+                        xlabel=False,
+                        i1d_ylogscale=i1d_ylogscale,
+                        return_da = False,
+                        )
+            phases_plotter(ds,
+                        ax_main=ax_dict["P"],
+                        phases=phases,
+                        line_axes=[ax_dict["2"],ax_dict["1"],ax_dict["P"]],
+                        )
 
+
+        else:
+            fig = plt.figure(figsize=figsize,dpi=128)
+            mosaic = """
+                        1
+                        1
+                        1
+                        1
+                        P
+                    """
+            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+
+            i1d_plotter(ds,
+                        ax=ax_dict["1"],
+                        ds_previous=ds_previous,
+                        xlabel=False,
+                        i1d_ylogscale=i1d_ylogscale,
+                        return_da = False,
+                        )
+            ax_dict["1"].set_title(title_str)
+            phases_plotter(ds,
+                        ax_main=ax_dict["P"],
+                        phases=phases,
+                        line_axes=[ax_dict["1"],ax_dict["P"]],
+                        )
 
 
 
