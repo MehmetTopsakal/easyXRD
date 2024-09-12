@@ -211,7 +211,7 @@ def i1d_plotter(ds,
     ax.set_title(title_str,fontsize=8,color='r')
 
 
-    ax.legend(loc='upper right',fontsize=8,ncol=ncol)
+    ax.legend(loc='upper left',fontsize=8,ncol=ncol)
     ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
     if xlabel:
@@ -278,7 +278,7 @@ def i2d_plotter(ds,
 
     if annotate:
         ax.annotate('%s (i2d_robust=%s)'%(i2d_str, i2d_robust),
-                    xy=(0.01,0.93),
+                    xy=(0.01,0.9),
                     xycoords='axes fraction',
                     xytext=(0,0),
                     textcoords='offset points',
@@ -318,8 +318,8 @@ def phases_plotter(
         ax_main,
         phases=None,
         line_axes=[],
-        phase_label_x=0.9,
-        phase_label_y=0.8,
+        phase_label_x=0.95,
+        phase_label_y=0.75,
         phase_label_yshift=-0.2,
         ):
 
@@ -398,8 +398,8 @@ def phases_plotter(
 def exrd_plotter(ds, 
                  ds_previous=None, 
                  phases=None,
-                 gpx=None, 
-                 gpx_previous=None, 
+                #  gpx=None, 
+                #  gpx_previous=None, 
                  figsize=(8,6), 
                  i2d_robust=True,
                  i2d_logscale=True,
@@ -411,6 +411,8 @@ def exrd_plotter(ds,
                  i1d_plot_bottom = None,
                  i1d_plot_top = None,
                  title = None,
+                 site_str_x = 0.4,
+                 site_str_y = 0.8
                  ):
 
 
@@ -424,7 +426,7 @@ def exrd_plotter(ds,
 #############################################################################
     if plot_hint == 'load_xrd_data':
         if 'i2d' in ds.keys():
-            fig = plt.figure(figsize=figsize,dpi=128)
+            fig = plt.figure(figsize=(figsize[0],figsize[1]/1.5),dpi=128)
             mosaic = """
                         B
                         C
@@ -547,7 +549,7 @@ def exrd_plotter(ds,
         # plot_label_y_shift = -0.2
 
         if 'i2d' in ds.keys():
-            fig = plt.figure(figsize=figsize,dpi=128)
+            fig = plt.figure(figsize=(figsize[0],figsize[1]),dpi=128)
             mosaic = """
                         2
                         2
@@ -584,7 +586,7 @@ def exrd_plotter(ds,
 
 
         else:
-            fig = plt.figure(figsize=figsize,dpi=128)
+            fig = plt.figure(figsize=(figsize[0],figsize[1]/1.5),dpi=128)
             mosaic = """
                         1
                         1
@@ -702,7 +704,7 @@ def exrd_plotter(ds,
 
         fit_str = 'Rwp/GoF = %.3f/%.3f'%(ds.attrs['Rwp'],ds.attrs['GOF'])
         ax_dict["1"].annotate('%s'%(fit_str),
-                xy=(0.4,0.95),
+                xy=(0.75,0.95),
                 xycoords='axes fraction',
                 xytext=(0,0),
                 textcoords='offset points',
@@ -725,50 +727,55 @@ def exrd_plotter(ds,
             site_gamma = ds.attrs['PhaseInd_%d_cell_gamma'%site_ind]
 
 
-            site_size_broadening_type = ds.attrs['PhaseInd_%d_size_broadening_type'%site_ind]
+            site_size_broadening_type = ds.attrs['PhaseInd_%d_size_broadening_type'%site_ind][:3]
             site_size0 = ds.attrs['PhaseInd_%d_size_0'%site_ind]       
             site_size1 = ds.attrs['PhaseInd_%d_size_1'%site_ind] 
             site_size2 = ds.attrs['PhaseInd_%d_size_2'%site_ind] 
             if site_size0 == 1.0:
                 size_str = ''
             else:
-                size_str = 'Size: %.3f$\\mu$ (%s) '%(site_size0,site_size_broadening_type)
-            site_strain_broadening_type = ds.attrs['PhaseInd_%d_size_broadening_type'%site_ind]
+                size_str = '| Size: %.3f$\\mu$ (%s.) '%(site_size0,site_size_broadening_type)
+            site_strain_broadening_type = ds.attrs['PhaseInd_%d_size_broadening_type'%site_ind][:3]
             site_mustrain0 = ds.attrs['PhaseInd_%d_mustrain_0'%site_ind]       
             site_mustrain1 = ds.attrs['PhaseInd_%d_mustrain_1'%site_ind] 
             site_mustrain2 = ds.attrs['PhaseInd_%d_mustrain_2'%site_ind] 
             if site_mustrain0 == 1000.0:
                 strain_str = ''
             else:
-                strain_str = '| Strain: %.3f (%s)'%(site_mustrain0,site_strain_broadening_type)
+                strain_str = '| Strain: %.3f (%s.)'%(site_mustrain0,site_strain_broadening_type)
 
             site_wt_fraction = ds.attrs['PhaseInd_%d_wt_fraction'%site_ind]
+            if site_wt_fraction == 100.0:
+                str_fraction = ''
+            else:
+                str_fraction = '| wt%%=%.2f'%site_wt_fraction
 
 
 
-            site_str = '\n%s-phase:   %s (%s)  | weight_fraction=%.3f \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n%s %s'%(
+
+            site_str = '\n%s:  %s (%s)  %s %s %s \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n'%(
                 site_label,
                 site_SpGrp.replace(' ',''),
                 site_SGSys,
-                site_wt_fraction,
+                str_fraction,
+                size_str,
+                strain_str, 
                 site_a,
                 site_b,
                 site_c,
                 site_alpha,
                 site_beta,
-                site_gamma,
-                size_str,
-                strain_str         
+                site_gamma,      
                 )
             
 
 
             ax_dict["1"].annotate('%s'%(site_str),
-                        xy=(0.4,0.75-0.15*e),
+                        xy=(site_str_x,site_str_y-0.1*e),
                         xycoords='axes fraction',
                         xytext=(0,0),
                         textcoords='offset points',
-                        color='C%d'%e,fontsize=8,
+                        color='C%d'%e,fontsize=7,
                         rotation=0,
                     ) 
 
@@ -809,7 +816,7 @@ def exrd_plotter(ds,
     else:
         
         if 'i2d' in ds.keys():
-            fig = plt.figure(figsize=figsize,dpi=128)
+            fig = plt.figure(figsize=(figsize[0],figsize[1]),dpi=128)
             mosaic = """
                         2
                         1
@@ -843,7 +850,7 @@ def exrd_plotter(ds,
 
 
         else:
-            fig = plt.figure(figsize=figsize,dpi=128)
+            fig = plt.figure(figsize=(figsize[0],figsize[1]/1.5),dpi=128)
             mosaic = """
                         1
                         1
@@ -860,7 +867,7 @@ def exrd_plotter(ds,
                         i1d_ylogscale=i1d_ylogscale,
                         return_da = False,
                         )
-            ax_dict["1"].set_title(title_str)
+            ax_dict["1"].set_title(title_str,fontsize=8)
             phases_plotter(ds,
                         ax_main=ax_dict["P"],
                         phases=phases,

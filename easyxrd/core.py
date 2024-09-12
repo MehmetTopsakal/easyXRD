@@ -226,7 +226,7 @@ class exrd():
                 wtSum += mass*phFr
             for e,p in enumerate(self.phases):
                 weightFr = self.gpx['Phases'][p]['Histograms']['PWDR data.xy']['Scale'][0]*self.gpx['Phases'][p]['General']['Mass']/wtSum
-                self.ds.attrs['PhaseInd_%d_wt_fraction'%(e)] = weightFr
+                self.ds.attrs['PhaseInd_%d_wt_fraction'%(e)] = 100*weightFr
 
 
 
@@ -983,8 +983,6 @@ class exrd():
                 ds=self.ds,  
                 ds_previous=None, 
                 phases=None,
-                gpx=None, 
-                gpx_previous=None, 
                 figsize = self.figsize, 
                 i2d_robust = self.i2d_robust,
                 i2d_logscale = self.i2d_logscale, 
@@ -1106,8 +1104,6 @@ class exrd():
                 ds=self.ds,  
                 ds_previous=None, 
                 phases=self.phases,
-                gpx=None, 
-                gpx_previous=None, 
                 figsize = self.figsize, 
                 i2d_robust = self.i2d_robust,
                 i2d_logscale = self.i2d_logscale, 
@@ -1413,8 +1409,6 @@ class exrd():
                     ds=self.ds,  
                     ds_previous=None, 
                     phases=self.phases,
-                    gpx=None, 
-                    gpx_previous=None, 
                     figsize = self.figsize, 
                     i2d_robust = self.i2d_robust,
                     i2d_logscale = self.i2d_logscale, 
@@ -2228,7 +2222,8 @@ class exrd():
              i1d_plot_bottom = None,
              i1d_plot_top = None,
              title = None,
-             
+             site_str_x = 0.4,
+             site_str_y = 0.8
              ):
         
         if figsize is None:
@@ -2248,8 +2243,6 @@ class exrd():
 
         exrd_plotter(ds=self.ds, 
                     ds_previous=self.ds_previous,  
-                    gpx=self.gpx,  
-                    gpx_previous=self.gpx_previous,  
                     figsize=figsize, 
                     i2d_robust = i2d_robust, 
                     i2d_logscale = i2d_logscale, 
@@ -2259,7 +2252,9 @@ class exrd():
                     i1d_plot_radial_range = i1d_plot_radial_range,
                     i1d_plot_bottom = i1d_plot_bottom,  
                     i1d_plot_top = i1d_plot_top, 
-                    title = title                  
+                    title = title,
+                    site_str_x = site_str_x,
+                    site_str_y = site_str_y             
                     )
 
 
