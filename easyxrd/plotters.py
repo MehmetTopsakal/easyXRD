@@ -211,7 +211,7 @@ def i1d_plotter(ds,
     ax.set_title(title_str,fontsize=8,color='r')
 
 
-    ax.legend(loc='upper left',fontsize=8,ncol=ncol)
+    ax.legend(loc='upper right',fontsize=8,ncol=ncol)
     ax.set_xlim([ds.i1d.radial[0],ds.i1d.radial[-1]])
 
     if xlabel:
@@ -412,7 +412,8 @@ def exrd_plotter(ds,
                  i1d_plot_top = None,
                  title = None,
                  site_str_x = 0.4,
-                 site_str_y = 0.8
+                 site_str_y = 0.8,
+                 show_wt_fractions = False
                  ):
 
 
@@ -632,6 +633,8 @@ def exrd_plotter(ds,
 #############################################################################
 #############################################################################
     elif plot_hint == 'plot-type-0':
+
+        print(title)
         fig = plt.figure(figsize=figsize,dpi=128)
 
 
@@ -668,6 +671,7 @@ def exrd_plotter(ds,
             ax_dict["P"].set_yticks([])
 
 
+
         else:
             mosaic = """
                         1
@@ -687,6 +691,7 @@ def exrd_plotter(ds,
                         line_axes=[ax_dict["1"],ax_dict["D"],ax_dict["P"]],
                         )
             ax_dict["P"].set_yticks([])
+            
 
 
 
@@ -697,7 +702,7 @@ def exrd_plotter(ds,
                     xlabel=False,
                     i1d_ylogscale=i1d_ylogscale,
                     return_da = True,
-                    ncol = 1
+                    ncol = 1,
                     )
 
         
@@ -748,7 +753,10 @@ def exrd_plotter(ds,
             if site_wt_fraction == 100.0:
                 str_fraction = ''
             else:
-                str_fraction = '| wt%%=%.2f'%site_wt_fraction
+                if show_wt_fractions:
+                    str_fraction = '| wt%%=%.2f'%site_wt_fraction
+                else:
+                    str_fraction = ''
 
 
 
@@ -791,14 +799,18 @@ def exrd_plotter(ds,
 
         if i1d_plot_radial_range is not None:
             ax_dict["1"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
-            ax_dict["2"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
+            if 'i2d' in ds.keys():
+                ax_dict["2"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
             ax_dict["P"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
             ax_dict["D"].set_xlim([i1d_plot_radial_range[0],i1d_plot_radial_range[-1]])
 
-
         ax_dict["1"].set_ylim(bottom = i1d_plot_bottom, top = i1d_plot_top)
 
+        ax_dict["1"].legend(loc='upper left',fontsize=8,ncol=1)
 
+
+        if 'i2d' not in ds.keys():
+            ax_dict["1"].set_title(title)
 
         if export_fig_as is not None:
             plt.savefig(export_fig_as)

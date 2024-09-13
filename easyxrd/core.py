@@ -172,12 +172,22 @@ class exrd():
                     self.ds['i1d_refined'] = xr.DataArray(data=(self.ds.i1d_baseline.values+Ycalc/self.ds.i1d.attrs['normalization_multiplier']),dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg/self.ds.i1d.attrs['normalization_multiplier'],dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+                    try:
+                        self.ds.attrs['converged'] = str(self.ds.attrs['converged'])
+                        self.ds.attrs['Aborted'] = str(self.ds.attrs['Aborted'])
+                    except:
+                        pass
                 else:
                     Ycalc = histogram.getdata('ycalc').astype('float32')
                     Ybkg  = histogram.getdata('Background').astype('float32')
                     self.ds['i1d_refined'] = xr.DataArray(data=(self.ds.i1d_baseline.values+Ycalc),dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+                    try:
+                        self.ds.attrs['converged'] = str(self.ds.attrs['converged'])
+                        self.ds.attrs['Aborted'] = str(self.ds.attrs['Aborted'])
+                    except:
+                        pass
             else:
                 if 'normalized_to' in self.ds.i1d.attrs:
                     Ycalc = histogram.getdata('ycalc').astype('float32') # this includes gsas background
@@ -185,12 +195,22 @@ class exrd():
                     self.ds['i1d_refined'] = xr.DataArray(data=(Ycalc/self.ds.i1d.attrs['normalization_multiplier']),dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg/self.ds.i1d.attrs['normalization_multiplier'],dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+                    try:
+                        self.ds.attrs['converged'] = str(self.ds.attrs['converged'])
+                        self.ds.attrs['Aborted'] = str(self.ds.attrs['Aborted'])
+                    except:
+                        pass
                 else:
                     Ycalc = histogram.getdata('ycalc').astype('float32')# this includes gsas background
                     Ybkg  = histogram.getdata('Background').astype('float32')
                     self.ds['i1d_refined'] = xr.DataArray(data=(Ycalc),dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds['i1d_gsas_background'] = xr.DataArray(data=Ybkg,dims=['radial'],coords={'radial':self.ds.i1d.radial})
                     self.ds.attrs = self.ds.attrs | self.gpx['Covariance']['data']['Rvals']
+                    try:
+                        self.ds.attrs['converged'] = str(self.ds.attrs['converged'])
+                        self.ds.attrs['Aborted'] = str(self.ds.attrs['Aborted'])
+                    except:
+                        pass
 
 
 
@@ -253,7 +273,11 @@ class exrd():
                 self.ds.attrs['PhaseInd_%d_mustrain_2_previous'%(e)] = gpx_previous['Phases'][p.name]['Histograms']['PWDR data.xy']['Mustrain'][1][2]
 
 
-
+        inst_prm_dict = self.gpx['PWDR data.xy']['Instrument Parameters'][0] 
+        inst_prm_dict_clean = {}
+        for i in inst_prm_dict:
+            inst_prm_dict_clean['gsasii_inst_prm_'+i] = inst_prm_dict[i][0]
+        self.ds.attrs = self.ds.attrs | inst_prm_dict_clean
 
 
 
@@ -1045,56 +1069,54 @@ class exrd():
 
 
     def load_phases(self,
-                    phases,
+                    from_phases_dict=None,
+
                     mp_rester_api_key='dHgNQRNYSpuizBPZYYab75iJNMJYCklB',
                     plot = True,
-                    store_initial_phases_in_ds=True,
                     ):
         
-        self.phases = {}
-        for e,p in enumerate(phases):
-            if p['mp_id'].lower() == 'none':
-                st = Structure.from_file(p['cif'])
-                st.lattice = Lattice.from_parameters(a=st.lattice.abc[0]*p['scale']*p['scale_a'],
-                                                     b=st.lattice.abc[1]*p['scale']*p['scale_b'],
-                                                     c=st.lattice.abc[2]*p['scale']*p['scale_c'],
-                                                     alpha=st.lattice.angles[0],
-                                                     beta =st.lattice.angles[1],
-                                                     gamma=st.lattice.angles[2]
-                                                    )
-                self.phases[p['label']] = st
+
+        if from_phases_dict is not None:
+            self.phases = {}
+            for e,p in enumerate(from_phases_dict):
+                if p['mp_id'].lower() == 'none':
+                    st = Structure.from_file(p['cif'])
+                    st.lattice = Lattice.from_parameters(a=st.lattice.abc[0]*p['scale']*p['scale_a'],
+                                                        b=st.lattice.abc[1]*p['scale']*p['scale_b'],
+                                                        c=st.lattice.abc[2]*p['scale']*p['scale_c'],
+                                                        alpha=st.lattice.angles[0],
+                                                        beta =st.lattice.angles[1],
+                                                        gamma=st.lattice.angles[2]
+                                                        )
+                    self.phases[p['label']] = st
+
+                else:
+                    from mp_api.client import MPRester
+                    mpr = MPRester(mp_rester_api_key)
+                    st = mpr.get_structure_by_material_id(p['mp_id'],final=False)[0]
+                    st.lattice = Lattice.from_parameters(a=st.lattice.abc[0]*p['scale']*p['scale_a'],
+                                                        b=st.lattice.abc[1]*p['scale']*p['scale_b'],
+                                                        c=st.lattice.abc[2]*p['scale']*p['scale_c'],
+                                                        alpha=st.lattice.angles[0],
+                                                        beta =st.lattice.angles[1],
+                                                        gamma=st.lattice.angles[2]
+                                                        )
+                    self.phases[p['label']] = st
 
 
+                randstr = ''.join(random.choices(string.ascii_uppercase+string.digits, k=7)) 
+                CifWriter(st,symprec=0.01).write_file('%s.cif'%randstr)
+                # read cif
+                with open('%s.cif'%randstr, 'r') as ciffile:
+                    ciffile_content = ciffile.read()
+                    self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
 
-            else:
-                from mp_api.client import MPRester
-                mpr = MPRester(mp_rester_api_key)
-                st = mpr.get_structure_by_material_id(p['mp_id'],final=False)[0]
-                st.lattice = Lattice.from_parameters(a=st.lattice.abc[0]*p['scale']*p['scale_a'],
-                                                     b=st.lattice.abc[1]*p['scale']*p['scale_b'],
-                                                     c=st.lattice.abc[2]*p['scale']*p['scale_c'],
-                                                     alpha=st.lattice.angles[0],
-                                                     beta =st.lattice.angles[1],
-                                                     gamma=st.lattice.angles[2]
-                                                    )
-                self.phases[p['label']] = st
+                self.ds.attrs['PhaseInd_%d_label'%(e)] = p['label']
+                os.remove('%s.cif'%randstr)
+
+            self.ds.attrs['num_phases'] = e+1
 
 
-            randstr = ''.join(random.choices(string.ascii_uppercase+string.digits, k=7)) 
-            CifWriter(st,symprec=0.01).write_file('%s.cif'%randstr)
-            # read cif
-            with open('%s.cif'%randstr, 'r') as ciffile:
-                ciffile_content = ciffile.read()
-                self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
-                if store_initial_phases_in_ds:
-                    self.ds.attrs['PhaseInd_%d_cif_initial'%(e)] = ciffile_content
-            self.ds.attrs['PhaseInd_%d_label'%(e)] = p['label']
-            os.remove('%s.cif'%randstr)
-
-        self.ds.attrs['num_phases'] = e+1
-
-
-        self.phases_initial = deepcopy(self.phases)
             
                 
 
@@ -1162,6 +1184,7 @@ class exrd():
                                gsasii_lib_directory=None,
                                gsasii_scratch_directory=None,
                                instprm_from_gpx=None,
+                               instprm_from_nc=None,
                                instprm_Polariz=0,
                                instprm_Azimuth=0,
                                instprm_Zero=-0.0006,                                                                   
@@ -1308,7 +1331,6 @@ class exrd():
                     f.write('#GSAS-II instrument parameter file; do not add/delete items!\n')
                     f.write('Type:PXC\n')
                     f.write('Bank:1.0\n')
-                    # f.write('Lam:%s\n'%(instprm_dict['Lam'][1]))
                     f.write('Lam:%s\n'%(self.ds.i1d.attrs['wavelength_in_angst']))
                     f.write('Polariz.:%s\n'%(instprm_dict['Polariz.'][1]))
                     f.write('Azimuth:%s\n'%(instprm_dict['Azimuth'][1]))
@@ -1323,6 +1345,24 @@ class exrd():
             else:
                 print('gpx file for reading instrument parameters do net exist. Please check the path')
                 # return
+
+        elif instprm_from_nc is not None:
+            with xr.open_dataset(instprm_from_nc) as ds_inst_prm:
+                with open('%s/gsas.instprm'%self.gsasii_run_directory, 'w') as f:
+                    f.write('#GSAS-II instrument parameter file; do not add/delete items!\n')
+                    f.write('Type:PXC\n')
+                    f.write('Bank:1.0\n')
+                    f.write('Lam:%s\n'%(self.ds.i1d.attrs['wavelength_in_angst']))
+                    f.write('Polariz.:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_Polariz.']))
+                    f.write('Azimuth:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_Azimuth']))
+                    f.write('Zero:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_Zero']))
+                    f.write('U:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_U']))
+                    f.write('V:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_V']))
+                    f.write('W:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_W']))
+                    f.write('X:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_X']))
+                    f.write('Y:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_Y']))
+                    f.write('Z:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_Z']))
+                    f.write('SH/L:%s\n'%(ds_inst_prm.attrs['gsasii_inst_prm_SH/L']))
 
         else:
             with open('%s/gsas.instprm'%self.gsasii_run_directory, 'w') as f:
@@ -2223,7 +2263,8 @@ class exrd():
              i1d_plot_top = None,
              title = None,
              site_str_x = 0.4,
-             site_str_y = 0.8
+             site_str_y = 0.8,
+             show_wt_fractions = False
              ):
         
         if figsize is None:
@@ -2254,7 +2295,8 @@ class exrd():
                     i1d_plot_top = i1d_plot_top, 
                     title = title,
                     site_str_x = site_str_x,
-                    site_str_y = site_str_y             
+                    site_str_y = site_str_y,
+                    show_wt_fractions = show_wt_fractions        
                     )
 
 
@@ -2267,16 +2309,32 @@ class exrd():
 
 
 
-    def export_ds(self,
-                  save_dir='.',
-                  save_name='ds.nc'
+    def export_ds_to(self,
+                  to=None,
+                  save_dir=None,
+                  save_name=None
                   ):
         """
         """
-        self.ds.to_netcdf('%s/%s'%(save_dir,save_name),
-                     engine="h5netcdf",
-                     encoding={'i2d': {'zlib': True, 'complevel': 9}}) # pip install h5netcdf
 
+        if to is None:
+            try:
+                self.ds.to_netcdf('%s/%s'%(save_dir,save_name),
+                            engine="h5netcdf",
+                            encoding={'i2d': {'zlib': True, 'complevel': 9}}) # pip install h5netcdf
+            except:
+                self.ds.to_netcdf('%s/%s'%(save_dir,save_name),
+                            engine="h5netcdf",
+                            ) # pip install h5netcdf
+        else:
+            try:
+                self.ds.to_netcdf('%s'%(to),
+                            engine="h5netcdf",
+                            encoding={'i2d': {'zlib': True, 'complevel': 9}}) # pip install h5netcdf            
+            except:
+                self.ds.to_netcdf('%s'%(to),
+                            engine="h5netcdf",
+                            ) # pip install h5netcdf       
 
 
     def fine_tune_gpx(self):
@@ -2302,12 +2360,12 @@ class exrd():
 
 
     def export_gpx_to(self,
-                      export_to='gsas.gpx'
+                      to='gsas.gpx'
                          
                          ):
         """
         """
-        shutil.copy('%s/gsas.gpx'%self.gsasii_run_directory,export_to)
+        shutil.copy('%s/gsas.gpx'%self.gsasii_run_directory,to)
 
 
 
