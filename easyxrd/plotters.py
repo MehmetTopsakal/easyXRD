@@ -449,14 +449,9 @@ def exrd_plotter(ds,
                 return_da = False,
                 title_str=''
                 )
-            
-            # ax.set_xlabel(ds.i1d.attrs['xlabel'])
-            # ax.set_ylabel(ds.i1d.attrs['ylabel'])
-            # ax.set_ylabel('Log$_{10}$(Intensity) (a.u.)')
-
 
         else:
-            fig = plt.figure(figsize=figsize,dpi=128)
+            fig = plt.figure(figsize=(figsize[0],figsize[1]/2),dpi=128)
             mosaic = """
                         C
                         """
@@ -634,13 +629,13 @@ def exrd_plotter(ds,
 #############################################################################
     elif plot_hint == 'plot-type-0':
 
-        print(title)
         fig = plt.figure(figsize=figsize,dpi=128)
 
 
 
         if 'i2d' in ds.keys():
             mosaic = """
+                        2
                         2
                         1
                         1
