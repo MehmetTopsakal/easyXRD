@@ -813,7 +813,7 @@ def exrd_plotter(ds,
             ax_dict["1"].set_title(title)
 
         if export_fig_as is not None:
-            plt.savefig(export_fig_as)
+            plt.savefig(export_fig_as,dpi=128)
 
 
 
