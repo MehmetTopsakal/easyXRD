@@ -381,7 +381,7 @@ class exrd():
 
 
             self.ds = xr.Dataset()
-            delta_q = 0.0025
+            delta_q = 0.0010
             npt = int(np.ceil((radial_range[1] - radial_range[0]) / delta_q ))
             radial_range = [radial_range[0],radial_range[0]+delta_q*npt]
 
@@ -1070,11 +1070,15 @@ class exrd():
 
     def load_phases(self,
                     from_phases_dict=None,
-
+                    from_gpx = None,
+                    from_nc = None,
+                    from_ds = None,
                     mp_rester_api_key='dHgNQRNYSpuizBPZYYab75iJNMJYCklB',
                     plot = True,
                     ):
         
+
+        self.easyxrd_scratch_directory = easyxrd_defaults['easyxrd_scratch_path']
 
         if from_phases_dict is not None:
             self.phases = {}
@@ -1110,15 +1114,66 @@ class exrd():
                 with open('%s.cif'%randstr, 'r') as ciffile:
                     ciffile_content = ciffile.read()
                     self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
-
                 self.ds.attrs['PhaseInd_%d_label'%(e)] = p['label']
                 os.remove('%s.cif'%randstr)
 
             self.ds.attrs['num_phases'] = e+1
 
+        elif from_gpx is not None:
+            import GSASIIscriptable as G2sc
+            phases_gpx = G2sc.G2Project(gpxfile=from_gpx)
+            self.phases = {}
+            for e,p in enumerate(phases_gpx.phases()):
+                p.export_CIF(outputname='tmp.cif')
+                st = Structure.from_file('tmp.cif')
+                self.phases[p.name] = st
+                with open('tmp.cif', 'r') as ciffile:
+                    ciffile_content = ciffile.read()
+                    self.ds.attrs['PhaseInd_%d_cif'%(e)] = ciffile_content
+                self.ds.attrs['PhaseInd_%d_label'%(e)] = p.name
+                os.remove('tmp.cif')
+            self.ds.attrs['num_phases'] = e+1
 
-            
-                
+
+        elif from_nc is not None:
+
+            with xr.open_dataset(from_nc) as ds_nc:
+
+                self.phases = {}
+                for p in range(ds_nc.attrs['num_phases']):
+
+                    randstr = ''.join(random.choices(string.ascii_uppercase+string.digits, k=7))
+                    with open("%s/%s.cif"%(self.easyxrd_scratch_directory,randstr), "w") as ciffile:
+                        ciffile.write("%s"%ds_nc.attrs['PhaseInd_%d_cif'%p])
+                    st = Structure.from_file("%s/%s.cif"%(self.easyxrd_scratch_directory,randstr))
+                    self.phases[ds_nc.attrs['PhaseInd_%d_label'%p]] = st
+                    os.remove("%s/%s.cif"%(self.easyxrd_scratch_directory,randstr))
+
+                    self.ds.attrs['PhaseInd_%d_label'%(p)] = ds_nc.attrs['PhaseInd_%d_label'%(p)] 
+                    self.ds.attrs['PhaseInd_%d_cif'%(p)] = ds_nc.attrs['PhaseInd_%d_cif'%(p)] 
+
+                self.ds.attrs['num_phases'] = p+1
+
+
+
+        elif from_ds is not None:
+
+
+            self.phases = {}
+            for p in range(from_ds.attrs['num_phases']):
+
+                randstr = ''.join(random.choices(string.ascii_uppercase+string.digits, k=7))
+                with open("%s/%s.cif"%(self.easyxrd_scratch_directory,randstr), "w") as ciffile:
+                    ciffile.write("%s"%from_ds.attrs['PhaseInd_%d_cif'%p])
+                st = Structure.from_file("%s/%s.cif"%(self.easyxrd_scratch_directory,randstr))
+                self.phases[from_ds.attrs['PhaseInd_%d_label'%p]] = st
+                os.remove("%s/%s.cif"%(self.easyxrd_scratch_directory,randstr))
+
+                self.ds.attrs['PhaseInd_%d_label'%(p)] = from_ds.attrs['PhaseInd_%d_label'%(p)] 
+                self.ds.attrs['PhaseInd_%d_cif'%(p)] = from_ds.attrs['PhaseInd_%d_cif'%(p)] 
+
+            self.ds.attrs['num_phases'] = p+1
+
 
 
         if plot:
@@ -1140,19 +1195,31 @@ class exrd():
 
 
 
+    # def export_phases(self,phase_ind=None, # should start from 0. -1 is not allowed
+    #                         export_to='.',
+    #                         export_extension='_exported.cif'
+    #                         ):
+    #     if phase_ind is None:
+    #         for e,st in enumerate(self.phases):
+    #             CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s%s"%(export_to,st,export_extension))
+    #     else:
+    #         for e,st in enumerate(self.phases):
+    #             if e == phase_ind:
+    #                 CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s%s"%(export_to,st,export_extension))
+            
     def export_phases(self,phase_ind=None, # should start from 0. -1 is not allowed
                             export_to='.',
                             export_extension='_exported.cif'
                             ):
-        if phase_ind is None:
-            for e,st in enumerate(self.phases):
-                CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s%s"%(export_to,st,export_extension))
+        if (phase_ind is None) or (phase_ind=='all'):
+            for p in range(self.ds.attrs['num_phases']):
+                with open("%s/%s%s"%(export_to,self.ds.attrs['PhaseInd_%d_label'%p],export_extension), "w") as ciffile:
+                    ciffile.write("%s"%self.ds.attrs['PhaseInd_%d_cif'%p])
         else:
-            for e,st in enumerate(self.phases):
-                if e == phase_ind:
-                    CifWriter(self.phases[st],symprec=0.01).write_file("%s/%s%s"%(export_to,st,export_extension))
-            
-
+            for p in range(self.ds.attrs['num_phases']):
+                if p == phase_ind:
+                    with open("%s/%s%s"%(export_to,self.ds.attrs['PhaseInd_%d_label'%p],export_extension), "w") as ciffile:
+                        ciffile.write("%s"%self.ds.attrs['PhaseInd_%d_cif'%p])
 
 
 
