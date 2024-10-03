@@ -355,11 +355,11 @@ class exrd:
             else:
                 gof_symbol = ""
             refinement_str = (
-                "Rwp/GoF is now %.3f/%.3f on %d variable(s) (was %.3f(%.2f%%)/%.3f(%.2f%%%s))"
+                "Rwp/GoF is now %.3f/%.3f (was %.3f(%.2f%%)/%.3f(%.2f%%%s))"
                 % (
                     self.gpx["Covariance"]["data"]["Rvals"]["Rwp"],
                     self.gpx["Covariance"]["data"]["Rvals"]["GOF"],
-                    self.gpx["Covariance"]["data"]["Rvals"]["Nvars"],
+                    # self.gpx["Covariance"]["data"]["Rvals"]["Nvars"],
                     self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
                     100
                     * (
@@ -373,10 +373,10 @@ class exrd:
                 )
             )
         except:
-            refinement_str = "Rwp/GoF is %.3f/%.3f on %d variable(s)" % (
+            refinement_str = "Rwp/GoF is %.3f/%.3f" % (
                 self.gpx["Covariance"]["data"]["Rvals"]["Rwp"],
                 self.gpx["Covariance"]["data"]["Rvals"]["GOF"],
-                self.gpx["Covariance"]["data"]["Rvals"]["Nvars"],
+                # self.gpx["Covariance"]["data"]["Rvals"]["Nvars"],
             )
 
         if plot:
@@ -397,39 +397,71 @@ class exrd:
             with HiddenPrints():
                 self.gpx.save()
 
+
+
+
     def load_xrd_data(
         self,
         from_img_array=None,
         from_tiff_file=None,
         ai=None,
+        poni_file=None,
         mask=None,
+        mask_file=None,
         median_filter_size=2,
         from_nc_file=None,
         from_txt_file=None,
-        from_txt_file_wavelength_in_angst=0.1814,
-        from_txt_file_comments="#",
-        from_txt_file_skiprows=0,
-        from_txt_file_usecols=(0, 1),
-        from_txt_file_radial_unit="tth",
+        txt_file_wavelength_in_angstom=0.1814,
+        txt_file_comments="#",
+        txt_file_skiprows=0,
+        txt_file_usecols=(0, 1),
+        txt_file_radial_unit="tth",
         radial_range=[0.1, 11.1],
+        radial_npts=1000,
         plot=True,
     ):
 
         if (from_img_array is None) and (from_tiff_file is not None):
-            from_img_array = median_filter(
+            img_array = median_filter(
                 fabio.open(from_tiff_file).data, size=median_filter_size
             )
+        elif (from_img_array is not None) and (from_tiff_file is None):
+            img_array = from_img_array
+        else:
+            img_array = None
 
-        if (from_img_array is not None) and (ai is not None):
+        if img_array is not None:
 
             self.ds = xr.Dataset()
-            delta_q = 0.0010
-            npt = int(np.ceil((radial_range[1] - radial_range[0]) / delta_q))
-            radial_range = [radial_range[0], radial_range[0] + delta_q * npt]
+
+            if radial_range is not None:
+                delta_q = 0.0010
+                npt = int(np.ceil((radial_range[1] - radial_range[0]) / delta_q))
+                radial_range = [radial_range[0], radial_range[0] + delta_q * npt]
+            else:
+                npt, radial_range = None, None
+            
+
+
+            if (mask is None) and (mask_file is None):
+                pass
+            elif (mask_file is not None) and (mask is None):
+                mask = fabio.open(mask_file).data
+            elif (mask_file is not None) and (mask is not None):
+                print('\nmask is provided. Ignoring mask_file\n')
+                
+            if (ai is None) and (poni_file is None):
+                print('\n\nERROR: Valid a poni file or ai object is needed\n')
+                return
+            elif (poni_file is not None) and (ai is None):
+                ai = pyFAI.load(poni_file)
+            elif (poni_file is not None) and (ai is not None):
+                print('\nAzimuthal integrator (ai) is provided. Ignoring poni_file\n')
+
 
             # integrate
             i2d = ai.integrate2d(
-                data=from_img_array,
+                data=img_array,
                 npt_rad=npt,
                 npt_azim=360,
                 filename=None,
@@ -483,21 +515,21 @@ class exrd:
             )
             self.ds["i1d"] = da_i1d.dropna(dim="radial")
 
-        if (from_img_array is None) and (from_txt_file is not None):
+        elif (img_array is None) and (from_txt_file is not None):
             if os.path.isfile(from_txt_file):
                 try:
                     X, Y = np.loadtxt(
                         from_txt_file,
-                        comments=from_txt_file_comments,
-                        skiprows=from_txt_file_skiprows,
-                        usecols=from_txt_file_usecols,
+                        comments=txt_file_comments,
+                        skiprows=txt_file_skiprows,
+                        usecols=txt_file_usecols,
                         unpack=True,
                     )
-                    if from_txt_file_radial_unit.lower()[0] == "t":
+                    if txt_file_radial_unit.lower()[0] == "t":
                         X = (
-                            (4 * np.pi) / (from_txt_file_wavelength_in_angst)
+                            (4 * np.pi) / (txt_file_wavelength_in_angstom)
                         ) * np.sin(np.deg2rad(X) / 2)
-                    elif from_txt_file_radial_unit.lower()[0] == "q":
+                    elif txt_file_radial_unit.lower()[0] == "q":
                         pass
                     else:
                         print(
@@ -513,7 +545,7 @@ class exrd:
                             "radial_unit": "q_A^-1",
                             "xlabel": "Scattering vector $q$ ($\AA^{-1}$)",
                             "ylabel": "Intensity (a.u.)",
-                            "wavelength_in_angst": from_txt_file_wavelength_in_angst,
+                            "wavelength_in_angst": txt_file_wavelength_in_angstom,
                             "i1d_from": from_txt_file,
                         },
                     )
@@ -528,7 +560,7 @@ class exrd:
                 print("%s does not exist. Please check the file path." % from_txt_file)
                 return
 
-        if ((from_img_array is None) and (from_txt_file is None)) and (
+        elif ((from_img_array is None) and (from_txt_file is None)) and (
             from_nc_file is not None
         ):
             with xr.open_dataset(from_nc_file) as self.ds:
@@ -547,8 +579,8 @@ class exrd:
     def get_baseline(
         self,
         input_bkg=None,
-        use_arpls=True,
-        arpls_lam=1e5,
+        use_iarpls=True,
+        iarpls_lam=1e5,
         plot=True,
         get_i2d_baseline=False,
         use_i2d_baseline=False,
@@ -559,9 +591,9 @@ class exrd:
         spotty_data_correction_threshold=1,
     ):
 
-        if (input_bkg is None) and (use_arpls is False):
+        if (input_bkg is None) and (use_iarpls is False):
             print(
-                "\n\nYou did not provide input_bkg and use_arpls is set to False. Nothing to do here. baseline is not calculated...\n\n"
+                "\n\nYou did not provide input_bkg and use_iarpls is set to False. Nothing to do here. baseline is not calculated...\n\n"
             )
             plot = False
 
@@ -675,7 +707,7 @@ class exrd:
                                     bkg_scale = bkg_scale * 0.99
                                     diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
 
-                        if use_arpls:
+                        if use_iarpls:
                             if roi_azimuthal_range is not None:
                                 da_i2d_diff = self.ds.i2d.sel(
                                     azimuthal_i2d=slice(
@@ -700,7 +732,7 @@ class exrd:
                                     try:
                                         baseline_now, params = pybaselines.Baseline(
                                             x_data=da_now_dropna.radial_i2d.values
-                                        ).arpls(da_now_dropna.values, lam=arpls_lam)
+                                        ).iarpls(da_now_dropna.values, lam=iarpls_lam)
                                         # create baseline da by copying
                                         da_now_dropna_baseline = copy.deepcopy(
                                             da_now_dropna
@@ -734,8 +766,8 @@ class exrd:
                                     )
                                 self.ds["i2d_baseline"].attrs[
                                     "baseline_note"
-                                ] = "baseline is from provided input_bkg and arpls is used"
-                                self.ds["i2d_baseline"].attrs["arpls_lam"] = arpls_lam
+                                ] = "baseline is from provided input_bkg and iarpls is used"
+                                self.ds["i2d_baseline"].attrs["iarpls_lam"] = iarpls_lam
 
                                 if use_i2d_baseline:
                                     self.ds["i1d_baseline"] = (
@@ -745,17 +777,17 @@ class exrd:
                                     )
                                     self.ds["i1d_baseline"].attrs[
                                         "baseline_note"
-                                    ] = "baseline is from i2d_baseline as available in this dataset. arpls is used"
+                                    ] = "baseline is from i2d_baseline as available in this dataset. iarpls is used"
                                     self.ds["i1d_baseline"].attrs[
-                                        "arpls_lam"
-                                    ] = arpls_lam
+                                        "iarpls_lam"
+                                    ] = iarpls_lam
                                 else:
                                     da_for_baseline = da_i2d_diff.mean(
                                         dim="azimuthal_i2d"
                                     ).dropna(dim="radial_i2d")
                                     diff_baseline, params = pybaselines.Baseline(
                                         x_data=da_for_baseline.radial_i2d.values
-                                    ).arpls(da_for_baseline.values, lam=arpls_lam)
+                                    ).iarpls(da_for_baseline.values, lam=iarpls_lam)
                                     if roi_azimuthal_range is not None:
                                         self.ds["i1d_baseline"] = (
                                             xr.DataArray(
@@ -776,7 +808,7 @@ class exrd:
                                                 coords={
                                                     "radial_i2d": da_for_baseline.radial_i2d.values
                                                 },
-                                                attrs={"arpls_lam": arpls_lam},
+                                                attrs={"iarpls_lam": iarpls_lam},
                                             )
                                             .interp(radial_i2d=self.ds.i2d.radial_i2d)
                                             .rename({"radial_i2d": "radial"})
@@ -797,17 +829,17 @@ class exrd:
                                                 coords={
                                                     "radial_i2d": da_for_baseline.radial_i2d.values
                                                 },
-                                                attrs={"arpls_lam": arpls_lam},
+                                                attrs={"iarpls_lam": iarpls_lam},
                                             )
                                             .interp(radial_i2d=self.ds.i2d.radial_i2d)
                                             .rename({"radial_i2d": "radial"})
                                         )
                                     self.ds["i1d_baseline"].attrs[
                                         "baseline_note"
-                                    ] = "baseline is from provided input_bkg and arpls is used"
+                                    ] = "baseline is from provided input_bkg and iarpls is used"
                                     self.ds["i1d_baseline"].attrs[
-                                        "arpls_lam"
-                                    ] = arpls_lam
+                                        "iarpls_lam"
+                                    ] = iarpls_lam
 
                             else:
                                 da_for_baseline = da_i2d_diff.mean(
@@ -815,7 +847,7 @@ class exrd:
                                 ).dropna(dim="radial_i2d")
                                 diff_baseline, params = pybaselines.Baseline(
                                     x_data=da_for_baseline.radial_i2d.values
-                                ).arpls(da_for_baseline.values, lam=arpls_lam)
+                                ).iarpls(da_for_baseline.values, lam=iarpls_lam)
                                 if roi_azimuthal_range is not None:
                                     self.ds["i1d_baseline"] = (
                                         xr.DataArray(
@@ -836,7 +868,7 @@ class exrd:
                                             coords={
                                                 "radial_i2d": da_for_baseline.radial_i2d.values
                                             },
-                                            attrs={"arpls_lam": arpls_lam},
+                                            attrs={"iarpls_lam": iarpls_lam},
                                         )
                                         .interp(radial_i2d=self.ds.i2d.radial_i2d)
                                         .rename({"radial_i2d": "radial"})
@@ -857,15 +889,15 @@ class exrd:
                                             coords={
                                                 "radial_i2d": da_for_baseline.radial_i2d.values
                                             },
-                                            attrs={"arpls_lam": arpls_lam},
+                                            attrs={"iarpls_lam": iarpls_lam},
                                         )
                                         .interp(radial_i2d=self.ds.i2d.radial_i2d)
                                         .rename({"radial_i2d": "radial"})
                                     )
                                 self.ds["i1d_baseline"].attrs[
                                     "baseline_note"
-                                ] = "baseline is from provided input_bkg and arpls is used"
-                                self.ds["i1d_baseline"].attrs["arpls_lam"] = arpls_lam
+                                ] = "baseline is from provided input_bkg and iarpls is used"
+                                self.ds["i1d_baseline"].attrs["iarpls_lam"] = iarpls_lam
                         else:
                             if roi_azimuthal_range is not None:
                                 self.ds["i2d_baseline"] = deepcopy(
@@ -883,7 +915,7 @@ class exrd:
                                 )
                             self.ds["i2d_baseline"].attrs[
                                 "baseline_note"
-                            ] = "baseline is from provided input_bkg. arpls is not used"
+                            ] = "baseline is from provided input_bkg. iarpls is not used"
                             self.ds["i1d_baseline"] = (
                                 self.ds["i2d_baseline"]
                                 .mean(dim="azimuthal_i2d")
@@ -891,12 +923,12 @@ class exrd:
                             )
                             self.ds["i1d_baseline"].attrs[
                                 "baseline_note"
-                            ] = "baseline is from i2d_baseline as available in this dataset. arpls is not used"
+                            ] = "baseline is from i2d_baseline as available in this dataset. iarpls is not used"
 
                     else:
                         # TODO
                         print(
-                            "dimensions do not match.... ignoring input_bkg and getting baseline via arpls"
+                            "dimensions do not match.... ignoring input_bkg and getting baseline via iarpls"
                         )
 
                 elif (("i2d" in self.ds.keys())) and ("i1d" in input_bkg.ds.keys()):
@@ -971,7 +1003,7 @@ class exrd:
                                 bkg_scale = bkg_scale * 0.99
                                 diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
 
-                    if use_arpls:
+                    if use_iarpls:
 
                         # pass
 
@@ -997,22 +1029,22 @@ class exrd:
                         da_for_baseline = da_i1d_diff  # .dropna(dim='radial')
                         diff_baseline, params = pybaselines.Baseline(
                             x_data=da_for_baseline.radial.values
-                        ).arpls(da_for_baseline.values, lam=arpls_lam)
+                        ).iarpls(da_for_baseline.values, lam=iarpls_lam)
 
                         self.ds["i1d_baseline"] = xr.DataArray(
                             data=(diff_baseline + bkg_scale * input_bkg.ds.i1d.values),
                             dims=["radial"],
                             coords={"radial": input_bkg.ds.i1d.radial.values},
-                            attrs={"arpls_lam": arpls_lam},
+                            attrs={"iarpls_lam": iarpls_lam},
                         )
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
-                        ] = "baseline is from provided input_bkg i1d and arpls is used"
+                        ] = "baseline is from provided input_bkg i1d and iarpls is used"
                     else:
                         self.ds["i1d_baseline"] = deepcopy(bkg_scale * input_bkg.ds.i1d)
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
-                        ] = "baseline is from provided input_bkg. i1d arpls is not used"
+                        ] = "baseline is from provided input_bkg. i1d iarpls is not used"
 
                 else:
 
@@ -1074,29 +1106,29 @@ class exrd:
                                 bkg_scale = bkg_scale * 0.99
                                 diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
 
-                    if use_arpls:
+                    if use_iarpls:
 
                         da_i1d_diff = self.ds.i1d - bkg_scale * input_bkg.ds.i1d
 
                         da_for_baseline = da_i1d_diff  # .dropna(dim='radial')
                         diff_baseline, params = pybaselines.Baseline(
                             x_data=da_for_baseline.radial.values
-                        ).arpls(da_for_baseline.values, lam=arpls_lam)
+                        ).iarpls(da_for_baseline.values, lam=iarpls_lam)
 
                         self.ds["i1d_baseline"] = xr.DataArray(
                             data=(diff_baseline + bkg_scale * input_bkg.ds.i1d.values),
                             dims=["radial"],
                             coords={"radial": input_bkg.ds.i1d.radial.values},
-                            attrs={"arpls_lam": arpls_lam},
+                            attrs={"iarpls_lam": iarpls_lam},
                         )
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
-                        ] = "baseline is from provided input_bkg i1d and arpls is used"
+                        ] = "baseline is from provided input_bkg i1d and iarpls is used"
                     else:
                         self.ds["i1d_baseline"] = deepcopy(bkg_scale * input_bkg.ds.i1d)
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
-                        ] = "baseline is from provided input_bkg. i1d arpls is not used"
+                        ] = "baseline is from provided input_bkg. i1d iarpls is not used"
 
             else:
 
@@ -1106,7 +1138,7 @@ class exrd:
                         if k in self.ds.keys():
                             del self.ds[k]
 
-                    if use_arpls:
+                    if use_iarpls:
 
                         if roi_azimuthal_range is not None:
                             da_i2d = self.ds.i2d.sel(
@@ -1127,7 +1159,7 @@ class exrd:
                                 try:
                                     baseline_now, params = pybaselines.Baseline(
                                         x_data=da_now_dropna.radial_i2d.values
-                                    ).arpls(da_now_dropna.values, lam=arpls_lam)
+                                    ).iarpls(da_now_dropna.values, lam=iarpls_lam)
                                     # create baseline da by copying
                                     da_now_dropna_baseline = copy.deepcopy(
                                         da_now_dropna
@@ -1148,8 +1180,8 @@ class exrd:
                             self.ds["i2d_baseline"] = da_i2d_baseline
                             self.ds["i2d_baseline"].attrs[
                                 "baseline_note"
-                            ] = "baseline is estimated with arpls"
-                            self.ds["i2d_baseline"].attrs["arpls_lam"] = arpls_lam
+                            ] = "baseline is estimated with iarpls"
+                            self.ds["i2d_baseline"].attrs["iarpls_lam"] = iarpls_lam
 
                             if use_i2d_baseline:
                                 self.ds["i1d_baseline"] = (
@@ -1159,15 +1191,15 @@ class exrd:
                                 )
                                 self.ds["i1d_baseline"].attrs[
                                     "baseline_note"
-                                ] = "baseline is from i2d_baseline as available in this dataset. arpls is used"
-                                self.ds["i1d_baseline"].attrs["arpls_lam"] = arpls_lam
+                                ] = "baseline is from i2d_baseline as available in this dataset. iarpls is used"
+                                self.ds["i1d_baseline"].attrs["iarpls_lam"] = iarpls_lam
                             else:
                                 da_for_baseline = da_i2d.mean(
                                     dim="azimuthal_i2d"
                                 ).dropna(dim="radial_i2d")
                                 baseline, params = pybaselines.Baseline(
                                     x_data=da_for_baseline.radial_i2d.values
-                                ).arpls(da_for_baseline.values, lam=arpls_lam)
+                                ).iarpls(da_for_baseline.values, lam=iarpls_lam)
                                 self.ds["i1d_baseline"] = (
                                     xr.DataArray(
                                         data=(baseline),
@@ -1175,15 +1207,15 @@ class exrd:
                                         coords={
                                             "radial_i2d": da_for_baseline.radial_i2d.values
                                         },
-                                        attrs={"arpls_lam": arpls_lam},
+                                        attrs={"iarpls_lam": iarpls_lam},
                                     )
                                     .interp(radial_i2d=da_i2d.radial_i2d)
                                     .rename({"radial_i2d": "radial"})
                                 )
                                 self.ds["i1d_baseline"].attrs[
                                     "baseline_note"
-                                ] = "baseline is estimated with arpls"
-                                self.ds["i1d_baseline"].attrs["arpls_lam"] = arpls_lam
+                                ] = "baseline is estimated with iarpls"
+                                self.ds["i1d_baseline"].attrs["iarpls_lam"] = iarpls_lam
 
                         else:
                             da_for_baseline = da_i2d.mean(dim="azimuthal_i2d").dropna(
@@ -1191,7 +1223,7 @@ class exrd:
                             )
                             baseline, params = pybaselines.Baseline(
                                 x_data=da_for_baseline.radial_i2d.values
-                            ).arpls(da_for_baseline.values, lam=arpls_lam)
+                            ).iarpls(da_for_baseline.values, lam=iarpls_lam)
                             self.ds["i1d_baseline"] = (
                                 xr.DataArray(
                                     data=(baseline),
@@ -1199,15 +1231,15 @@ class exrd:
                                     coords={
                                         "radial_i2d": da_for_baseline.radial_i2d.values
                                     },
-                                    attrs={"arpls_lam": arpls_lam},
+                                    attrs={"iarpls_lam": iarpls_lam},
                                 )
                                 .interp(radial_i2d=da_i2d.radial_i2d)
                                 .rename({"radial_i2d": "radial"})
                             )
                             self.ds["i1d_baseline"].attrs[
                                 "baseline_note"
-                            ] = "baseline is estimated with arpls"
-                            self.ds["i1d_baseline"].attrs["arpls_lam"] = arpls_lam
+                            ] = "baseline is estimated with iarpls"
+                            self.ds["i1d_baseline"].attrs["iarpls_lam"] = iarpls_lam
 
                     else:
                         self.ds["i1d_baseline"] = (
@@ -1216,6 +1248,30 @@ class exrd:
                         bkg_scale = da_i1d.values[0] / da_i1d_bkg.values[0]
                         while min((da_i1d.values - bkg_scale * da_i1d_bkg.values)) < 0:
                             bkg_scale = bkg_scale * 0.99
+
+
+                else:
+
+                    if iarpls_lam:
+                        baseline, params = pybaselines.Baseline(
+                            x_data=self.ds.i1d.radial.values
+                        ).iarpls(self.ds.i1d.values, lam=iarpls_lam)                 
+                        self.ds["i1d_baseline"] = (
+                            xr.DataArray(
+                                data=(baseline),
+                                dims=["radial"],
+                                coords={
+                                    "radial": self.ds.i1d.radial.values
+                                },
+                                attrs={"iarpls_lam": iarpls_lam},
+                            )
+                        )
+                        self.ds["i1d_baseline"].attrs[
+                            "baseline_note"
+                        ] = "baseline is estimated with iarpls"
+                        self.ds["i1d_baseline"].attrs["iarpls_lam"] = iarpls_lam
+
+
 
         if "i2d" in self.ds.keys():
             if roi_azimuthal_range is not None:
@@ -1308,14 +1364,39 @@ class exrd:
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 
         if from_phases_dict is not None:
+
+            try:
+                mp_id = p["mp_id"]
+            except:
+                mp_id = 'none'
+
+
             self.phases = {}
             for e, p in enumerate(from_phases_dict):
-                if p["mp_id"].lower() == "none":
+                if mp_id.lower() == "none":
                     st = Structure.from_file(p["cif"])
+
+                    try:
+                        scale = p["scale"]
+                    except:
+                        scale = 1
+                    try:
+                        scale_a = p["scale_a"]
+                    except:
+                        scale_a = 1
+                    try:
+                        scale_b = p["scale_b"]
+                    except:
+                        scale_b = 1
+                    try:
+                        scale_c = p["scale_c"]
+                    except:
+                        scale_c = 1
+
                     st.lattice = Lattice.from_parameters(
-                        a=st.lattice.abc[0] * p["scale"] * p["scale_a"],
-                        b=st.lattice.abc[1] * p["scale"] * p["scale_b"],
-                        c=st.lattice.abc[2] * p["scale"] * p["scale_c"],
+                        a=st.lattice.abc[0] * scale * scale_a,
+                        b=st.lattice.abc[1] * scale * scale_b,
+                        c=st.lattice.abc[2] * scale * scale_c,
                         alpha=st.lattice.angles[0],
                         beta=st.lattice.angles[1],
                         gamma=st.lattice.angles[2],
@@ -1326,11 +1407,29 @@ class exrd:
                     from mp_api.client import MPRester
 
                     mpr = MPRester(mp_rester_api_key)
-                    st = mpr.get_structure_by_material_id(p["mp_id"], final=False)[0]
+                    st = mpr.get_structure_by_material_id(mp_id, final=False)[0]
+
+                    try:
+                        scale = p["scale"]
+                    except:
+                        scale = 1
+                    try:
+                        scale_a = p["scale_a"]
+                    except:
+                        scale_a = 1
+                    try:
+                        scale_b = p["scale_b"]
+                    except:
+                        scale_b = 1
+                    try:
+                        scale_c = p["scale_c"]
+                    except:
+                        scale_c = 1
+
                     st.lattice = Lattice.from_parameters(
-                        a=st.lattice.abc[0] * p["scale"] * p["scale_a"],
-                        b=st.lattice.abc[1] * p["scale"] * p["scale_b"],
-                        c=st.lattice.abc[2] * p["scale"] * p["scale_c"],
+                        a=st.lattice.abc[0] * scale * scale_a,
+                        b=st.lattice.abc[1] * scale * scale_b,
+                        c=st.lattice.abc[2] * scale * scale_c,
                         alpha=st.lattice.angles[0],
                         beta=st.lattice.angles[1],
                         gamma=st.lattice.angles[2],
@@ -1476,17 +1575,17 @@ class exrd:
         instprm_from_nc=None,
         instprm_Polariz=0,
         instprm_Azimuth=0,
-        instprm_Zero=-0.0006,
-        instprm_U=118.313,
-        instprm_V=4.221,
-        instprm_W=0.747,
+        instprm_Zero=0,
+        instprm_U=100,
+        instprm_V=5,
+        instprm_W=0.5,
         instprm_X=0,
-        instprm_Y=-7.148,
+        instprm_Y=-10,
         instprm_Z=0,
         instprm_SHL=0.002,
         do_1st_refinement=True,
         yshift_multiplier=0.01,
-        normalize=True,
+        normalize=False,
         normalize_to=100,
         plot=True,
     ):
@@ -1810,7 +1909,7 @@ class exrd:
                 verbose=False,
             )
 
-            print("\n ⏩--1st refinement with LeBail is completed: %s \n" % (ref_str))
+            print("\n ⏩--1st refinement with LeBail is completed. %s \n" % (ref_str))
 
             if plot:
                 exrd_plotter(
@@ -1821,7 +1920,7 @@ class exrd:
                     i2d_robust=self.i2d_robust,
                     i2d_logscale=self.i2d_logscale,
                     i1d_ylogscale=self.i1d_ylogscale,
-                    title_str="1st refinement with LeBail is completed: %s "
+                    title_str="1st refinement with LeBail is completed. %s "
                     % (ref_str),
                     export_fig_as=None,
                     plot_hint="1st_refinement",
@@ -1859,7 +1958,7 @@ class exrd:
             update_previous_gpx=True,
             update_previous_phases=False,
         )
-        title_str = "Background is refined. %s" % ref_str
+        title_str = "Background with %d coefficients is refined. %s" % (num_coeffs,ref_str)
         print(" ✅--" + title_str)
 
         if set_to_false_after_refinement:
@@ -1941,7 +2040,7 @@ class exrd:
             update_previous_gpx=True,
             update_previous_phases=False,
         )
-        title_str = "Instrument parameters %s are refined. %s" % (
+        title_str = "Instrument parameter %s is refined. %s" % (
             inst_pars_to_refine,
             ref_str,
         )
@@ -2015,13 +2114,13 @@ class exrd:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
-    def set_LeBail(self, set_to=True, phase_ind="all", refine=False, plot=False):
+    def set_LeBail(self, to=True, phase_ind="all", refine=True, plot=False):
         """ """
 
         if (phase_ind == "all") or (phase_ind == None):
-            self.gpx.set_refinement({"set": {"LeBail": set_to}})
+            self.gpx.set_refinement({"set": {"LeBail": to}})
         else:
-            self.gpx.set_refinement({"set": {"LeBail": set_to}}, phase=phase_ind)
+            self.gpx.set_refinement({"set": {"LeBail": to}}, phase=phase_ind)
 
         if refine:
             ref_str = self.refine(
@@ -2032,7 +2131,7 @@ class exrd:
                 update_previous_gpx=True,
                 update_previous_phases=False,
             )
-            if set_to:
+            if to:
                 title_str = "After setting LeBail refinement to True, %s" % (ref_str)
                 print("\n ✅--" + title_str)
 
@@ -2068,6 +2167,8 @@ class exrd:
     ):
         """ """
 
+
+
         self.gpx.set_refinement({"set": {"Cell": True}}, phase=phase_ind)
 
         ref_str = self.refine(
@@ -2079,7 +2180,10 @@ class exrd:
             update_previous_phases=True,
         )
         if (phase_ind == "all") or (phase_ind == None):
-            title_str = "Cell parameters of all phases are refined. %s" % (ref_str)
+            if len(self.phases) > 1:
+                title_str = "Cell parameters of all phases are refined. %s" % (ref_str)
+            else:
+                title_str = "Cell parameters are refined. %s" % (ref_str)
             print(" ✅--" + title_str)
             if plot:
                 exrd_plotter(
@@ -2093,7 +2197,7 @@ class exrd:
                     title_str=title_str.replace("✨", "").replace("❗", ""),
                 )
         else:
-            title_str = "Cell parameters of %s phase is refined. %s" % (
+            title_str = "Cell parameters of %s phase are refined. %s" % (
                 self.gpx.phases()[phase_ind].name,
                 ref_str,
             )
@@ -2759,9 +2863,18 @@ class exrd:
         if save_gpx:
             self.gpx_saver()
 
+
+
+
+    ###############################################################################################
+    ###############################################################################################
+    ###############################################################################################
+    ###############################################################################################
+    ###############################################################################################
+    ###############################################################################################
     def plot(
         self,
-        plot_hint="plot-type-0",
+        plot_hint=None,
         figsize=None,
         i2d_robust=None,
         i2d_logscale=None,
@@ -2788,9 +2901,20 @@ class exrd:
         if i1d_ylogscale is None:
             i1d_ylogscale = self.i1d_ylogscale
 
+        try:
+            ds=self.ds
+        except:
+            ds=None
+
+        try:
+            ds_previous=self.ds_previous
+        except:
+            ds_previous=None
+
+
         exrd_plotter(
-            ds=self.ds,
-            ds_previous=self.ds_previous,
+            ds=ds,
+            ds_previous=ds_previous,
             figsize=figsize,
             i2d_robust=i2d_robust,
             i2d_logscale=i2d_logscale,
@@ -2806,6 +2930,23 @@ class exrd:
             show_wt_fractions=show_wt_fractions,
         )
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    ###############################################################################################
     def export_ds_to(self, to=None, save_dir=None, save_name=None):
         """ """
 
@@ -2834,6 +2975,8 @@ class exrd:
                     engine="h5netcdf",
                 )  # pip install h5netcdf
 
+
+    ###############################################################################################
     def fine_tune_gpx(self):
         """ """
         subprocess.check_call(
@@ -2847,6 +2990,8 @@ class exrd:
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
         self.gpx.refine()
 
+
+    ###############################################################################################
     def replace_gpx_with(self, newgpx_to_replace):
         """ """
         shutil.copy(newgpx_to_replace, "%s/gsas.gpx" % self.gsasii_run_directory)
@@ -2855,6 +3000,8 @@ class exrd:
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
         self.gpx.refine()
 
+
+    ###############################################################################################
     def export_gpx_to(self, to="gsas.gpx"):
         """ """
         shutil.copy("%s/gsas.gpx" % self.gsasii_run_directory, to)
