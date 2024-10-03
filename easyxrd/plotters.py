@@ -58,7 +58,7 @@ def i1d_plotter(
     return_da=False,
     title_str="",
     ncol=1,
-    show_Ybkg_old=False,
+    show_Ybkg_old = False
 ):
 
     yshift_multiplier = 0.01
@@ -68,7 +68,7 @@ def i1d_plotter(
         if "i1d_refined" in ds.keys():
             da_Y_calc = ds.i1d_refined - ds.i1d_baseline
             da_Y_bkg = ds.i1d_gsas_background
-        ylabel = "i1d - i1d_baseline"
+        ylabel = "Intensity"
     else:
         da_Y_obs = ds.i1d
         if "i1d_refined" in ds.keys():
@@ -138,6 +138,7 @@ def i1d_plotter(
             label="Y$_{calc.}$ (old)",
         )
 
+
         if show_Ybkg_old:
             da_Y_bkg_previous.plot(
                 ax=ax,
@@ -160,7 +161,7 @@ def i1d_plotter(
         ax.set_xlabel(None)
 
     if i1d_ylogscale:
-        ax.set_yscale("log")
+        ax.set_yscale('log')
 
     if return_da:
         return [da_Y_obs, da_Y_calc, da_Y_bkg]
@@ -416,6 +417,9 @@ def exrd_plotter(
                 title_str="",
             )
 
+
+            
+
     #############################################################################
     #############################################################################
     #############################################################################
@@ -560,6 +564,8 @@ def exrd_plotter(
 
         #
 
+    
+
     #############################################################################
     #############################################################################
     #############################################################################
@@ -629,6 +635,7 @@ def exrd_plotter(
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
 
+
     #############################################################################
     #############################################################################
     #############################################################################
@@ -662,7 +669,7 @@ def exrd_plotter(
                 xlabel=False,
                 i1d_ylogscale=i1d_ylogscale,
                 return_da=False,
-                show_Ybkg_old=True,
+                show_Ybkg_old = True
             )
             phases_plotter(
                 ds,
@@ -690,7 +697,7 @@ def exrd_plotter(
                 xlabel=False,
                 i1d_ylogscale=i1d_ylogscale,
                 return_da=False,
-                show_Ybkg_old=True,
+                show_Ybkg_old = True
             )
             ax_dict["1"].set_title(title_str, fontsize=8)
             phases_plotter(
@@ -699,6 +706,7 @@ def exrd_plotter(
                 phases=phases,
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
+
 
     #############################################################################
     #############################################################################
@@ -769,9 +777,15 @@ def exrd_plotter(
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
 
-    #############################################################################
-    #############################################################################
-    #############################################################################
+
+
+
+
+
+
+#############################################################################
+#############################################################################
+#############################################################################
     elif plot_hint == None:
 
         fig = plt.figure(figsize=figsize, dpi=128)
@@ -905,11 +919,11 @@ def exrd_plotter(
                     str_fraction = ""
 
             site_str = (
-                "\n%s:  %s (%s)  %s %s %s \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n"
+                "\n%s %s phase (%s)  %s %s %s \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n"
                 % (
-                    site_label,
                     site_SpGrp.replace(" ", ""),
                     site_SGSys,
+                    site_label,
                     str_fraction,
                     size_str,
                     strain_str,
@@ -929,7 +943,7 @@ def exrd_plotter(
                 xytext=(0, 0),
                 textcoords="offset points",
                 color="C%d" % e,
-                fontsize=7,
+                fontsize=8,
                 rotation=0,
             )
 
@@ -956,6 +970,8 @@ def exrd_plotter(
 
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)
+
+
 
     #############################################################################
     #############################################################################

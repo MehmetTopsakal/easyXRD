@@ -24,15 +24,7 @@ print("\n\nChecking required packages:\n")
 # These are big python libraries that we will need in pySULI.
 # If the required library doesn't exist, we install it via pip
 
-required_big_packages = {
-    "numpy",
-    "scipy",
-    "xarray",
-    "ipympl",
-    "pymatgen",
-    "pyFAI",
-    "pybaselines",
-}
+required_big_packages = {"numpy", "scipy", "xarray", "ipympl", "pymatgen", "pyFAI", "pybaselines"}
 
 for rp in required_big_packages:
     try:
@@ -120,8 +112,8 @@ if os.path.isfile(os.path.join(user_home, ".easyxrd_scratch", "mp_api_key.dat"))
     with open(
         os.path.join(user_home, ".easyxrd_scratch", "mp_api_key.dat"), "r"
     ) as api_key_file:
-        api_key_file_content = api_key_file.read()
-        if len(api_key_file_content) == 33:
+        api_key_file_content = api_key_file.read().split()[-1]
+        if len(api_key_file_content) == 32:
             mp_api_key = api_key_file_content
         else:
             mp_api_key = "not found"
@@ -139,8 +131,11 @@ def set_defaults(name, val):
 def print_defaults():
     for key, val in easyxrd_defaults.items():
 
-        if key != "mp_api_key":
-            print("%s : %s" % (key, val))
+        if key != 'mp_api_key':
+            print("%s : %s"%(key,val))
+        else:
+            print("%s : %s......"%(key,val[:5]))
+
 
 
 print("\n\nImported easyxrd with the following configuration:\n")
