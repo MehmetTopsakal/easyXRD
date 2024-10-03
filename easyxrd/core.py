@@ -354,20 +354,23 @@ class exrd:
                 gof_symbol = "❗"
             else:
                 gof_symbol = ""
-            refinement_str = "Rwp/GoF is now %.3f/%.3f (was %.3f(%.2f%%)/%.3f(%.2f%%%s))" % (
-                self.gpx["Covariance"]["data"]["Rvals"]["Rwp"],
-                self.gpx["Covariance"]["data"]["Rvals"]["GOF"],
-                # self.gpx["Covariance"]["data"]["Rvals"]["Nvars"],
-                self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
-                100
-                * (
-                    self.gpx["Covariance"]["data"]["Rvals"]["Rwp"]
-                    - self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"]
+            refinement_str = (
+                "Rwp/GoF is now %.3f/%.3f (was %.3f(%.2f%%)/%.3f(%.2f%%%s))"
+                % (
+                    self.gpx["Covariance"]["data"]["Rvals"]["Rwp"],
+                    self.gpx["Covariance"]["data"]["Rvals"]["GOF"],
+                    # self.gpx["Covariance"]["data"]["Rvals"]["Nvars"],
+                    self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
+                    100
+                    * (
+                        self.gpx["Covariance"]["data"]["Rvals"]["Rwp"]
+                        - self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"]
+                    )
+                    / self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
+                    self.gpx_previous["Covariance"]["data"]["Rvals"]["GOF"],
+                    gof_change,
+                    gof_symbol,
                 )
-                / self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
-                self.gpx_previous["Covariance"]["data"]["Rvals"]["GOF"],
-                gof_change,
-                gof_symbol,
             )
         except:
             refinement_str = "Rwp/GoF is %.3f/%.3f" % (
@@ -393,6 +396,9 @@ class exrd:
         else:
             with HiddenPrints():
                 self.gpx.save()
+
+
+
 
     def load_xrd_data(
         self,
@@ -434,21 +440,24 @@ class exrd:
                 radial_range = [radial_range[0], radial_range[0] + delta_q * npt]
             else:
                 npt, radial_range = None, None
+            
+
 
             if (mask is None) and (mask_file is None):
                 pass
             elif (mask_file is not None) and (mask is None):
                 mask = fabio.open(mask_file).data
             elif (mask_file is not None) and (mask is not None):
-                print("\nmask is provided. Ignoring mask_file\n")
-
+                print('\nmask is provided. Ignoring mask_file\n')
+                
             if (ai is None) and (poni_file is None):
-                print("\n\nERROR: Valid a poni file or ai object is needed\n")
+                print('\n\nERROR: Valid a poni file or ai object is needed\n')
                 return
             elif (poni_file is not None) and (ai is None):
                 ai = pyFAI.load(poni_file)
             elif (poni_file is not None) and (ai is not None):
-                print("\nAzimuthal integrator (ai) is provided. Ignoring poni_file\n")
+                print('\nAzimuthal integrator (ai) is provided. Ignoring poni_file\n')
+
 
             # integrate
             i2d = ai.integrate2d(
@@ -517,9 +526,9 @@ class exrd:
                         unpack=True,
                     )
                     if txt_file_radial_unit.lower()[0] == "t":
-                        X = ((4 * np.pi) / (txt_file_wavelength_in_angstom)) * np.sin(
-                            np.deg2rad(X) / 2
-                        )
+                        X = (
+                            (4 * np.pi) / (txt_file_wavelength_in_angstom)
+                        ) * np.sin(np.deg2rad(X) / 2)
                     elif txt_file_radial_unit.lower()[0] == "q":
                         pass
                     else:
@@ -540,6 +549,9 @@ class exrd:
                             "i1d_from": from_txt_file,
                         },
                     )
+
+                    if radial_range is not None:
+                        self.ds = self.ds.sel(radial=slice(radial_range[0],radial_range[1]))
                 except Exception as exc:
                     print(
                         "Unable to read %s \nPlease check %s is a valid plain text file\n\n"
@@ -1240,22 +1252,29 @@ class exrd:
                         while min((da_i1d.values - bkg_scale * da_i1d_bkg.values)) < 0:
                             bkg_scale = bkg_scale * 0.99
 
+
                 else:
 
                     if iarpls_lam:
                         baseline, params = pybaselines.Baseline(
                             x_data=self.ds.i1d.radial.values
-                        ).iarpls(self.ds.i1d.values, lam=iarpls_lam)
-                        self.ds["i1d_baseline"] = xr.DataArray(
-                            data=(baseline),
-                            dims=["radial"],
-                            coords={"radial": self.ds.i1d.radial.values},
-                            attrs={"iarpls_lam": iarpls_lam},
+                        ).iarpls(self.ds.i1d.values, lam=iarpls_lam)                 
+                        self.ds["i1d_baseline"] = (
+                            xr.DataArray(
+                                data=(baseline),
+                                dims=["radial"],
+                                coords={
+                                    "radial": self.ds.i1d.radial.values
+                                },
+                                attrs={"iarpls_lam": iarpls_lam},
+                            )
                         )
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
                         ] = "baseline is estimated with iarpls"
                         self.ds["i1d_baseline"].attrs["iarpls_lam"] = iarpls_lam
+
+
 
         if "i2d" in self.ds.keys():
             if roi_azimuthal_range is not None:
@@ -1341,21 +1360,34 @@ class exrd:
         from_gpx=None,
         from_nc=None,
         from_ds=None,
-        mp_rester_api_key="dHgNQRNYSpuizBPZYYab75iJNMJYCklB",
+        mp_rester_api_key=None,
         plot=True,
     ):
+
+
+        if mp_rester_api_key is None:
+            try:
+                mp_rester_api_key=easyxrd_defaults["mp_api_key"]
+            except:
+                mp_rester_api_key='none'
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 
         if from_phases_dict is not None:
 
-            try:
-                mp_id = p["mp_id"]
-            except:
-                mp_id = "none"
+
+
+
+
 
             self.phases = {}
             for e, p in enumerate(from_phases_dict):
+
+                try:
+                    mp_id = p["mp_id"]
+                except:
+                    mp_id = 'none'
+
                 if mp_id.lower() == "none":
                     st = Structure.from_file(p["cif"])
 
@@ -1387,6 +1419,13 @@ class exrd:
                     self.phases[p["label"]] = st
 
                 else:
+
+                    if mp_rester_api_key.lower() == 'none':
+                        mp_rester_api_key = input(
+                                            "\nIn order to retrieve structural information from Materials Project, api_ket is needed. \nPlease enter your 32 character key it here:\n"
+                                        )
+                        easyxrd_defaults["mp_api_key"] = mp_rester_api_key
+
                     from mp_api.client import MPRester
 
                     mpr = MPRester(mp_rester_api_key)
@@ -1941,10 +1980,7 @@ class exrd:
             update_previous_gpx=True,
             update_previous_phases=False,
         )
-        title_str = "Background with %d coefficients is refined. %s" % (
-            num_coeffs,
-            ref_str,
-        )
+        title_str = "Background with %d coeffs is refined. %s" % (num_coeffs,ref_str)
         print(" ✅--" + title_str)
 
         if set_to_false_after_refinement:
@@ -2152,6 +2188,8 @@ class exrd:
         report=False,
     ):
         """ """
+
+
 
         self.gpx.set_refinement({"set": {"Cell": True}}, phase=phase_ind)
 
@@ -2847,6 +2885,9 @@ class exrd:
         if save_gpx:
             self.gpx_saver()
 
+
+
+
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
@@ -2883,14 +2924,15 @@ class exrd:
             i1d_ylogscale = self.i1d_ylogscale
 
         try:
-            ds = self.ds
+            ds=self.ds
         except:
-            ds = None
+            ds=None
 
         try:
-            ds_previous = self.ds_previous
+            ds_previous=self.ds_previous
         except:
-            ds_previous = None
+            ds_previous=None
+
 
         exrd_plotter(
             ds=ds,
@@ -2909,6 +2951,22 @@ class exrd:
             site_str_y=site_str_y,
             show_wt_fractions=show_wt_fractions,
         )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     ###############################################################################################
     def export_ds_to(self, to=None, save_dir=None, save_name=None):
@@ -2939,6 +2997,7 @@ class exrd:
                     engine="h5netcdf",
                 )  # pip install h5netcdf
 
+
     ###############################################################################################
     def fine_tune_gpx(self):
         """ """
@@ -2953,6 +3012,7 @@ class exrd:
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
         self.gpx.refine()
 
+
     ###############################################################################################
     def replace_gpx_with(self, newgpx_to_replace):
         """ """
@@ -2961,6 +3021,7 @@ class exrd:
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
         self.gpx.refine()
+
 
     ###############################################################################################
     def export_gpx_to(self, to="gsas.gpx"):
