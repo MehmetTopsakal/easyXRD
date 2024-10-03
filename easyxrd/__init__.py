@@ -24,7 +24,15 @@ print("\n\nChecking required packages:\n")
 # These are big python libraries that we will need in pySULI.
 # If the required library doesn't exist, we install it via pip
 
-required_big_packages = {"numpy", "scipy", "xarray", "ipympl", "pymatgen", "pyFAI", "pybaselines"}
+required_big_packages = {
+    "numpy",
+    "scipy",
+    "xarray",
+    "ipympl",
+    "pymatgen",
+    "pyFAI",
+    "pybaselines",
+}
 
 for rp in required_big_packages:
     try:
@@ -131,8 +139,8 @@ def set_defaults(name, val):
 def print_defaults():
     for key, val in easyxrd_defaults.items():
 
-        if key != 'mp_api_key':
-            print("%s : %s"%(key,val))
+        if key != "mp_api_key":
+            print("%s : %s" % (key, val))
 
 
 print("\n\nImported easyxrd with the following configuration:\n")
