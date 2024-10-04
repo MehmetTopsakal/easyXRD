@@ -411,7 +411,7 @@ class exrd:
         median_filter_size=2,
         from_nc_file=None,
         from_txt_file=None,
-        txt_file_wavelength_in_angstom=0.1814,
+        txt_file_wavelength_in_angstrom=0.1814,
         txt_file_comments="#",
         txt_file_skiprows=0,
         txt_file_usecols=(0, 1),
@@ -527,7 +527,7 @@ class exrd:
                     )
                     if txt_file_radial_unit.lower()[0] == "t":
                         X = (
-                            (4 * np.pi) / (txt_file_wavelength_in_angstom)
+                            (4 * np.pi) / (txt_file_wavelength_in_angstrom)
                         ) * np.sin(np.deg2rad(X) / 2)
                     elif txt_file_radial_unit.lower()[0] == "q":
                         pass
@@ -545,7 +545,7 @@ class exrd:
                             "radial_unit": "q_A^-1",
                             "xlabel": "Scattering vector $q$ ($\AA^{-1}$)",
                             "ylabel": "Intensity (a.u.)",
-                            "wavelength_in_angst": txt_file_wavelength_in_angstom,
+                            "wavelength_in_angst": txt_file_wavelength_in_angstrom,
                             "i1d_from": from_txt_file,
                         },
                     )
