@@ -252,7 +252,7 @@ def phases_plotter(
     ax_main,
     phases=None,
     line_axes=[],
-    phase_label_x=0.95,
+    phase_label_x=0.9,
     phase_label_y=0.75,
     phase_label_yshift=-0.2,
 ):

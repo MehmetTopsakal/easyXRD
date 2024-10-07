@@ -593,6 +593,13 @@ class exrd:
         spotty_data_correction=False,
         spotty_data_correction_threshold=1,
     ):
+        
+
+
+        for k in ["i1d_refined", "i1d_gsas_background"]:
+            if k in self.ds.keys():
+                del self.ds[k]
+
 
         if (input_bkg is None) and (use_iarpls is False):
             print(
@@ -1363,6 +1370,11 @@ class exrd:
         mp_rester_api_key=None,
         plot=True,
     ):
+        
+
+        for k in ["i1d_refined", "i1d_gsas_background"]:
+            if k in self.ds.keys():
+                del self.ds[k]
 
 
         if mp_rester_api_key is None:
@@ -1602,7 +1614,7 @@ class exrd:
         instprm_V=5,
         instprm_W=0.5,
         instprm_X=0,
-        instprm_Y=-10,
+        instprm_Y=0,
         instprm_Z=0,
         instprm_SHL=0.002,
         do_1st_refinement=True,
@@ -1611,6 +1623,11 @@ class exrd:
         normalize_to=100,
         plot=True,
     ):
+        
+
+        for k in ["i1d_refined", "i1d_gsas_background"]:
+            if k in self.ds.keys():
+                del self.ds[k]
 
         try:
             del self.gsasii_lib_directory
