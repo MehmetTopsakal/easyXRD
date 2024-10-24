@@ -419,6 +419,7 @@ class exrd:
         radial_range=[0.1, 11.1],
         radial_npts=1000,
         plot=True,
+        ds_attrs = None
     ):
 
         if (from_img_array is None) and (from_tiff_file is not None):
@@ -433,6 +434,12 @@ class exrd:
         if img_array is not None:
 
             self.ds = xr.Dataset()
+
+            try:
+                self.ds.attrs = ds_attrs
+            except Exception as exc:
+                print(exc)
+                print('Unable to include ds_attrs in self.ds')
 
             if radial_range is not None:
                 delta_q = 0.0010
