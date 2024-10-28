@@ -471,6 +471,7 @@ def exrd_plotter(
         ax.set_xlabel(ds.i1d.attrs["xlabel"])
         ax.set_ylabel("Intensity (a.u.)")
         ax.legend(fontsize=6)
+        ax.set_title(title)
 
         if "i2d" in ds.keys():
             ax = ax_dict["2"]

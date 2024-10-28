@@ -309,11 +309,11 @@ class exrd:
                     "Phases"
                 ][p.name]["Histograms"]["PWDR data.xy"]["Mustrain"][1][2]
 
-        inst_prm_dict = self.gpx["PWDR data.xy"]["Instrument Parameters"][0]
-        inst_prm_dict_clean = {}
-        for i in inst_prm_dict:
-            inst_prm_dict_clean["gsasii_inst_prm_" + i] = inst_prm_dict[i][0]
-        self.ds.attrs = self.ds.attrs | inst_prm_dict_clean
+            inst_prm_dict = self.gpx["PWDR data.xy"]["Instrument Parameters"][0]
+            inst_prm_dict_clean = {}
+            for i in inst_prm_dict:
+                inst_prm_dict_clean["gsasii_inst_prm_" + i] = inst_prm_dict[i][1]
+            self.ds.attrs = self.ds.attrs | inst_prm_dict_clean
 
         if update_phases or update_ds_phases:
             for e, p in enumerate(self.gpx.phases()):
@@ -418,6 +418,7 @@ class exrd:
         txt_file_radial_unit="tth",
         radial_range=[0.1, 11.1],
         radial_npts=1000,
+        delta_q = 0.0010, 
         plot=True,
         ds_attrs = None
     ):
@@ -442,7 +443,6 @@ class exrd:
                 print('Unable to include ds_attrs in self.ds')
 
             if radial_range is not None:
-                delta_q = 0.0010
                 npt = int(np.ceil((radial_range[1] - radial_range[0]) / delta_q))
                 radial_range = [radial_range[0], radial_range[0] + delta_q * npt]
             else:
@@ -1712,10 +1712,13 @@ class exrd:
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 
-        randstr = "test"
-        self.gsasii_run_directory = "%s/%.2f_%s.gsastmp" % (
+        randstr = "".join(
+            random.choices(string.ascii_uppercase + string.digits, k=7)
+        )
+        
+        self.gsasii_run_directory = "%s/%d_%s.gsastmp" % (
             self.easyxrd_scratch_directory,
-            10.0,
+            int(time.time()),
             randstr,
         )
 
