@@ -58,7 +58,7 @@ def i1d_plotter(
     return_da=False,
     title_str="",
     ncol=1,
-    show_Ybkg_old = False
+    show_Ybkg_old=False,
 ):
 
     yshift_multiplier = 0.01
@@ -138,7 +138,6 @@ def i1d_plotter(
             label="Y$_{calc.}$ (old)",
         )
 
-
         if show_Ybkg_old:
             da_Y_bkg_previous.plot(
                 ax=ax,
@@ -161,7 +160,7 @@ def i1d_plotter(
         ax.set_xlabel(None)
 
     if i1d_ylogscale:
-        ax.set_yscale('log')
+        ax.set_yscale("log")
 
     if return_da:
         return [da_Y_obs, da_Y_calc, da_Y_bkg]
@@ -376,7 +375,6 @@ def exrd_plotter(
                         """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
             ax = ax_dict["B"]
-            
 
             i2d_plotter(
                 ds,
@@ -385,9 +383,8 @@ def exrd_plotter(
                 i2d_robust=i2d_robust,
                 i2d_logscale=i2d_logscale,
                 annotate=True,
-                title_str=title
+                title_str=title,
             )
-        
 
             ax = ax_dict["C"]
             # np.log(ds.i2d.mean(dim='azimuthal_i2d')).plot(ax=ax,color='k')
@@ -398,7 +395,7 @@ def exrd_plotter(
                 i1d_ylogscale=i1d_ylogscale,
                 xlabel=True,
                 return_da=False,
-                title_str='',
+                title_str="",
             )
 
         else:
@@ -409,7 +406,7 @@ def exrd_plotter(
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
 
             ax = ax_dict["C"]
-            
+
             i1d_plotter(
                 ds,
                 ax,
@@ -420,14 +417,8 @@ def exrd_plotter(
                 title_str=title,
             )
 
-            
-
-        
-
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)
-
-            
 
     #############################################################################
     #############################################################################
@@ -494,7 +485,7 @@ def exrd_plotter(
             return_da=False,
             title_str="",
         )
-            
+
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)
 
@@ -576,11 +567,8 @@ def exrd_plotter(
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
 
-            
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)
-
-    
 
     #############################################################################
     #############################################################################
@@ -650,7 +638,7 @@ def exrd_plotter(
                 phases=phases,
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
-            
+
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)
 
@@ -687,7 +675,7 @@ def exrd_plotter(
                 xlabel=False,
                 i1d_ylogscale=i1d_ylogscale,
                 return_da=False,
-                show_Ybkg_old = True
+                show_Ybkg_old=True,
             )
             phases_plotter(
                 ds,
@@ -715,7 +703,7 @@ def exrd_plotter(
                 xlabel=False,
                 i1d_ylogscale=i1d_ylogscale,
                 return_da=False,
-                show_Ybkg_old = True
+                show_Ybkg_old=True,
             )
             ax_dict["1"].set_title(title_str, fontsize=8)
             phases_plotter(
@@ -724,7 +712,7 @@ def exrd_plotter(
                 phases=phases,
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
-            
+
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)
 
@@ -800,15 +788,9 @@ def exrd_plotter(
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)
 
-
-
-
-
-
-
-#############################################################################
-#############################################################################
-#############################################################################
+    #############################################################################
+    #############################################################################
+    #############################################################################
     elif plot_hint == None:
 
         fig = plt.figure(figsize=figsize, dpi=128)
@@ -994,8 +976,6 @@ def exrd_plotter(
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)
 
-
-
     #############################################################################
     #############################################################################
     #############################################################################
@@ -1064,6 +1044,6 @@ def exrd_plotter(
                 phases=phases,
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
-            
+
         if export_fig_as is not None:
             plt.savefig(export_fig_as, dpi=128)

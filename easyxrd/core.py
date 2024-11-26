@@ -41,6 +41,7 @@ plt.rcParams.update({"figure.max_open_warning": 0})
 
 
 from scipy.ndimage import median_filter
+from scipy.signal import medfilt2d
 
 
 from . import easyxrd_defaults
@@ -354,23 +355,20 @@ class exrd:
                 gof_symbol = "❗"
             else:
                 gof_symbol = ""
-            refinement_str = (
-                "Rwp/GoF is now %.3f/%.3f (was %.3f(%.2f%%)/%.3f(%.2f%%%s))"
-                % (
-                    self.gpx["Covariance"]["data"]["Rvals"]["Rwp"],
-                    self.gpx["Covariance"]["data"]["Rvals"]["GOF"],
-                    # self.gpx["Covariance"]["data"]["Rvals"]["Nvars"],
-                    self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
-                    100
-                    * (
-                        self.gpx["Covariance"]["data"]["Rvals"]["Rwp"]
-                        - self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"]
-                    )
-                    / self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
-                    self.gpx_previous["Covariance"]["data"]["Rvals"]["GOF"],
-                    gof_change,
-                    gof_symbol,
+            refinement_str = "Rwp/GoF is now %.3f/%.3f (was %.3f(%.2f%%)/%.3f(%.2f%%%s))" % (
+                self.gpx["Covariance"]["data"]["Rvals"]["Rwp"],
+                self.gpx["Covariance"]["data"]["Rvals"]["GOF"],
+                # self.gpx["Covariance"]["data"]["Rvals"]["Nvars"],
+                self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
+                100
+                * (
+                    self.gpx["Covariance"]["data"]["Rvals"]["Rwp"]
+                    - self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"]
                 )
+                / self.gpx_previous["Covariance"]["data"]["Rvals"]["Rwp"],
+                self.gpx_previous["Covariance"]["data"]["Rvals"]["GOF"],
+                gof_change,
+                gof_symbol,
             )
         except:
             refinement_str = "Rwp/GoF is %.3f/%.3f" % (
@@ -397,9 +395,6 @@ class exrd:
             with HiddenPrints():
                 self.gpx.save()
 
-
-
-
     def load_xrd_data(
         self,
         from_img_array=None,
@@ -408,7 +403,9 @@ class exrd:
         poni_file=None,
         mask=None,
         mask_file=None,
-        median_filter_size=2,
+        median_filter_kernel_size=None,
+        median_filter_on_i2d=True,
+        from_da_i2d=None,
         from_nc_file=None,
         from_txt_file=None,
         txt_file_wavelength_in_angstrom=0.1814,
@@ -418,17 +415,31 @@ class exrd:
         txt_file_radial_unit="tth",
         radial_range=[0.1, 11.1],
         radial_npts=1000,
-        delta_q = 0.0010, 
+        delta_q=0.0010,
         plot=True,
-        ds_attrs = None
+        ds_attrs=None,
     ):
 
         if (from_img_array is None) and (from_tiff_file is not None):
-            img_array = median_filter(
-                fabio.open(from_tiff_file).data, size=median_filter_size
-            )
+            if (median_filter_kernel_size is not None) and (
+                median_filter_on_i2d is False
+            ):
+                img_array = medfilt2d(
+                    fabio.open(from_tiff_file).data.astype("float32"),
+                    kernel_size=median_filter_kernel_size,
+                )
+            else:
+                img_array = fabio.open(from_tiff_file).data.astype("float32")
         elif (from_img_array is not None) and (from_tiff_file is None):
-            img_array = from_img_array
+            if (median_filter_kernel_size is not None) and (
+                median_filter_on_i2d is False
+            ):
+                img_array = medfilt2d(
+                    from_img_array.astype("float32"),
+                    kernel_size=median_filter_kernel_size,
+                )
+            else:
+                img_array = from_img_array
         else:
             img_array = None
 
@@ -440,31 +451,28 @@ class exrd:
                 self.ds.attrs = ds_attrs
             except Exception as exc:
                 print(exc)
-                print('Unable to include ds_attrs in self.ds')
+                print("Unable to include ds_attrs in self.ds")
 
             if radial_range is not None:
                 npt = int(np.ceil((radial_range[1] - radial_range[0]) / delta_q))
                 radial_range = [radial_range[0], radial_range[0] + delta_q * npt]
             else:
                 npt, radial_range = None, None
-            
-
 
             if (mask is None) and (mask_file is None):
                 pass
             elif (mask_file is not None) and (mask is None):
                 mask = fabio.open(mask_file).data
             elif (mask_file is not None) and (mask is not None):
-                print('\nmask is provided. Ignoring mask_file\n')
-                
+                print("\nmask is provided. Ignoring mask_file\n")
+
             if (ai is None) and (poni_file is None):
-                print('\n\nERROR: Valid a poni file or ai object is needed\n')
+                print("\n\nERROR: Valid a poni file or ai object is needed\n")
                 return
             elif (poni_file is not None) and (ai is None):
                 ai = pyFAI.load(poni_file)
             elif (poni_file is not None) and (ai is not None):
-                print('\nAzimuthal integrator (ai) is provided. Ignoring poni_file\n')
-
+                print("\nAzimuthal integrator (ai) is provided. Ignoring poni_file\n")
 
             # integrate
             i2d = ai.integrate2d(
@@ -490,8 +498,16 @@ class exrd:
                 metadata=None,
             )
 
+            if (median_filter_kernel_size is not None) and (median_filter_on_i2d):
+                data_i2d = medfilt2d(
+                    i2d.intensity.astype("float32"),
+                    kernel_size=median_filter_kernel_size,
+                )
+            else:
+                data_i2d = i2d.intensity.astype("float32")
+
             self.ds["i2d"] = xr.DataArray(
-                data=i2d.intensity.astype("float32"),
+                data=data_i2d,
                 coords=[i2d.azimuthal.astype("float32"), i2d.radial.astype("float32")],
                 dims=["azimuthal_i2d", "radial_i2d"],
                 attrs={
@@ -533,9 +549,9 @@ class exrd:
                         unpack=True,
                     )
                     if txt_file_radial_unit.lower()[0] == "t":
-                        X = (
-                            (4 * np.pi) / (txt_file_wavelength_in_angstrom)
-                        ) * np.sin(np.deg2rad(X) / 2)
+                        X = ((4 * np.pi) / (txt_file_wavelength_in_angstrom)) * np.sin(
+                            np.deg2rad(X) / 2
+                        )
                     elif txt_file_radial_unit.lower()[0] == "q":
                         pass
                     else:
@@ -558,7 +574,9 @@ class exrd:
                     )
 
                     if radial_range is not None:
-                        self.ds = self.ds.sel(radial=slice(radial_range[0],radial_range[1]))
+                        self.ds = self.ds.sel(
+                            radial=slice(radial_range[0], radial_range[1])
+                        )
                 except Exception as exc:
                     print(
                         "Unable to read %s \nPlease check %s is a valid plain text file\n\n"
@@ -569,6 +587,24 @@ class exrd:
             else:
                 print("%s does not exist. Please check the file path." % from_txt_file)
                 return
+
+        elif (
+            ((from_img_array is None) and (from_txt_file is None))
+            and (from_nc_file is None)
+            and (from_da_i2d is not None)
+        ):
+
+            self.ds = xr.Dataset()
+
+            self.ds["i2d"] = from_da_i2d
+
+            da_i1d = xr.DataArray(
+                data=self.ds["i2d"].mean(dim="azimuthal_i2d").astype("float32"),
+                coords=[self.ds["i2d"].radial_i2d],
+                dims=["radial"],
+                attrs=from_da_i2d.attrs,
+            )
+            self.ds["i1d"] = da_i1d.dropna(dim="radial")
 
         elif ((from_img_array is None) and (from_txt_file is None)) and (
             from_nc_file is not None
@@ -600,13 +636,10 @@ class exrd:
         spotty_data_correction=False,
         spotty_data_correction_threshold=1,
     ):
-        
-
 
         for k in ["i1d_refined", "i1d_gsas_background"]:
             if k in self.ds.keys():
                 del self.ds[k]
-
 
         if (input_bkg is None) and (use_iarpls is False):
             print(
@@ -1266,29 +1299,22 @@ class exrd:
                         while min((da_i1d.values - bkg_scale * da_i1d_bkg.values)) < 0:
                             bkg_scale = bkg_scale * 0.99
 
-
                 else:
 
                     if iarpls_lam:
                         baseline, params = pybaselines.Baseline(
                             x_data=self.ds.i1d.radial.values
-                        ).iarpls(self.ds.i1d.values, lam=iarpls_lam)                 
-                        self.ds["i1d_baseline"] = (
-                            xr.DataArray(
-                                data=(baseline),
-                                dims=["radial"],
-                                coords={
-                                    "radial": self.ds.i1d.radial.values
-                                },
-                                attrs={"iarpls_lam": iarpls_lam},
-                            )
+                        ).iarpls(self.ds.i1d.values, lam=iarpls_lam)
+                        self.ds["i1d_baseline"] = xr.DataArray(
+                            data=(baseline),
+                            dims=["radial"],
+                            coords={"radial": self.ds.i1d.radial.values},
+                            attrs={"iarpls_lam": iarpls_lam},
                         )
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
                         ] = "baseline is estimated with iarpls"
                         self.ds["i1d_baseline"].attrs["iarpls_lam"] = iarpls_lam
-
-
 
         if "i2d" in self.ds.keys():
             if roi_azimuthal_range is not None:
@@ -1377,27 +1403,20 @@ class exrd:
         mp_rester_api_key=None,
         plot=True,
     ):
-        
 
         for k in ["i1d_refined", "i1d_gsas_background"]:
             if k in self.ds.keys():
                 del self.ds[k]
 
-
         if mp_rester_api_key is None:
             try:
-                mp_rester_api_key=easyxrd_defaults["mp_api_key"]
+                mp_rester_api_key = easyxrd_defaults["mp_api_key"]
             except:
-                mp_rester_api_key='none'
+                mp_rester_api_key = "none"
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 
         if from_phases_dict is not None:
-
-
-
-
-
 
             self.phases = {}
             for e, p in enumerate(from_phases_dict):
@@ -1405,7 +1424,7 @@ class exrd:
                 try:
                     mp_id = p["mp_id"]
                 except:
-                    mp_id = 'none'
+                    mp_id = "none"
 
                 if mp_id.lower() == "none":
                     st = Structure.from_file(p["cif"])
@@ -1439,10 +1458,10 @@ class exrd:
 
                 else:
 
-                    if mp_rester_api_key.lower() == 'none':
+                    if mp_rester_api_key.lower() == "none":
                         mp_rester_api_key = input(
-                                            "\nIn order to retrieve structural information from Materials Project, api_ket is needed. \nPlease enter your 32 character key it here:\n"
-                                        )
+                            "\nIn order to retrieve structural information from Materials Project, api_ket is needed. \nPlease enter your 32 character key it here:\n"
+                        )
                         easyxrd_defaults["mp_api_key"] = mp_rester_api_key
 
                     from mp_api.client import MPRester
@@ -1630,7 +1649,6 @@ class exrd:
         normalize_to=100,
         plot=True,
     ):
-        
 
         for k in ["i1d_refined", "i1d_gsas_background"]:
             if k in self.ds.keys():
@@ -1712,10 +1730,8 @@ class exrd:
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 
-        randstr = "".join(
-            random.choices(string.ascii_uppercase + string.digits, k=7)
-        )
-        
+        randstr = "".join(random.choices(string.ascii_uppercase + string.digits, k=7))
+
         self.gsasii_run_directory = "%s/%d_%s.gsastmp" % (
             self.easyxrd_scratch_directory,
             int(time.time()),
@@ -2007,7 +2023,7 @@ class exrd:
             update_previous_gpx=True,
             update_previous_phases=False,
         )
-        title_str = "Background with %d coeffs is refined. %s" % (num_coeffs,ref_str)
+        title_str = "Background with %d coeffs is refined. %s" % (num_coeffs, ref_str)
         print(" ✅--" + title_str)
 
         if set_to_false_after_refinement:
@@ -2215,8 +2231,6 @@ class exrd:
         report=False,
     ):
         """ """
-
-
 
         self.gpx.set_refinement({"set": {"Cell": True}}, phase=phase_ind)
 
@@ -2912,9 +2926,6 @@ class exrd:
         if save_gpx:
             self.gpx_saver()
 
-
-
-
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
@@ -2951,15 +2962,14 @@ class exrd:
             i1d_ylogscale = self.i1d_ylogscale
 
         try:
-            ds=self.ds
+            ds = self.ds
         except:
-            ds=None
+            ds = None
 
         try:
-            ds_previous=self.ds_previous
+            ds_previous = self.ds_previous
         except:
-            ds_previous=None
-
+            ds_previous = None
 
         exrd_plotter(
             ds=ds,
@@ -2978,22 +2988,6 @@ class exrd:
             site_str_y=site_str_y,
             show_wt_fractions=show_wt_fractions,
         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     ###############################################################################################
     def export_ds_to(self, to=None, save_dir=None, save_name=None):
@@ -3024,7 +3018,6 @@ class exrd:
                     engine="h5netcdf",
                 )  # pip install h5netcdf
 
-
     ###############################################################################################
     def fine_tune_gpx(self):
         """ """
@@ -3039,7 +3032,6 @@ class exrd:
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
         self.gpx.refine()
 
-
     ###############################################################################################
     def replace_gpx_with(self, newgpx_to_replace):
         """ """
@@ -3049,8 +3041,33 @@ class exrd:
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
         self.gpx.refine()
 
-
     ###############################################################################################
     def export_gpx_to(self, to="gsas.gpx"):
         """ """
         shutil.copy("%s/gsas.gpx" % self.gsasii_run_directory, to)
+
+    ###############################################################################################
+    def export_i1d_to(self, to="data.dat", mode="xy", subtract_baseline=True):
+        """ """
+
+        if subtract_baseline and ("i1d_baseline" in self.ds.keys()):
+            data_y = self.ds.i1d.values - self.ds.i1d_baseline.values
+        elif subtract_baseline and ("i1d_baseline" not in self.ds.keys()):
+            data_y = self.ds.i1d.values
+            print("\n....baseline is not subtracted as it is not available!")
+
+        if mode == "xy":
+            data_x = np.rad2deg(
+                2
+                * np.arcsin(
+                    self.ds.i1d.radial
+                    * ((self.ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
+                )
+            )
+        elif mode == "qxy":
+            data_x = self.ds.i1d.radial.values
+        elif mode == "d":
+            data_x = (2 * np.pi) / self.ds.i1d.radial.values
+
+        out = np.column_stack((data_x, data_y))
+        np.savetxt(to, out)
