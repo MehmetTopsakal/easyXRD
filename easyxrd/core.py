@@ -406,6 +406,10 @@ class exrd:
         median_filter_kernel_size=None,
         median_filter_on_i2d=True,
         from_da_i2d=None,
+        from_i1d_array=None,
+        i1d_array_wavelength_in_angstrom=0.1814,
+        i1d_array_radial_unit="q",
+        from_da_i1d=None,
         from_nc_file=None,
         from_txt_file=None,
         txt_file_wavelength_in_angstrom=0.1814,
@@ -537,6 +541,43 @@ class exrd:
                 },
             )
             self.ds["i1d"] = da_i1d.dropna(dim="radial")
+
+        elif ((img_array is None) and (from_txt_file is None)) and (
+            from_i1d_array is not None
+        ):
+
+            self.ds = xr.Dataset()
+
+            X, Y = from_i1d_array[:, 0], from_i1d_array[:, 1]
+            if i1d_array_radial_unit.lower()[0] == "t":
+                X = ((4 * np.pi) / (txt_file_wavelength_in_angstrom)) * np.sin(
+                    np.deg2rad(X) / 2
+                )
+            elif i1d_array_radial_unit.lower()[0] == "q":
+                pass
+            else:
+                print("Unable to determine radial unit. Check the radial_unit\n\n")
+                return
+
+            da_i1d = xr.DataArray(
+                data=Y.astype("float32"),
+                coords=[X.astype("float32")],
+                dims=["radial"],
+                attrs={
+                    "radial_unit": "q_A^-1",
+                    "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
+                    "ylabel": r"Intensity (a.u.)",
+                    "wavelength_in_angst": i1d_array_wavelength_in_angstrom,
+                },
+            )
+            self.ds["i1d"] = da_i1d.dropna(dim="radial")
+
+        elif ((img_array is None) and (from_txt_file is None)) and (
+            from_da_i1d is not None
+        ):
+
+            self.ds = xr.Dataset()
+            self.ds["i1d"] = from_da_i1d.dropna(dim="radial")
 
         elif (img_array is None) and (from_txt_file is not None):
             if os.path.isfile(from_txt_file):
