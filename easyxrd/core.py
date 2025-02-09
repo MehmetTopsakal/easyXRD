@@ -490,7 +490,7 @@ class exrd:
                 radial_range=radial_range,
                 azimuth_range=None,
                 mask=mask,
-                dummy=np.NaN,
+                dummy=np.nan,
                 delta_dummy=None,
                 polarization_factor=None,
                 dark=None,
@@ -3088,7 +3088,7 @@ class exrd:
         shutil.copy("%s/gsas.gpx" % self.gsasii_run_directory, to)
 
     ###############################################################################################
-    def export_i1d_to(self, to="data.dat", mode="xy", subtract_baseline=True):
+    def export_i1d_to(self, to="data.dat", mode="xy", subtract_baseline=False, fmt='%.4e %.4e'):
         """ """
 
         if subtract_baseline and ("i1d_baseline" in self.ds.keys()):
@@ -3096,8 +3096,17 @@ class exrd:
         elif subtract_baseline and ("i1d_baseline" not in self.ds.keys()):
             data_y = self.ds.i1d.values
             print("\n....baseline is not subtracted as it is not available!")
+        else:
+            data_y = self.ds.i1d.values
 
-        if mode == "xy":
+
+        if mode == "qxy":
+            data_x = self.ds.i1d.radial.values
+            header="q(Angst.^-1) Intensity(a.u.)"
+        elif mode == "d":
+            data_x = (2 * np.pi) / self.ds.i1d.radial.values
+            header="d Intensity(a.u.)"
+        elif mode == "xy":
             data_x = np.rad2deg(
                 2
                 * np.arcsin(
@@ -3105,10 +3114,16 @@ class exrd:
                     * ((self.ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
                 )
             )
-        elif mode == "qxy":
-            data_x = self.ds.i1d.radial.values
-        elif mode == "d":
-            data_x = (2 * np.pi) / self.ds.i1d.radial.values
+            header="TwoTheta(Deg.) Intensity(a.u.)"
+        else:
+            data_x = np.rad2deg(
+                2
+                * np.arcsin(
+                    self.ds.i1d.radial
+                    * ((self.ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
+                )
+            )
+            header="TwoTheta(Deg.) Intensity(a.u.)"
 
         out = np.column_stack((data_x, data_y))
-        np.savetxt(to, out)
+        np.savetxt(to, out, fmt=fmt, header=header)
