@@ -20,6 +20,8 @@ import copy
 from copy import deepcopy
 
 
+import scipy
+
 import os, sys
 
 
@@ -45,6 +47,7 @@ from scipy.signal import medfilt2d
 
 
 from . import easyxrd_defaults
+
 from .plotters import *
 
 
@@ -490,7 +493,7 @@ class exrd:
                 radial_range=radial_range,
                 azimuth_range=None,
                 mask=mask,
-                dummy=np.nan,
+                dummy=np.NaN,
                 delta_dummy=None,
                 polarization_factor=None,
                 dark=None,
@@ -667,6 +670,7 @@ class exrd:
         self,
         input_bkg=None,
         use_iarpls=True,
+        radial_rolling = -1,
         iarpls_lam=1e5,
         plot=True,
         get_i2d_baseline=False,
@@ -736,7 +740,9 @@ class exrd:
                             ).dropna(dim="radial_i2d")
 
                         if roi_radial_range is not None:
-                            bkg_scale = 1
+                            # bkg_scale = 1
+                            bkg_scale =  (da_i1d.values[0]) / max(da_i1d_bkg.values)
+
                             diff_now = (
                                 da_i1d.sel(
                                     radial_i2d=slice(
@@ -750,6 +756,7 @@ class exrd:
                                     )
                                 )
                             ).values
+                            c = 0
                             if min(diff_now) > 0:
                                 while min(diff_now) > 0:
                                     bkg_scale = bkg_scale * 1.01
@@ -768,6 +775,9 @@ class exrd:
                                             )
                                         )
                                     ).values
+                                    c = c + 1
+                                    if c > 100:
+                                        break
                             else:
                                 while min(diff_now) < 0:
                                     bkg_scale = bkg_scale * 0.99
@@ -786,18 +796,29 @@ class exrd:
                                             )
                                         )
                                     ).values
+                                    c = c + 1
+                                    if c > 100:
+                                        break
                         else:
-                            bkg_scale = 1
+                            # bkg_scale = 1
+                            bkg_scale =  (da_i1d.values[0]) / max(da_i1d_bkg.values)
+
                             diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
+                            c = 0
                             if min(diff_now) > 0:
                                 while min(diff_now) > 0:
                                     bkg_scale = bkg_scale * 1.01
                                     diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
+                                    c = c + 1
+                                    if c > 100:
+                                        break
                             else:
                                 while min(diff_now) < 0:
                                     bkg_scale = bkg_scale * 0.99
                                     diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-
+                                    c = c + 1
+                                    if c > 100:
+                                        break
                         if use_iarpls:
                             if roi_azimuthal_range is not None:
                                 da_i2d_diff = self.ds.i2d.sel(
@@ -1040,7 +1061,10 @@ class exrd:
                         da_i1d_bkg = input_bkg.ds.i1d
 
                     if roi_radial_range is not None:
-                        bkg_scale = 1
+                        # bkg_scale = 1
+                        bkg_scale = (da_i1d.sel(radial=slice(roi_radial_range[0], roi_radial_range[-1])).values[0]) / max(da_i1d_bkg.sel(radial=slice(roi_radial_range[0], roi_radial_range[-1])).values)
+
+
                         diff_now = (
                             da_i1d.sel(
                                 radial=slice(roi_radial_range[0], roi_radial_range[-1])
@@ -1050,6 +1074,7 @@ class exrd:
                                 radial=slice(roi_radial_range[0], roi_radial_range[-1])
                             )
                         ).values
+                        c = 0
                         if min(diff_now) > 0:
                             while min(diff_now) > 0:
                                 bkg_scale = bkg_scale * 1.01
@@ -1066,6 +1091,9 @@ class exrd:
                                         )
                                     )
                                 ).values
+                                c = c + 1
+                                if c > 100:
+                                    break
                         else:
                             while min(diff_now) < 0:
                                 bkg_scale = bkg_scale * 0.99
@@ -1082,17 +1110,31 @@ class exrd:
                                         )
                                     )
                                 ).values
+                                c = c + 1
+                                if c > 100:
+                                    break
                     else:
-                        bkg_scale = 1
+                        # bkg_scale = 1
+                        bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
+
+
                         diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
+
+                        c = 0
                         if min(diff_now) > 0:
                             while min(diff_now) > 0:
                                 bkg_scale = bkg_scale * 1.01
                                 diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
+                                c = c + 1
+                                if c > 100:
+                                    break
                         else:
                             while min(diff_now) < 0:
                                 bkg_scale = bkg_scale * 0.99
                                 diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
+                                c = c + 1
+                                if c > 100:
+                                    break
 
                     if use_iarpls:
 
@@ -1142,8 +1184,12 @@ class exrd:
                     da_i1d = self.ds.i1d
                     da_i1d_bkg = input_bkg.ds.i1d
 
+
+
                     if roi_radial_range is not None:
-                        bkg_scale = 1
+                        # bkg_scale = 1
+                        bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
+
                         diff_now = (
                             da_i1d.sel(
                                 radial=slice(roi_radial_range[0], roi_radial_range[-1])
@@ -1186,25 +1232,43 @@ class exrd:
                                     )
                                 ).values
                     else:
-                        bkg_scale = 1
+
+                        # bkg_scale = 1
+                        bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
+
                         diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
+
+                        c = 0
                         if min(diff_now) > 0:
+
                             while min(diff_now) > 0:
                                 bkg_scale = bkg_scale * 1.01
                                 diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
+                                c = c + 1
+                                if c > 100:
+                                    break
                         else:
                             while min(diff_now) < 0:
                                 bkg_scale = bkg_scale * 0.99
                                 diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
+                                c = c + 1
+                                if c > 100:
+                                    break
 
                     if use_iarpls:
+
 
                         da_i1d_diff = self.ds.i1d - bkg_scale * input_bkg.ds.i1d
 
                         da_for_baseline = da_i1d_diff  # .dropna(dim='radial')
-                        diff_baseline, params = pybaselines.Baseline(
-                            x_data=da_for_baseline.radial.values
-                        ).iarpls(da_for_baseline.values, lam=iarpls_lam)
+                        # diff_baseline, params = pybaselines.Baseline(
+                        #     x_data=da_for_baseline.radial.values
+                        # ).iarpls(da_for_baseline.values, lam=iarpls_lam)
+
+                        if radial_rolling < 1:
+                            diff_baseline, params = pybaselines.Baseline(x_data=da_for_baseline.radial.values).iarpls(da_for_baseline.values, lam=iarpls_lam)
+                        else:
+                            diff_baseline, params = pybaselines.Baseline(x_data=da_for_baseline.radial.values).iarpls(da_for_baseline.rolling(radial=radial_rolling,center=True).mean().interpolate_na(dim='radial',method='nearest', fill_value="extrapolate").values, lam=iarpls_lam)
 
                         self.ds["i1d_baseline"] = xr.DataArray(
                             data=(diff_baseline + bkg_scale * input_bkg.ds.i1d.values),
@@ -1215,6 +1279,7 @@ class exrd:
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
                         ] = "baseline is from provided input_bkg i1d and iarpls is used"
+
                     else:
                         self.ds["i1d_baseline"] = deepcopy(bkg_scale * input_bkg.ds.i1d)
                         self.ds["i1d_baseline"].attrs[
@@ -1342,10 +1407,13 @@ class exrd:
 
                 else:
 
-                    if iarpls_lam:
-                        baseline, params = pybaselines.Baseline(
-                            x_data=self.ds.i1d.radial.values
-                        ).iarpls(self.ds.i1d.values, lam=iarpls_lam)
+                    if use_iarpls:
+
+                        if radial_rolling < 1:
+                            baseline, params = pybaselines.Baseline(x_data=self.ds.i1d.radial.values).iarpls(self.ds.i1d.values, lam=iarpls_lam)
+                        else:
+                            baseline, params = pybaselines.Baseline(x_data=self.ds.i1d.radial.values).iarpls(self.ds.i1d.rolling(radial=radial_rolling,center=True).mean().interpolate_na(dim='radial',method='nearest', fill_value="extrapolate").values, lam=iarpls_lam)
+
                         self.ds["i1d_baseline"] = xr.DataArray(
                             data=(baseline),
                             dims=["radial"],
@@ -1710,6 +1778,8 @@ class exrd:
 
         self.yshift_multiplier = yshift_multiplier
 
+        print(easyxrd_defaults["gsasii_lib_path"])
+
         if easyxrd_defaults["gsasii_lib_path"] == "not found":
             try:
                 default_install_path = os.path.join(
@@ -1720,7 +1790,8 @@ class exrd:
                 import GSASIIlattice as G2lat
 
                 self.gsasii_lib_directory = default_install_path
-            except:
+            except Exception as exc:
+                print(exc)
                 user_loc = input(
                     "Enter location of GSASII directory on your GSAS-II installation."
                 )
@@ -1752,7 +1823,8 @@ class exrd:
                     import GSASIIlattice as G2lat
 
                     self.gsasii_lib_directory = easyxrd_defaults["gsasii_lib_path"]
-                except:
+                except Exception as exc:
+                    print(exc)
                     try:
                         gsasii_lib_directory = input(
                             "\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n"
@@ -1762,7 +1834,8 @@ class exrd:
                         import GSASIIlattice as G2lat
 
                         self.gsasii_lib_directory = gsasii_lib_directory
-                    except:
+                    except Exception as exc:
+                        print(exc)
                         gsasii_lib_directory = print(
                             "\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
                         )
