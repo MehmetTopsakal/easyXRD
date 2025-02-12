@@ -28,7 +28,7 @@ required_big_packages = {
     "numpy",
     "scipy",
     "xarray",
-    "ipympl",
+    # "ipympl",
     "pymatgen",
     "pyFAI",
     "pybaselines",
