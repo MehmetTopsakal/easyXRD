@@ -423,6 +423,7 @@ class exrd:
         radial_range=[0.1, 11.1],
         radial_npts=1000,
         delta_q=0.0010,
+        npt_azimuthal=91,
         plot=True,
         ds_attrs=None,
     ):
@@ -485,7 +486,7 @@ class exrd:
             i2d = ai.integrate2d(
                 data=img_array,
                 npt_rad=npt,
-                npt_azim=360,
+                npt_azim=npt_azimuthal,
                 filename=None,
                 correctSolidAngle=True,
                 variance=None,
