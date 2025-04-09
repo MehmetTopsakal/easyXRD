@@ -494,7 +494,7 @@ class exrd:
                 radial_range=radial_range,
                 azimuth_range=None,
                 mask=mask,
-                dummy=np.NaN,
+                dummy=np.nan,
                 delta_dummy=None,
                 polarization_factor=None,
                 dark=None,
