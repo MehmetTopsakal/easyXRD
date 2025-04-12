@@ -678,7 +678,6 @@ class exrd:
         use_i2d_baseline=False,
         roi_radial_range=None,
         roi_azimuthal_range=None,
-        include_baseline_in_ds=True,
         spotty_data_correction=False,
         spotty_data_correction_threshold=1,
     ):
@@ -1779,7 +1778,6 @@ class exrd:
 
         self.yshift_multiplier = yshift_multiplier
 
-        print(easyxrd_defaults["gsasii_lib_path"])
 
         if easyxrd_defaults["gsasii_lib_path"] == "not found":
             try:

@@ -2,8 +2,12 @@ import sys
 import os
 import subprocess
 
+
+
 import importlib
 from importlib.metadata import version
+
+import shutil
 
 
 class HiddenPrints:
@@ -28,7 +32,7 @@ required_big_packages = {
     "numpy",
     "scipy",
     "xarray",
-    # "ipympl",
+    "ipympl",
     "pymatgen",
     "pyFAI",
     "pybaselines",
@@ -100,19 +104,39 @@ if os.name == "nt":
         )
         default_gsasii_lib_path = "not found"
 elif os.name == "posix":
-    # assuming you followed these instructions for installing GSASS-II: https://advancedphotonsource.github.io/GSAS-II-tutorials/install-g2f-linux.html
-    default_gsasii_install_path = os.path.join(user_home, "g2full/GSAS-II/GSASII")
-    sys.path += [default_gsasii_install_path]
-    try:
-        with HiddenPrints():
-            import GSASIIscriptable as G2sc
-        default_gsasii_lib_path = default_gsasii_install_path
-    except:
-        print(
-            "\nUnable to import GSASS-II libraries. See the link below for GSASS-II installation \nhttps://advancedphotonsource.github.io/GSAS-II-tutorials/install.html "
-        )
-        default_gsasii_lib_path = "not found"
-easyxrd_defaults["gsasii_lib_path"] = default_gsasii_lib_path
+
+    gsasii_lib_path = 'not found'
+    possible_gsas_lib_locations = [
+        os.path.join(user_home, "g2full","GSAS-II","GSASII"),
+        os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II','GSASII')
+    ]
+    for p in possible_gsas_lib_locations:
+        try:
+            sys.path += [p]
+            with HiddenPrints():
+                import GSASIIscriptable as G2sc
+                print('\n\nfound useable GSAS-II lib in %s'%p)
+                gsasii_lib_path = p
+                break
+        except:
+            sys.path.remove(p)
+    if gsasii_lib_path == 'not found':
+        print('\nTrying to get GSAS-II lib and binaries from GitHub')
+        os.chdir(os.path.join(easyxrd_defaults["easyxrd_scratch_path"]))
+        
+        if os.path.isdir(os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II')):
+            shutil.rmtree(os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II'))
+
+        import numpy,sys
+        if (sys.version_info.minor == 11) and (numpy.version.version.split('.')[1] == '26'):
+            os.system('git clone --depth 1 https://github.com/AdvancedPhotonSource/GSAS-II')
+            os.system('mkdir GSAS-II/GSASII-bin GSAS-II/GSASII-bin/linux_64_p3.11_n1.26')
+            os.system('curl -s -L https://github.com/AdvancedPhotonSource/GSAS-II-buildtools/releases/download/v1.0.1/linux_64_p3.11_n1.26.tgz | tar zxvf - -C GSAS-II/GSASII-bin/linux_64_p3.11_n1.26') 
+            gsasii_lib_path = os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II','GSASII')
+
+
+
+easyxrd_defaults["gsasii_lib_path"] = gsasii_lib_path
 
 
 # check Materials Project API key in easyxrd_scratch folder
