@@ -148,9 +148,9 @@ if os.path.isfile(os.path.join(user_home, ".easyxrd_scratch", "mp_api_key.dat"))
         if len(api_key_file_content) == 32:
             mp_api_key = api_key_file_content
         else:
-            mp_api_key = "not found"
+            mp_api_key = "invalid"
 else:
-    mp_api_key = "none"
+    mp_api_key = "not found"
 easyxrd_defaults["mp_api_key"] = mp_api_key
 
 
@@ -166,7 +166,7 @@ def print_defaults():
         if key != "mp_api_key":
             print("%s : %s" % (key, val))
         else:
-            print("%s : %s......" % (key, val[:5]))
+            print("%s : %s.........." % (key, val[:9]))
 
 
 print("\n\nImported easyxrd with the following configuration:\n")

@@ -1567,15 +1567,28 @@ class exrd:
 
                 else:
 
-                    if mp_rester_api_key.lower() == "none":
+                    if (mp_rester_api_key.lower() == "not found") or (mp_rester_api_key.lower() == "invalid"):
                         mp_rester_api_key = input(
                             "\nIn order to retrieve structural information from Materials Project, api_ket is needed. \nPlease enter your 32 character key it here:\n"
                         )
                         easyxrd_defaults["mp_api_key"] = mp_rester_api_key
+                        with open(os.path.join(os.path.expanduser("~"), ".easyxrd_scratch", "mp_api_key.dat"), 'w') as mpapifile:
+                            mpapifile.write(mp_rester_api_key)
+                        mpapifile.close()
 
                     from mp_api.client import MPRester
 
-                    mpr = MPRester(mp_rester_api_key)
+                    try:
+                        mpr = MPRester(mp_rester_api_key)
+                    except:
+                        print('The Materials Project API key is not valid.\nPlease enter a new API key (32 characters, no space) that you can obtain from the link below.\n https://profile.materialsproject.org/')
+                        mp_rester_api_key = input()
+                        mpr = MPRester(mp_rester_api_key)
+                        easyxrd_defaults["mp_api_key"] = mp_rester_api_key
+                        with open(os.path.join(os.path.expanduser("~"), ".easyxrd_scratch", "mp_api_key.dat"), 'w') as mpapifile:
+                            mpapifile.write(mp_rester_api_key)
+                        mpapifile.close()
+
                     st = mpr.get_structure_by_material_id(mp_id, final=False)[0]
 
                     try:
