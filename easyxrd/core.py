@@ -671,7 +671,7 @@ class exrd:
         self,
         input_bkg=None,
         use_iarpls=True,
-        radial_rolling = -1,
+        radial_rolling=-1,
         iarpls_lam=1e5,
         plot=True,
         get_i2d_baseline=False,
@@ -741,7 +741,7 @@ class exrd:
 
                         if roi_radial_range is not None:
                             # bkg_scale = 1
-                            bkg_scale =  (da_i1d.values[0]) / max(da_i1d_bkg.values)
+                            bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
 
                             diff_now = (
                                 da_i1d.sel(
@@ -801,7 +801,7 @@ class exrd:
                                         break
                         else:
                             # bkg_scale = 1
-                            bkg_scale =  (da_i1d.values[0]) / max(da_i1d_bkg.values)
+                            bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
 
                             diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
                             c = 0
@@ -1062,8 +1062,15 @@ class exrd:
 
                     if roi_radial_range is not None:
                         # bkg_scale = 1
-                        bkg_scale = (da_i1d.sel(radial=slice(roi_radial_range[0], roi_radial_range[-1])).values[0]) / max(da_i1d_bkg.sel(radial=slice(roi_radial_range[0], roi_radial_range[-1])).values)
-
+                        bkg_scale = (
+                            da_i1d.sel(
+                                radial=slice(roi_radial_range[0], roi_radial_range[-1])
+                            ).values[0]
+                        ) / max(
+                            da_i1d_bkg.sel(
+                                radial=slice(roi_radial_range[0], roi_radial_range[-1])
+                            ).values
+                        )
 
                         diff_now = (
                             da_i1d.sel(
@@ -1116,7 +1123,6 @@ class exrd:
                     else:
                         # bkg_scale = 1
                         bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
-
 
                         diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
 
@@ -1183,8 +1189,6 @@ class exrd:
 
                     da_i1d = self.ds.i1d
                     da_i1d_bkg = input_bkg.ds.i1d
-
-
 
                     if roi_radial_range is not None:
                         # bkg_scale = 1
@@ -1257,7 +1261,6 @@ class exrd:
 
                     if use_iarpls:
 
-
                         da_i1d_diff = self.ds.i1d - bkg_scale * input_bkg.ds.i1d
 
                         da_for_baseline = da_i1d_diff  # .dropna(dim='radial')
@@ -1266,9 +1269,25 @@ class exrd:
                         # ).iarpls(da_for_baseline.values, lam=iarpls_lam)
 
                         if radial_rolling < 1:
-                            diff_baseline, params = pybaselines.Baseline(x_data=da_for_baseline.radial.values).iarpls(da_for_baseline.values, lam=iarpls_lam)
+                            diff_baseline, params = pybaselines.Baseline(
+                                x_data=da_for_baseline.radial.values
+                            ).iarpls(da_for_baseline.values, lam=iarpls_lam)
                         else:
-                            diff_baseline, params = pybaselines.Baseline(x_data=da_for_baseline.radial.values).iarpls(da_for_baseline.rolling(radial=radial_rolling,center=True).mean().interpolate_na(dim='radial',method='nearest', fill_value="extrapolate").values, lam=iarpls_lam)
+                            diff_baseline, params = pybaselines.Baseline(
+                                x_data=da_for_baseline.radial.values
+                            ).iarpls(
+                                da_for_baseline.rolling(
+                                    radial=radial_rolling, center=True
+                                )
+                                .mean()
+                                .interpolate_na(
+                                    dim="radial",
+                                    method="nearest",
+                                    fill_value="extrapolate",
+                                )
+                                .values,
+                                lam=iarpls_lam,
+                            )
 
                         self.ds["i1d_baseline"] = xr.DataArray(
                             data=(diff_baseline + bkg_scale * input_bkg.ds.i1d.values),
@@ -1410,9 +1429,23 @@ class exrd:
                     if use_iarpls:
 
                         if radial_rolling < 1:
-                            baseline, params = pybaselines.Baseline(x_data=self.ds.i1d.radial.values).iarpls(self.ds.i1d.values, lam=iarpls_lam)
+                            baseline, params = pybaselines.Baseline(
+                                x_data=self.ds.i1d.radial.values
+                            ).iarpls(self.ds.i1d.values, lam=iarpls_lam)
                         else:
-                            baseline, params = pybaselines.Baseline(x_data=self.ds.i1d.radial.values).iarpls(self.ds.i1d.rolling(radial=radial_rolling,center=True).mean().interpolate_na(dim='radial',method='nearest', fill_value="extrapolate").values, lam=iarpls_lam)
+                            baseline, params = pybaselines.Baseline(
+                                x_data=self.ds.i1d.radial.values
+                            ).iarpls(
+                                self.ds.i1d.rolling(radial=radial_rolling, center=True)
+                                .mean()
+                                .interpolate_na(
+                                    dim="radial",
+                                    method="nearest",
+                                    fill_value="extrapolate",
+                                )
+                                .values,
+                                lam=iarpls_lam,
+                            )
 
                         self.ds["i1d_baseline"] = xr.DataArray(
                             data=(baseline),
@@ -1567,12 +1600,21 @@ class exrd:
 
                 else:
 
-                    if (mp_rester_api_key.lower() == "not found") or (mp_rester_api_key.lower() == "invalid"):
+                    if (mp_rester_api_key.lower() == "not found") or (
+                        mp_rester_api_key.lower() == "invalid"
+                    ):
                         mp_rester_api_key = input(
                             "\nIn order to retrieve structural information from Materials Project, api_ket is needed. \nPlease enter your 32 character key it here:\n"
                         )
                         easyxrd_defaults["mp_api_key"] = mp_rester_api_key
-                        with open(os.path.join(os.path.expanduser("~"), ".easyxrd_scratch", "mp_api_key.dat"), 'w') as mpapifile:
+                        with open(
+                            os.path.join(
+                                os.path.expanduser("~"),
+                                ".easyxrd_scratch",
+                                "mp_api_key.dat",
+                            ),
+                            "w",
+                        ) as mpapifile:
                             mpapifile.write(mp_rester_api_key)
                         mpapifile.close()
 
@@ -1581,11 +1623,20 @@ class exrd:
                     try:
                         mpr = MPRester(mp_rester_api_key)
                     except:
-                        print('The Materials Project API key is not valid.\nPlease enter a new API key (32 characters, no space) that you can obtain from the link below.\n https://profile.materialsproject.org/')
+                        print(
+                            "The Materials Project API key is not valid.\nPlease enter a new API key (32 characters, no space) that you can obtain from the link below.\n https://profile.materialsproject.org/"
+                        )
                         mp_rester_api_key = input()
                         mpr = MPRester(mp_rester_api_key)
                         easyxrd_defaults["mp_api_key"] = mp_rester_api_key
-                        with open(os.path.join(os.path.expanduser("~"), ".easyxrd_scratch", "mp_api_key.dat"), 'w') as mpapifile:
+                        with open(
+                            os.path.join(
+                                os.path.expanduser("~"),
+                                ".easyxrd_scratch",
+                                "mp_api_key.dat",
+                            ),
+                            "w",
+                        ) as mpapifile:
                             mpapifile.write(mp_rester_api_key)
                         mpapifile.close()
 
@@ -1751,8 +1802,7 @@ class exrd:
 
     def setup_gsas2_refiner(
         self,
-        gsasii_lib_directory=None,
-        gsasii_scratch_directory=None,
+        gsasii_lib_path=None,
         instprm_from_gpx=None,
         instprm_from_nc=None,
         instprm_Polariz=0,
@@ -1777,7 +1827,7 @@ class exrd:
                 del self.ds[k]
 
         try:
-            del self.gsasii_lib_directory
+            del self.gsasii_lib_path
         except:
             pass
         try:
@@ -1791,7 +1841,6 @@ class exrd:
 
         self.yshift_multiplier = yshift_multiplier
 
-
         if easyxrd_defaults["gsasii_lib_path"] == "not found":
             try:
                 default_install_path = os.path.join(
@@ -1801,7 +1850,7 @@ class exrd:
                 import GSASIIscriptable as G2sc
                 import GSASIIlattice as G2lat
 
-                self.gsasii_lib_directory = default_install_path
+                self.gsasii_lib_path = default_install_path
             except Exception as exc:
                 print(exc)
                 user_loc = input(
@@ -1812,7 +1861,7 @@ class exrd:
                     import GSASIIscriptable as G2sc
                     import GSASIIlattice as G2lat
 
-                    self.gsasii_lib_directory = user_loc
+                    self.gsasii_lib_path = user_loc
                 except:
                     try:
                         user_loc = input(
@@ -1822,7 +1871,7 @@ class exrd:
                         import GSASIIscriptable as G2sc
                         import GSASIIlattice as G2lat
 
-                        self.gsasii_lib_directory = user_loc
+                        self.gsasii_lib_path = user_loc
                     except:
                         print(
                             "\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
@@ -1834,25 +1883,25 @@ class exrd:
                     import GSASIIscriptable as G2sc
                     import GSASIIlattice as G2lat
 
-                    self.gsasii_lib_directory = easyxrd_defaults["gsasii_lib_path"]
+                    self.gsasii_lib_path = easyxrd_defaults["gsasii_lib_path"]
                 except Exception as exc:
                     print(exc)
                     try:
-                        gsasii_lib_directory = input(
+                        gsasii_lib_path = input(
                             "\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n"
                         )
-                        sys.path += [gsasii_lib_directory]
+                        sys.path += [gsasii_lib_path]
                         import GSASIIscriptable as G2sc
                         import GSASIIlattice as G2lat
 
-                        self.gsasii_lib_directory = gsasii_lib_directory
+                        self.gsasii_lib_path = gsasii_lib_path
                     except Exception as exc:
                         print(exc)
-                        gsasii_lib_directory = print(
+                        gsasii_lib_path = print(
                             "\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
                         )
             else:
-                print("%s does NOT exist. Please check!" % gsasii_lib_directory)
+                print("%s does NOT exist. Please check!" % gsasii_lib_path)
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 
@@ -3149,7 +3198,7 @@ class exrd:
         """ """
         subprocess.check_call(
             [
-                "%s/../../RunGSASII.sh" % self.gsasii_lib_directory,
+                "%s/../../RunGSASII.sh" % self.gsasii_lib_path,
                 "%s/gsas.gpx" % self.gsasii_run_directory,
             ]
         )
@@ -3173,7 +3222,9 @@ class exrd:
         shutil.copy("%s/gsas.gpx" % self.gsasii_run_directory, to)
 
     ###############################################################################################
-    def export_i1d_to(self, to="data.dat", mode="xy", subtract_baseline=False, fmt='%.4e %.4e'):
+    def export_i1d_to(
+        self, to="data.dat", mode="xy", subtract_baseline=False, fmt="%.4e %.4e"
+    ):
         """ """
 
         if subtract_baseline and ("i1d_baseline" in self.ds.keys()):
@@ -3184,13 +3235,12 @@ class exrd:
         else:
             data_y = self.ds.i1d.values
 
-
         if mode == "qxy":
             data_x = self.ds.i1d.radial.values
-            header="q(Angst.^-1) Intensity(a.u.)"
+            header = "q(Angst.^-1) Intensity(a.u.)"
         elif mode == "d":
             data_x = (2 * np.pi) / self.ds.i1d.radial.values
-            header="d Intensity(a.u.)"
+            header = "d Intensity(a.u.)"
         elif mode == "xy":
             data_x = np.rad2deg(
                 2
@@ -3199,7 +3249,7 @@ class exrd:
                     * ((self.ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
                 )
             )
-            header="TwoTheta(Deg.) Intensity(a.u.)"
+            header = "TwoTheta(Deg.) Intensity(a.u.)"
         else:
             data_x = np.rad2deg(
                 2
@@ -3208,7 +3258,7 @@ class exrd:
                     * ((self.ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
                 )
             )
-            header="TwoTheta(Deg.) Intensity(a.u.)"
+            header = "TwoTheta(Deg.) Intensity(a.u.)"
 
         out = np.column_stack((data_x, data_y))
         np.savetxt(to, out, fmt=fmt, header=header)

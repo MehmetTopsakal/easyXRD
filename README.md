@@ -5,12 +5,14 @@ You can try the tutorial notebooks below on Google Colab:
 
 
 
-<a target="_blank"  href="https://colab.research.google.com/github/MehmetTopsakal/easyXRD/blob/main/examples/01_basic.ipynb">
+<a target="_blank"  href="https://colab.research.google.com/github/MehmetTopsakal/easyXRD_examples/blob/main/01_basic.ipynb">
     <img src="https://www.tensorflow.org/images/colab_logo_32px.png" /> 01_basic.ipynb</a> <br>
-<a target="_blank"  href="https://colab.research.google.com/github/MehmetTopsakal/easyXRD/blob/main/examples/02_intermediate.ipynb">
+<a target="_blank"  href="https://colab.research.google.com/github/MehmetTopsakal/easyXRD_examples/blob/main/02_intermediate.ipynb">
     <img src="https://www.tensorflow.org/images/colab_logo_32px.png" /> 02_intermediate.ipynb</a>
-
-
+<a target="_blank"  href="https://colab.research.google.com/github/MehmetTopsakal/easyXRD_examples/blob/main/03_advanced-part-1.ipynb">
+    <img src="https://www.tensorflow.org/images/colab_logo_32px.png" /> 03_advanced-part-1.ipynb</a>
+<a target="_blank"  href="https://colab.research.google.com/github/MehmetTopsakal/easyXRD_examples/blob/main/03_advanced-part-2.ipynb">
+    <img src="https://www.tensorflow.org/images/colab_logo_32px.png" /> 03_advanced-part-2.ipynb</a>
 
 \
 .... more to come
