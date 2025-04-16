@@ -114,7 +114,6 @@ elif os.name == "posix":
             sys.path += [p]
             with HiddenPrints():
                 import GSASIIscriptable as G2sc
-
                 print("\n\nfound useable GSAS-II lib in %s" % p)
                 gsasii_lib_path = p
                 break
@@ -145,6 +144,13 @@ elif os.name == "posix":
             os.system(
                 "curl -s -L https://github.com/AdvancedPhotonSource/GSAS-II-buildtools/releases/download/v1.0.1/linux_64_p3.11_n1.26.tgz | tar zxvf - -C GSAS-II/GSASII-bin/linux_64_p3.11_n1.26"
             )
+
+            print('\n!!!! Please re-run this cell (after kernel restart) for the GSAS-II installation to take effect !!!!!')
+
+            import time
+            time.sleep(5)
+            os._exit(1)
+ 
             gsasii_lib_path = os.path.join(
                 easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II", "GSASII"
             )

@@ -1878,7 +1878,9 @@ class exrd:
                         )
         else:
             if os.path.isdir(easyxrd_defaults["gsasii_lib_path"]):
+
                 sys.path += [easyxrd_defaults["gsasii_lib_path"]]
+
                 try:
                     import GSASIIscriptable as G2sc
                     import GSASIIlattice as G2lat
