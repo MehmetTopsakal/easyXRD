@@ -2,11 +2,15 @@ import sys
 import os
 import subprocess
 
-
 import importlib
 from importlib.metadata import version
 
 import shutil
+import numpy as np
+import urllib.request
+import git
+import tarfile
+import time
 
 
 class HiddenPrints:
@@ -78,130 +82,98 @@ if not os.path.isdir(os.path.join(user_home, ".easyxrd_scratch")):
 easyxrd_defaults["easyxrd_scratch_path"] = os.path.join(user_home, ".easyxrd_scratch")
 
 
-# check g2full lib path
-if os.name == "nt":
+# Get GSAS-II and binaries from GitHub
 
-    gsasii_lib_path = "not found"
-    possible_gsas_lib_locations = [
-        os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II", "GSASII"),
-    ]
-    for p in possible_gsas_lib_locations:
-        try:
-            sys.path += [p]
-            with HiddenPrints():
-                import GSASIIscriptable as G2sc
-            print("\n\nfound useable GSAS-II lib in %s" % p)
-            gsasii_lib_path = p
-            break
-        except:
-            sys.path.remove(p)
+gsas2_path_in_easyxrd_scratch = os.path.join(user_home, ".easyxrd_scratch", "GSAS-II")
+sys.path += [os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII")]
 
-    if gsasii_lib_path == "not found":
-        print("\nTrying to get GSAS-II lib and binaries from GitHub")
-        here = os.getcwd()
-        os.chdir(os.path.join(easyxrd_defaults["easyxrd_scratch_path"]))
-        if os.path.isdir(
-            os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II")
-        ):
-            shutil.rmtree(
-                os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II")
+try:
+    with HiddenPrints():
+        import GSASIIscriptable as G2sc
+    print(
+        "\nFound usable GSAS-II lib path @ %s"
+        % os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII")
+    )
+    easyxrd_defaults["gsasii_lib_path"] = os.path.join(
+        gsas2_path_in_easyxrd_scratch, "GSASII"
+    )
+except Exception as exc:
+    # print(exc)
+    if os.path.isdir(gsas2_path_in_easyxrd_scratch):
+        shutil.rmtree(gsas2_path_in_easyxrd_scratch)
+
+    print("\nClonning GSAS-II package from GitHub")
+    git.Repo.clone_from(
+        "https://github.com/AdvancedPhotonSource/GSAS-II",
+        to_path=gsas2_path_in_easyxrd_scratch,
+        multi_options=["--depth 1"],
+    )
+    os.makedirs(
+        os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII-bin"), exist_ok=True
+    )
+
+    if os.name == "posix":
+        os_str = "linux_64"
+    elif os.name == "nt":
+        os_str = "win_64"
+    py_str = "p%d.%d" % (sys.version_info.major, sys.version_info.minor)
+    np_str = "n%s.%s" % (
+        np.version.version.split(".")[0],
+        np.version.version.split(".")[1],
+    )
+    gsas2_bin_tgz = (
+        "https://github.com/AdvancedPhotonSource/GSAS-II-buildtools/releases/download/v1.0.1/%s_%s_%s.tgz"
+        % (os_str, py_str, np_str)
+    )
+
+    os.makedirs(
+        os.path.join(
+            gsas2_path_in_easyxrd_scratch,
+            "GSASII-bin",
+            gsas2_bin_tgz.split("/")[-1][:-4],
+        ),
+        exist_ok=True,
+    )
+
+    try:
+        print("Downloading %s from GitHub" % gsas2_bin_tgz)
+        urllib.request.urlretrieve(
+            gsas2_bin_tgz,
+            os.path.join(
+                gsas2_path_in_easyxrd_scratch,
+                "GSASII-bin",
+                gsas2_bin_tgz.split("/")[-1][:-4],
+                "bin.tgz",
+            ),
+        )
+        with tarfile.open(
+            os.path.join(
+                gsas2_path_in_easyxrd_scratch,
+                "GSASII-bin",
+                gsas2_bin_tgz.split("/")[-1][:-4],
+                "bin.tgz",
+            ),
+            "r:gz",
+        ) as tar:
+            tar.extractall(
+                path=os.path.join(
+                    gsas2_path_in_easyxrd_scratch,
+                    "GSASII-bin",
+                    gsas2_bin_tgz.split("/")[-1][:-4],
+                )
             )
+        easyxrd_defaults["gsasii_lib_path"] = os.path.join(
+            gsas2_path_in_easyxrd_scratch, "GSASII"
+        )
 
-        import numpy, sys
-
-        if (sys.version_info.minor == 12) and (
-            numpy.version.version[:3] == "2.2"
-        ):
-            import git
-            os.makedirs(os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II'),exist_ok=True)
-
-            git.Repo.clone_from("https://github.com/AdvancedPhotonSource/GSAS-II",
-                                os.path.join(easyxrd_defaults["easyxrd_scratch_path"],
-                                             'GSAS-II'
-                                             ))
-            os.makedirs(os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II','GSASII-bin'),exist_ok=True)
-            os.makedirs(os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II','GSASII-bin','win_64_p3.12_n2.2'),exist_ok=True)
-
-            import urllib.request
-            urllib.request.urlretrieve("https://github.com/AdvancedPhotonSource/GSAS-II-buildtools/releases/download/v1.0.1/win_64_p3.12_n2.2.tgz",
-                                        os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II','GSASII-bin','win_64_p3.12_n2.2','win_64_p3.12_n2.2.tgz'))
-
-
-            import tarfile
-            with tarfile.open(os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II','GSASII-bin','win_64_p3.12_n2.2','win_64_p3.12_n2.2.tgz'), 'r:gz') as tar:
-                tar.extractall(path=os.path.join(easyxrd_defaults["easyxrd_scratch_path"],'GSAS-II','GSASII-bin','win_64_p3.12_n2.2'))
-
-
-
-            print('\n!!!! Please re-run this cell (after kernel restart) for the GSAS-II installation to take effect !!!!!')
-
-            import time
-            time.sleep(5)
-            os._exit(1)
-
-
-        os.chdir(here)
-
-
-    gsasii_lib_path = os.path.join(user_home, ".easyxrd_scratch", 'GSAS-II', 'GSASII')
-
-elif os.name == "posix":
-
-    gsasii_lib_path = "not found"
-    possible_gsas_lib_locations = [
-        os.path.join(user_home, "g2full", "GSAS-II", "GSASII"),
-        os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II", "GSASII"),
-    ]
-    for p in possible_gsas_lib_locations:
-        try:
-            sys.path += [p]
-            with HiddenPrints():
-                import GSASIIscriptable as G2sc
-                print("\n\nfound useable GSAS-II lib in %s" % p)
-                gsasii_lib_path = p
-                break
-        except:
-            sys.path.remove(p)
-    if gsasii_lib_path == "not found":
-        print("\nTrying to get GSAS-II lib and binaries from GitHub")
-        here = os.getcwd()
-        os.chdir(os.path.join(easyxrd_defaults["easyxrd_scratch_path"]))
-        if os.path.isdir(
-            os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II")
-        ):
-            shutil.rmtree(
-                os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II")
-            )
-
-        import numpy, sys
-
-        if (sys.version_info.minor == 11) and (
-            numpy.version.version.split(".")[1] == "26"
-        ):
-            os.system(
-                "git clone --depth 1 https://github.com/AdvancedPhotonSource/GSAS-II"
-            )
-            os.system(
-                "mkdir GSAS-II/GSASII-bin GSAS-II/GSASII-bin/linux_64_p3.11_n1.26"
-            )
-            os.system(
-                "curl -s -L https://github.com/AdvancedPhotonSource/GSAS-II-buildtools/releases/download/v1.0.1/linux_64_p3.11_n1.26.tgz | tar zxvf - -C GSAS-II/GSASII-bin/linux_64_p3.11_n1.26"
-            )
-
-            print('\n!!!! Please re-run this cell (after kernel restart) for the GSAS-II installation to take effect !!!!!')
-
-            import time
-            time.sleep(5)
-            os._exit(1)
- 
-            gsasii_lib_path = os.path.join(
-                easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II", "GSASII"
-            )
-
-        os.chdir(here)
-
-
-easyxrd_defaults["gsasii_lib_path"] = gsasii_lib_path
+        print(
+            "\n!!!! Please re-run this cell (after kernel restart) for the GSAS-II installation to take effect !!!!!"
+        )
+        time.sleep(2)
+        os._exit(1)
+    except Exception as exc:
+        print(exc)
+        easyxrd_defaults["gsasii_lib_path"] = "not found"
 
 
 # check Materials Project API key in easyxrd_scratch folder

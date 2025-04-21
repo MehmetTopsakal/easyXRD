@@ -11,7 +11,7 @@ setup(
     python_requires='>=3.11',
     packages=['easyxrd'],
     install_requires=['xarray',
-                      'numpy<2.0',
+                      'numpy',
                       'scipy',
                       'pymatgen',
                       'pyfai',
