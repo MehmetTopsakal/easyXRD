@@ -8,7 +8,7 @@ from importlib.metadata import version
 import shutil
 import numpy as np
 import urllib.request
-import git
+
 import tarfile
 import time
 
@@ -102,12 +102,30 @@ except Exception as exc:
     if os.path.isdir(gsas2_path_in_easyxrd_scratch):
         shutil.rmtree(gsas2_path_in_easyxrd_scratch)
 
-    print("\nClonning GSAS-II package from GitHub")
-    git.Repo.clone_from(
-        "https://github.com/AdvancedPhotonSource/GSAS-II",
-        to_path=gsas2_path_in_easyxrd_scratch,
-        multi_options=["--depth 1"],
+    # print("\nClonning GSAS-II package from GitHub")
+    # import git
+    # git.Repo.clone_from(
+    #     "https://github.com/AdvancedPhotonSource/GSAS-II",
+    #     to_path=gsas2_path_in_easyxrd_scratch,
+    #     multi_options=["--depth 1"],
+    # )
+
+    print("\nDownloading GSAS-II (version 5805) from GitHub")
+    urllib.request.urlretrieve(
+        "https://github.com/AdvancedPhotonSource/GSAS-II/archive/refs/tags/5805.tar.gz",
+        os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-5805.tar.gz"),
+    ),
+
+    with tarfile.open(
+        os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-5805.tar.gz"),
+        "r:gz",
+    ) as tar:
+        tar.extractall(os.path.join(easyxrd_defaults["easyxrd_scratch_path"]))
+    os.rename(
+        os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II-5805"),
+        os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II"),
     )
+
     os.makedirs(
         os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII-bin"), exist_ok=True
     )
@@ -125,6 +143,7 @@ except Exception as exc:
         "https://github.com/AdvancedPhotonSource/GSAS-II-buildtools/releases/download/v1.0.1/%s_%s_%s.tgz"
         % (os_str, py_str, np_str)
     )
+    print(gsas2_bin_tgz)
 
     os.makedirs(
         os.path.join(
