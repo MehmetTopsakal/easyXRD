@@ -21,11 +21,11 @@ You can try the tutorial notebooks below on Google Colab:
 <a target="_blank"  href="https://colab.research.google.com/github/MehmetTopsakal/easyXRD_examples/blob/main/03_advanced-part-2.ipynb">
     <img src="https://www.tensorflow.org/images/colab_logo_32px.png" /> 03_advanced-part-2.ipynb</a> <br>
 
-\
+
 .... more to come
 
 
-\
+
 
 
 
@@ -62,7 +62,7 @@ del .\.miniconda.exe
 * macOS Bash (Apple Silicon):
 
 ```bash
-mkdir -p ~/miniconda3
+mkdir -p ~/.miniconda3
 curl https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh -o ~/.miniconda3/miniconda.sh
 bash ~/.miniconda3/miniconda.sh -b -u -p ~/.miniconda3
 rm ~/miniconda3/miniconda.sh
@@ -75,7 +75,7 @@ conda init --all
 * macOS Bash (Intel):
 
 ```bash
-mkdir -p ~/miniconda3
+mkdir -p ~/.miniconda3
 curl https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh -o ~/.miniconda3/miniconda.sh
 bash ~/.miniconda3/miniconda.sh -b -u -p ~/.miniconda3
 rm ~/.miniconda3/miniconda.sh
