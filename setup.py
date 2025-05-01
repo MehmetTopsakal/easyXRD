@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='easyxrd',
-    version='0.1.3',
+    version='0.1.4',
     description='X-ray diffractioan analysis tool',
     url='https://github.com/MehmetTopsakal/easyXRD',
     author='Mehmet Topsakal',

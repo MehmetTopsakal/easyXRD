@@ -144,7 +144,7 @@ except Exception as exc:
         os_str = "linux_64"
     elif (platform.system() == "Windows") and (platform.machine() == 'AMD64'):
         os_str = "win_64"
-    elif (platform.system() == "Darvin") and (platform.machine() == 'x86_64'):
+    elif (platform.system() == "Darwin") and (platform.machine() == 'x86_64'):
         os_str = "mac_64"
     else:
         os_str = "mac_arm"
