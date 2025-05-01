@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='easyxrd',
-    version='0.1.2',
+    version='0.1.3',
     description='X-ray diffractioan analysis tool',
     url='https://github.com/MehmetTopsakal/easyXRD',
     author='Mehmet Topsakal',
@@ -10,19 +10,6 @@ setup(
     license='GNU',
     python_requires='>=3.11',
     packages=['easyxrd'],
-    install_requires=['xarray',
-                      'numpy',
-                      'scipy',
-                      'pymatgen',
-                      'pyfai',
-                      'pybaselines',
-                      'ipympl',
-                      'GitPython',
-                      'mp-api',
-                      'fabio',
-                      'pandas',
-                      ],
-
 
     platforms=['any'],
     classifiers=[

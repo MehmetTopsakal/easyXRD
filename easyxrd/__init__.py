@@ -12,6 +12,8 @@ import urllib.request
 import tarfile
 import time
 
+import platform
+
 
 class HiddenPrints:
     """
@@ -27,21 +29,25 @@ class HiddenPrints:
         sys.stdout = self._original_stdout
 
 
-print("\n\nChecking required packages:\n")
+print("\n\nPython=%d.%d.%d | Platform=%s"%(sys.version_info.major,sys.version_info.minor,sys.version_info.micro,platform.platform()))
+print("Checking required packages:\n")
 # These are big python libraries that we will need in pySULI.
-# If the required library doesn't exist, we install it via pip
+# If the required library doesn't exist, we can it via pip
 
-required_big_packages = {
+required_packages = {
     "numpy",
     "scipy",
     "xarray",
     "ipympl",
     "pymatgen",
     "pyFAI",
+    "fabio",
     "pybaselines",
+    "mp_api",
 }
 
-for rp in required_big_packages:
+failed_packages = []
+for rp in required_packages:
     try:
         globals()[rp] = importlib.import_module(rp)
         print(
@@ -49,26 +55,13 @@ for rp in required_big_packages:
             % (rp, version(rp))
         )
     except:
-        print("\n\nInstalling %s" % rp)
-        subprocess.check_call([sys.executable, "-m", "pip", "install", rp])
-        globals()[rp] = importlib.import_module(rp)
+        failed_packages.append(rp)
 
-# these are other packages that are usually installed by big packages above.
-# Otherwise, we pip-install them
 
-required_other_packages = {"fabio", "pandas", "mp_api"}
+for fp in failed_packages:
+    print("\n\n----Failed to import %s" % fp)
+    print('Try installing it via `pip install %s`\n'% fp.replace('_','-'))
 
-for rp in required_other_packages:
-    try:
-        globals()[rp] = importlib.import_module(rp)
-        print(
-            "---%s package with version %s is available and can be imported "
-            % (rp, version(rp))
-        )
-    except:
-        print("\n\nInstalling %s" % rp)
-        subprocess.check_call([sys.executable, "-m", "pip", "install", rp])
-        globals()[rp] = importlib.import_module(rp)
 
 
 # defaults
@@ -90,10 +83,10 @@ sys.path += [os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII")]
 try:
     with HiddenPrints():
         import GSASIIscriptable as G2sc
-    print(
-        "\nFound usable GSAS-II lib path @ %s"
-        % os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII")
-    )
+        print(
+            "\nFound usable GSAS-II lib path @ %s"
+            % os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII")
+        )
     easyxrd_defaults["gsasii_lib_path"] = os.path.join(
         gsas2_path_in_easyxrd_scratch, "GSASII"
     )
@@ -126,14 +119,37 @@ except Exception as exc:
         os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II"),
     )
 
+
+    try:
+        gsas_file_to_fix = os.path.join(easyxrd_defaults["easyxrd_scratch_path"], "GSAS-II", "GSASII", "NIST_profile", "profile_functions_class.py")
+
+        if os.path.isfile(gsas_file_to_fix):
+            with open(gsas_file_to_fix, 'r') as pfile:
+                pcontent = pfile.read()
+            modified_pcontent = pcontent.replace("xrange", "range")
+            with open(gsas_file_to_fix, 'w') as pmfile:
+                pmfile.write(modified_pcontent)
+
+    except:
+        pass
+            
+
+
+
     os.makedirs(
         os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII-bin"), exist_ok=True
     )
 
-    if os.name == "posix":
+    if (platform.system() == "Linux") and (platform.machine() == 'x86_64'):
         os_str = "linux_64"
-    elif os.name == "nt":
+    elif (platform.system() == "Windows") and (platform.machine() == 'AMD64'):
         os_str = "win_64"
+    elif (platform.system() == "Darvin") and (platform.machine() == 'x86_64'):
+        os_str = "mac_64"
+    else:
+        os_str = "mac_arm"
+
+
     py_str = "p%d.%d" % (sys.version_info.major, sys.version_info.minor)
     np_str = "n%s.%s" % (
         np.version.version.split(".")[0],
