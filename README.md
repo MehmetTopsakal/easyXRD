@@ -141,6 +141,7 @@ required_packages = {
     "pyFAI==2024.9.0",
     "fabio==2024.9.0",
     "pybaselines==1.2.0",
+    "ipympl"
 }
 import subprocess,sys
 for p in required_packages:
@@ -167,7 +168,7 @@ Finally, we can now import easyXRD code module.
 If you are running this cell for the first time, it will need to download GSAS-II libraries and binaries from GitHub. For the settings to have effect, the jupyter kernel will be restarted.
 
 ```python
-# Here we import easyxrd. You may need to "re-run" this cell. Not the one previous one.
+# Here we import easyxrd. You may need to "re-run" this cell. Not the previous one.
 from easyxrd.core import exrd
 ```
 
@@ -176,7 +177,16 @@ from easyxrd.core import exrd
 After this step, you can contine to work with `exrd` as we explained in the Google Colab notebooks that are listed above.
 
 
+
+
+
+
 It should be noted that, you need to acknowledge GSAS-II if you use the refinement components of `easyXRD`. You can check original GSAS-II repo, https://github.com/AdvancedPhotonSource/GSAS-II, for further details.
 
 
 Feel free to contact me (metokal@gmail.com) if you have any questions about `easyXRD`
+
+
+
+I
+
