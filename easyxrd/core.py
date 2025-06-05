@@ -611,7 +611,7 @@ class exrd:
                         dims=["radial"],
                         attrs={
                             "radial_unit": "q_A^-1",
-                            "xlabel": "Scattering vector $q$ ($\AA^{-1}$)",
+                            "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
                             "ylabel": "Intensity (a.u.)",
                             "wavelength_in_angst": txt_file_wavelength_in_angstrom,
                             "i1d_from": from_txt_file,
@@ -1472,7 +1472,7 @@ class exrd:
                 )
                 self.ds["i1d"].attrs = {
                     "radial_unit": "q_A^-1",
-                    "xlabel": "Scattering vector $q$ ($\AA^{-1}$)",
+                    "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
                     "ylabel": "Intensity (a.u.)",
                     "wavelength_in_angst": self.ds["i2d"].attrs["wavelength_in_meter"]
                     * 10e9,
@@ -1487,7 +1487,7 @@ class exrd:
                 )
                 self.ds["i1d"].attrs = {
                     "radial_unit": "q_A^-1",
-                    "xlabel": "Scattering vector $q$ ($\AA^{-1}$)",
+                    "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
                     "ylabel": "Intensity (a.u.)",
                     "wavelength_in_angst": self.ds["i2d"].attrs["wavelength_in_meter"]
                     * 10e9,
