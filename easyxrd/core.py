@@ -483,6 +483,7 @@ class exrd:
                 print("\nAzimuthal integrator (ai) is provided. Ignoring poni_file\n")
 
             # integrate
+            ai.empty = np.nan
             i2d = ai.integrate2d(
                 data=img_array,
                 npt_rad=npt,
@@ -1683,7 +1684,7 @@ class exrd:
             self.ds.attrs["num_phases"] = e + 1
 
         elif from_gpx is not None:
-            import GSASIIscriptable as G2sc
+            import GSASII.GSASIIscriptable as G2sc
 
             phases_gpx = G2sc.G2Project(gpxfile=from_gpx)
             self.phases = {}
