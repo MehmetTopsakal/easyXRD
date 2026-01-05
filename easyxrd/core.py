@@ -1605,7 +1605,7 @@ class exrd:
                         mp_rester_api_key.lower() == "invalid"
                     ):
                         mp_rester_api_key = input(
-                            "\nIn order to retrieve structural information from Materials Project, api_ket is needed. \nPlease enter your 32 character key it here:\n"
+                            "\nIn order to retrieve structural information from Materials Project, api_key is needed. \nPlease enter your 32 character key it here:\n"
                         )
                         easyxrd_defaults["mp_api_key"] = mp_rester_api_key
                         with open(
