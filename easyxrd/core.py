@@ -426,6 +426,7 @@ class exrd:
         npt_azimuthal=91,
         plot=True,
         ds_attrs=None,
+        method=("bbox", "csr", "opencl"),
     ):
 
         if (from_img_array is None) and (from_tiff_file is not None):
@@ -500,7 +501,7 @@ class exrd:
                 polarization_factor=None,
                 dark=None,
                 flat=None,
-                method="bbox",
+                method=method,
                 unit="q_A^-1",
                 safe=True,
                 normalization_factor=1.0,
@@ -531,6 +532,10 @@ class exrd:
                     "detector_rot1": ai.__dict__["_rot1"],
                     "detector_rot2": ai.__dict__["_rot2"],
                     "detector_rot3": ai.__dict__["_rot3"],
+                    "2dintegration_method_split":method[0],
+                    "2dintegration_method_algorithm":method[1],
+                    "2dintegration_method_implementation":method[2],
+
                 },
             )
 
