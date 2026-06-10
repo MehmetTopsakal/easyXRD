@@ -3231,7 +3231,7 @@ class exrd:
 
     ###############################################################################################
     def export_i1d_to(
-        self, to="data.dat", mode="xy", subtract_baseline=False, fmt="%.4e %.4e"
+        self, to="data.dat", mode="xy", subtract_baseline=False, fmt="%.4e %.4e",header=False,
     ):
         """ """
 
@@ -3257,7 +3257,8 @@ class exrd:
                     * ((self.ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
                 )
             )
-            header = "TwoTheta(Deg.) Intensity(a.u.)"
+            header_str = "TwoTheta(Deg.) Intensity(a.u.)"
+
         else:
             data_x = np.rad2deg(
                 2
@@ -3266,7 +3267,12 @@ class exrd:
                     * ((self.ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
                 )
             )
-            header = "TwoTheta(Deg.) Intensity(a.u.)"
+            header_str = "Q_inv(A-1) Intensity(a.u.)"
+
 
         out = np.column_stack((data_x, data_y))
-        np.savetxt(to, out, fmt=fmt, header=header)
+        
+        if header:
+            np.savetxt(to, out, fmt=fmt, header=header_str)
+        else:
+            np.savetxt(to, out, fmt=fmt)
