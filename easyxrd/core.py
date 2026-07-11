@@ -2384,7 +2384,7 @@ class exrd:
                 print("\n ✅--" + title_str)
 
             else:
-                title_str = "After setting LeBail refinement to True, %s" % (ref_str)
+                title_str = "After setting LeBail refinement to False, %s" % (ref_str)
                 print("\n ✅--" + title_str)
         else:
             pass
