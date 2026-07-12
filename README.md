@@ -91,12 +91,12 @@ Once you have a working conda environment through these steps above, now we need
 
 
 ```bash
-conda create --name env_py3.13_np_2.2 -c conda-forge -y  python=3.13 numpy=2.2 jupyterlab
+conda create --name env_py3.14_np_2.4 -c conda-forge -y  python=3.14 numpy=2.4 jupyterlab
 ```
 Once the new virtual environment is created, ne we need to activate it and then call jupyter lab interface
 
 ```bash
-conda activate env_py3.13_np_2.2
+conda activate env_py3.14_np_2.4
 cd
 jupyter lab
 ```
@@ -119,7 +119,6 @@ required_packages = {
     "pyFAI",
     "fabio",
     "pybaselines",
-    "ipympl",
     "easyxrd"
 }
 import subprocess,sys
