@@ -400,6 +400,7 @@ class exrd:
 
     def load_xrd_data(
         self,
+        integrate2d = True,
         from_img_array=None,
         from_tiff_file=None,
         ai=None,
@@ -426,7 +427,7 @@ class exrd:
         npt_azimuthal=91,
         plot=True,
         ds_attrs=None,
-        method=("bbox", "csr", "opencl"),
+        method=("bbox", "csr", "cython"),
     ):
 
         if (from_img_array is None) and (from_tiff_file is not None):
@@ -483,74 +484,154 @@ class exrd:
             elif (poni_file is not None) and (ai is not None):
                 print("\nAzimuthal integrator (ai) is provided. Ignoring poni_file\n")
 
-            # integrate
-            ai.empty = np.nan
-            i2d = ai.integrate2d(
-                data=img_array,
-                npt_rad=npt,
-                npt_azim=npt_azimuthal,
-                filename=None,
-                correctSolidAngle=True,
-                variance=None,
-                error_model=None,
-                radial_range=radial_range,
-                azimuth_range=None,
-                mask=mask,
-                dummy=np.nan,
-                delta_dummy=None,
-                polarization_factor=None,
-                dark=None,
-                flat=None,
-                method=method,
-                unit="q_A^-1",
-                safe=True,
-                normalization_factor=1.0,
-                metadata=None,
-            )
-
-            if (median_filter_kernel_size is not None) and (median_filter_on_i2d):
-                data_i2d = medfilt2d(
-                    i2d.intensity.astype("float32"),
-                    kernel_size=median_filter_kernel_size,
+            if integrate2d:
+                ai.empty = np.nan
+                i2d = ai.integrate2d(
+                    data=img_array,
+                    npt_rad=npt,
+                    npt_azim=npt_azimuthal,
+                    filename=None,
+                    correctSolidAngle=True,
+                    variance=None,
+                    error_model=None,
+                    radial_range=radial_range,
+                    azimuth_range=None,
+                    mask=mask,
+                    dummy=np.nan,
+                    delta_dummy=None,
+                    polarization_factor=None,
+                    dark=None,
+                    flat=None,
+                    method=method,
+                    unit="q_A^-1",
+                    safe=True,
+                    normalization_factor=1.0,
+                    metadata=None,
                 )
+
+                if (median_filter_kernel_size is not None) and (median_filter_on_i2d):
+                    data_i2d = medfilt2d(
+                        i2d.intensity.astype("float32"),
+                        kernel_size=median_filter_kernel_size,
+                    )
+                else:
+                    data_i2d = i2d.intensity.astype("float32")
+
+                self.ds["i2d"] = xr.DataArray(
+                    data=data_i2d,
+                    coords=[i2d.azimuthal.astype("float32"), i2d.radial.astype("float32")],
+                    dims=["azimuthal_i2d", "radial_i2d"],
+                    attrs={
+                        "radial_unit": "q_A^-1",
+                        "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
+                        "ylabel": r"Azimuthal angle $\chi$ ($^{o}$)",
+                        "detector_name": ai.__dict__["detector"].name,
+                        "wavelength_in_meter": ai.__dict__["_wavelength"],
+                        "detector_dist": ai.__dict__["_dist"],
+                        "detector_poni1": ai.__dict__["_poni1"],
+                        "detector_poni2": ai.__dict__["_poni2"],
+                        "detector_rot1": ai.__dict__["_rot1"],
+                        "detector_rot2": ai.__dict__["_rot2"],
+                        "detector_rot3": ai.__dict__["_rot3"],
+                        "2dintegration_method_split":method[0],
+                        "2dintegration_method_algorithm":method[1],
+                        "2dintegration_method_implementation":method[2],
+
+                    },
+                )
+
+                da_i1d = xr.DataArray(
+                    data=self.ds["i2d"].mean(dim="azimuthal_i2d").astype("float32"),
+                    coords=[self.ds["i2d"].radial_i2d],
+                    dims=["radial"],
+                    attrs={
+                        "radial_unit": "q_A^-1",
+                        "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
+                        "ylabel": r"Intensity (a.u.)",
+                        "wavelength_in_angst": ai.__dict__["_wavelength"] * 10e9,
+                    },
+                )
+                self.ds["i1d"] = da_i1d.dropna(dim="radial")
+                
             else:
-                data_i2d = i2d.intensity.astype("float32")
+                ai.empty = np.nan
+                i1d = ai.integrate1d(
+                    data=img_array,
+                    npt=npt,
+                    filename=None,
+                    correctSolidAngle=True,
+                    variance=None,
+                    error_model=None,
+                    radial_range=radial_range,
+                    azimuth_range=None,
+                    mask=mask,
+                    dummy=np.nan,
+                    delta_dummy=None,
+                    polarization_factor=None,
+                    dark=None,
+                    flat=None,
+                    method=method,
+                    unit="q_A^-1",
+                    safe=True,
+                    normalization_factor=1.0,
+                    metadata=None,
+                )
 
-            self.ds["i2d"] = xr.DataArray(
-                data=data_i2d,
-                coords=[i2d.azimuthal.astype("float32"), i2d.radial.astype("float32")],
-                dims=["azimuthal_i2d", "radial_i2d"],
-                attrs={
-                    "radial_unit": "q_A^-1",
-                    "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
-                    "ylabel": r"Azimuthal angle $\chi$ ($^{o}$)",
-                    "detector_name": ai.__dict__["detector"].name,
-                    "wavelength_in_meter": ai.__dict__["_wavelength"],
-                    "detector_dist": ai.__dict__["_dist"],
-                    "detector_poni1": ai.__dict__["_poni1"],
-                    "detector_poni2": ai.__dict__["_poni2"],
-                    "detector_rot1": ai.__dict__["_rot1"],
-                    "detector_rot2": ai.__dict__["_rot2"],
-                    "detector_rot3": ai.__dict__["_rot3"],
-                    "2dintegration_method_split":method[0],
-                    "2dintegration_method_algorithm":method[1],
-                    "2dintegration_method_implementation":method[2],
+                # if (median_filter_kernel_size is not None) and (median_filter_on_i2d):
+                #     data_i2d = medfilt2d(
+                #         i2d.intensity.astype("float32"),
+                #         kernel_size=median_filter_kernel_size,
+                #     )
+                # else:
+                #     data_i2d = i2d.intensity.astype("float32")
 
-                },
-            )
+                # self.ds["i2d"] = xr.DataArray(
+                #     data=data_i2d,
+                #     coords=[i2d.azimuthal.astype("float32"), i2d.radial.astype("float32")],
+                #     dims=["azimuthal_i2d", "radial_i2d"],
+                #     attrs={
+                #         "radial_unit": "q_A^-1",
+                #         "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
+                #         "ylabel": r"Azimuthal angle $\chi$ ($^{o}$)",
+                #         "detector_name": ai.__dict__["detector"].name,
+                #         "wavelength_in_meter": ai.__dict__["_wavelength"],
+                #         "detector_dist": ai.__dict__["_dist"],
+                #         "detector_poni1": ai.__dict__["_poni1"],
+                #         "detector_poni2": ai.__dict__["_poni2"],
+                #         "detector_rot1": ai.__dict__["_rot1"],
+                #         "detector_rot2": ai.__dict__["_rot2"],
+                #         "detector_rot3": ai.__dict__["_rot3"],
+                #         "2dintegration_method_split":method[0],
+                #         "2dintegration_method_algorithm":method[1],
+                #         "2dintegration_method_implementation":method[2],
 
-            da_i1d = xr.DataArray(
-                data=self.ds["i2d"].mean(dim="azimuthal_i2d").astype("float32"),
-                coords=[self.ds["i2d"].radial_i2d],
-                dims=["radial"],
-                attrs={
-                    "radial_unit": "q_A^-1",
-                    "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
-                    "ylabel": r"Intensity (a.u.)",
-                    "wavelength_in_angst": ai.__dict__["_wavelength"] * 10e9,
-                },
-            )
-            self.ds["i1d"] = da_i1d.dropna(dim="radial")
+                #     },
+                # )
+
+                da_i1d = xr.DataArray(
+                    data=i1d.intensity.astype("float32"),
+                    coords=[i1d.radial.astype("float32")],
+                    dims=["radial"],
+                    attrs={
+                        "radial_unit": "q_A^-1",
+                        "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
+                        "ylabel": r"Intensity (a.u.)",
+                        "wavelength_in_angst": ai.__dict__["_wavelength"] * 10e9,
+                        "detector_name": ai.__dict__["detector"].name,
+                        "wavelength_in_meter": ai.__dict__["_wavelength"],
+                        "detector_dist": ai.__dict__["_dist"],
+                        "detector_poni1": ai.__dict__["_poni1"],
+                        "detector_poni2": ai.__dict__["_poni2"],
+                        "detector_rot1": ai.__dict__["_rot1"],
+                        "detector_rot2": ai.__dict__["_rot2"],
+                        "detector_rot3": ai.__dict__["_rot3"],
+                        "2dintegration_method_split":method[0],
+                        "2dintegration_method_algorithm":method[1],
+                        "2dintegration_method_implementation":method[2],
+                    },
+                )
+                self.ds["i1d"] = da_i1d.dropna(dim="radial")
+                
 
         elif ((img_array is None) and (from_txt_file is None)) and (
             from_i1d_array is not None

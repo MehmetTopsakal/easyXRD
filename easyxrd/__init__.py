@@ -30,6 +30,11 @@ class HiddenPrints:
 
 
 print("\n\nPython=%d.%d.%d | Platform=%s"%(sys.version_info.major,sys.version_info.minor,sys.version_info.micro,platform.platform()))
+try:
+    from importlib.metadata import version
+    print("easyXRD pypi version: %s\n"%(version('easyxrd')))
+except:
+    pass
 print("Checking required packages:\n")
 # These are big python libraries that we will need in pySULI.
 # If the required library doesn't exist, we can it via pip
