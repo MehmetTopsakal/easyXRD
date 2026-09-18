@@ -29,129 +29,79 @@ You can try the tutorial notebooks below on Google Colab:
 
 
 
-In order to use `easyXRD` Python package, you need to have a Python environment that can be easily installed through Conda.
+## Installation from this source checkout
 
-You can follow the instructions on this link: https://www.anaconda.com/docs/getting-started/miniconda/install
+Use a dedicated environment with Python 3.11 or newer. Compatibility of the
+complete scientific stack depends on available dependency and GSAS-II binaries;
+the declared Python minimum is not a tested compatibility matrix.
 
-
-
-Examples of environment setup is shown below:
-
-* Linux Bash:
+From the extracted project directory:
 
 ```bash
-mkdir -p ~/.miniconda3
-
-wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/.miniconda3/miniconda.sh
-bash ~/.miniconda3/miniconda.sh -b -u -p ~/.miniconda3
-rm ~/.miniconda3/miniconda.sh
-
-source ~/.miniconda3/bin/activate
-conda init --all
+python -m pip install ".[notebook,materials]"
 ```
 
-* Windows PowerShell (After installing, open the “Anaconda Powershell Prompt (miniconda3)”):
+For development:
 
 ```bash
-wget "https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe" -outfile ".\.miniconda.exe"
-Start-Process -FilePath ".\.miniconda.exe" -ArgumentList "/S" -Wait
-del .\.miniconda.exe
+python -m pip install -e ".[notebook,materials,dev]"
+python -m unittest discover -s tests -v
 ```
 
-
-* macOS Bash (Apple Silicon):
-
-```bash
-mkdir -p ~/.miniconda3
-curl https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh -o ~/.miniconda3/miniconda.sh
-bash ~/.miniconda3/miniconda.sh -b -u -p ~/.miniconda3
-rm ~/miniconda3/miniconda.sh
-
-source ~/.miniconda3/bin/activate
-conda init --all
-```
-
-
-* macOS Bash (Intel):
-
-```bash
-mkdir -p ~/.miniconda3
-curl https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh -o ~/.miniconda3/miniconda.sh
-bash ~/.miniconda3/miniconda.sh -b -u -p ~/.miniconda3
-rm ~/.miniconda3/miniconda.sh
-
-source ~/.miniconda3/bin/activate
-conda init --all
-```
-
-
-
-Once you have a working conda environment through these steps above, now we need to create a virtual environment as shown below:
-
-
-
-```bash
-conda create --name env_py3.14_np_2.4 -c conda-forge -y  python=3.14 numpy=2.4 jupyterlab
-```
-Once the new virtual environment is created, ne we need to activate it and then call jupyter lab interface
-
-```bash
-conda activate env_py3.14_np_2.4
-cd
-jupyter lab
-```
-
-Once you have the jupyter lab interface, we can continue from there. A browser window with a Jupyter session should open after you execute `jupyter lab` prompt. 
-
-In a new cell, we need to install additional python packages for `easyXRD`.\
-You need to Copy-Paste the contents of code below into the Jupyter lab cell and execute it (Ctrl+Enter).
+Inside Jupyter, install into the running kernel's environment (replace the path):
 
 ```python
-# Here we install the necessary packages via pip
-# It may take a while for this cell to complete. This will be quicker in next runs...
-required_packages = {
-    "mp-api",
-    "scipy",
-    "xarray",
-    "h5netcdf",
-    "ipympl",
-    "pymatgen",
-    "pyFAI",
-    "fabio",
-    "pybaselines",
-    "easyxrd"
-}
-import subprocess,sys
-for p in required_packages:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", p])
-from IPython.display import clear_output
-clear_output()
-
-
-# Finally, we nedd to reset kernel for the package installations to take effect
-import IPython
-IPython.Application.instance().kernel.do_shutdown(True)
+import subprocess
+import sys
+subprocess.check_call([
+    sys.executable, "-m", "pip", "install",
+    "/absolute/path/to/easyXRD-main[notebook,materials]",
+])
 ```
 
-If you successfully executed these in a Jupyter notebook cell, this means you have a working Python environment. As next, we need to install GSAS-II into our python environment based on the instructions shown here: https://advancedphotonsource.github.io/GSAS-II-tutorials/install-pip.html. Please note, we are using `pip` based installation.
-
-```python
-try:
-    import GSASII.GSASIIscriptable as G2sc
-except:
-    !! git clone --depth 1 https://github.com/AdvancedPhotonSource/GSAS-II.git ./G2
-    !! pip install ./G2[useful]
-```
-
-We can now import easyXRD.
-If you are running this cell for the first time, it will need to download GSAS-II libraries and binaries from GitHub. For the settings to take effect, the jupyter kernel needs to be restarted.
+Restart the kernel after installation. The `notebook` extra provides Jupyter and
+interactive plotting; `materials` provides the Materials Project client. GSAS-II
+is installed separately following its [official installation instructions](https://advancedphotonsource.github.io/GSAS-II-tutorials/install-pip.html).
+It is required for refinement and GPX operations, not basic data processing.
 
 ```python
 from easyxrd.core import exrd
+analysis = exrd()
 ```
 
-After this step, you can contine with `exrd` as we explained in the Google Colab notebooks that are listed above.
+For a legacy GSAS-II installation, supply the directory containing
+`GSASIIscriptable.py`:
 
+```python
+# After loading data and phases:
+analysis.setup_gsas2_refiner(gsasii_lib_path="/path/to/GSASII")
+```
+
+Package import is quiet and does not create directories, install packages, or
+import GSAS-II. Scratch directories are created when an operation needs them.
+The existing configuration API remains available:
+
+```python
+from easyxrd import print_defaults, set_defaults
+print_defaults()  # API keys are redacted
+set_defaults("mp_api_key", "your-api-key")
+```
+
+Existing `~/.easyxrd_scratch/mp_api_key.dat` files remain supported. Missing,
+empty, or unreadable key files no longer prevent importing the package.
+
+## Troubleshooting
+
+```bash
+python -m easyxrd.diagnostics
+```
+
+This reports the active Python executable, installed distribution versions, and
+NumPy's runtime version, module location, and header directory. It does not
+verify the ABI compatibility of GSAS-II or other compiled extensions. Use the
+same interpreter when installing or rebuilding packages. No API keys are included.
+
+See `CHANGES.md` for the scope and validation limits of this revision.
 
 It should be noted that, you need to acknowledge GSAS-II if you use the refinement components of `easyXRD`. You can check original GSAS-II repo, https://github.com/AdvancedPhotonSource/GSAS-II, for further details.
 
