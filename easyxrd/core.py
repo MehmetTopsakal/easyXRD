@@ -47,7 +47,6 @@ from scipy.signal import medfilt2d
 
 
 from . import easyxrd_defaults
-from ._gsas import load_gsasii
 
 from .plotters import *
 
@@ -1645,7 +1644,6 @@ class exrd:
                 mp_rester_api_key = "none"
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
-        os.makedirs(self.easyxrd_scratch_directory, exist_ok=True)
 
         if from_phases_dict is not None:
 
@@ -1772,7 +1770,7 @@ class exrd:
             self.ds.attrs["num_phases"] = e + 1
 
         elif from_gpx is not None:
-            G2sc = load_gsasii()
+            import GSASII.GSASIIscriptable as G2sc
 
             phases_gpx = G2sc.G2Project(gpxfile=from_gpx)
             self.phases = {}
@@ -1911,8 +1909,6 @@ class exrd:
         plot=True,
     ):
 
-        G2sc = load_gsasii(gsasii_lib_path)
-
         for k in ["i1d_refined", "i1d_gsas_background"]:
             if k in self.ds.keys():
                 del self.ds[k]
@@ -1930,11 +1926,73 @@ class exrd:
             if k in self.ds.keys():
                 del self.ds[k]
 
-        self.gsasii_lib_path = os.path.dirname(os.path.abspath(G2sc.__file__))
         self.yshift_multiplier = yshift_multiplier
 
+        if easyxrd_defaults["gsasii_lib_path"] == "not found":
+            try:
+                default_install_path = os.path.join(
+                    os.path.expanduser("~"), "g2full/GSAS-II/GSASII"
+                )
+                sys.path += [default_install_path]
+                import GSASIIscriptable as G2sc
+                import GSASIIlattice as G2lat
+
+                self.gsasii_lib_path = default_install_path
+            except Exception as exc:
+                print(exc)
+                user_loc = input(
+                    "Enter location of GSASII directory on your GSAS-II installation."
+                )
+                sys.path += [user_loc]
+                try:
+                    import GSASIIscriptable as G2sc
+                    import GSASIIlattice as G2lat
+
+                    self.gsasii_lib_path = user_loc
+                except:
+                    try:
+                        user_loc = input(
+                            "\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n"
+                        )
+                        sys.path += [user_loc]
+                        import GSASIIscriptable as G2sc
+                        import GSASIIlattice as G2lat
+
+                        self.gsasii_lib_path = user_loc
+                    except:
+                        print(
+                            "\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
+                        )
+        else:
+            if os.path.isdir(easyxrd_defaults["gsasii_lib_path"]):
+
+                sys.path += [easyxrd_defaults["gsasii_lib_path"]]
+
+                try:
+                    import GSASIIscriptable as G2sc
+                    import GSASIIlattice as G2lat
+
+                    self.gsasii_lib_path = easyxrd_defaults["gsasii_lib_path"]
+                except Exception as exc:
+                    print(exc)
+                    try:
+                        gsasii_lib_path = input(
+                            "\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n"
+                        )
+                        sys.path += [gsasii_lib_path]
+                        import GSASIIscriptable as G2sc
+                        import GSASIIlattice as G2lat
+
+                        self.gsasii_lib_path = gsasii_lib_path
+                    except Exception as exc:
+                        print(exc)
+                        gsasii_lib_path = print(
+                            "\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
+                        )
+            else:
+                print("%s does NOT exist. Please check!" % gsasii_lib_path)
+
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
-        os.makedirs(self.easyxrd_scratch_directory, exist_ok=True)
 
         randstr = "".join(random.choices(string.ascii_uppercase + string.digits, k=7))
 
@@ -3233,7 +3291,7 @@ class exrd:
                 "%s/gsas.gpx" % self.gsasii_run_directory,
             ]
         )
-        G2sc = load_gsasii()
+        import GSASIIscriptable as G2sc
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
         self.gpx.refine()
@@ -3242,7 +3300,7 @@ class exrd:
     def replace_gpx_with(self, newgpx_to_replace):
         """ """
         shutil.copy(newgpx_to_replace, "%s/gsas.gpx" % self.gsasii_run_directory)
-        G2sc = load_gsasii()
+        import GSASIIscriptable as G2sc
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
         self.gpx.refine()
