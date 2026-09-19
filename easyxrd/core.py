@@ -51,6 +51,92 @@ from . import easyxrd_defaults
 from .plotters import *
 
 
+from concurrent.futures import ThreadPoolExecutor
+
+
+def _optimize_bkg_scale(y_obs, y_bkg, initial_scale=None, max_iter=100):
+    """
+    Vectorized calculation of background scaling factor to ensure non-negative subtraction.
+    """
+    y_obs = np.asarray(y_obs, dtype=np.float64)
+    y_bkg = np.asarray(y_bkg, dtype=np.float64)
+    valid = np.isfinite(y_obs) & np.isfinite(y_bkg)
+    if not np.any(valid):
+        return 1.0
+
+    y_o = y_obs[valid]
+    y_b = y_bkg[valid]
+    max_b = np.nanmax(y_b)
+    if max_b <= 0:
+        return 1.0
+
+    if initial_scale is None:
+        bkg_scale = float(y_o[0] / max_b)
+    else:
+        bkg_scale = float(initial_scale)
+
+    diff = y_o - bkg_scale * y_b
+    min_diff = np.nanmin(diff)
+    c = 0
+    if min_diff > 0:
+        while min_diff > 0 and c < max_iter:
+            bkg_scale *= 1.01
+            diff = y_o - bkg_scale * y_b
+            min_diff = np.nanmin(diff)
+            c += 1
+    elif min_diff < 0:
+        while min_diff < 0 and c < max_iter:
+            bkg_scale *= 0.99
+            diff = y_o - bkg_scale * y_b
+            min_diff = np.nanmin(diff)
+            c += 1
+    return bkg_scale
+
+
+def _compute_i2d_baseline(da_2d, iarpls_lam=1e5, max_workers=None):
+    """
+    Parallelized 2D baseline calculation across azimuthal slices.
+    """
+    radial_vals = da_2d.radial_i2d.values
+    data_vals = da_2d.values
+    n_azim, n_rad = data_vals.shape
+    out_vals = np.empty_like(data_vals)
+
+    def _fit_row(idx):
+        y = data_vals[idx]
+        valid = np.isfinite(y)
+        if np.count_nonzero(valid) < 3:
+            out_vals[idx] = y
+            return
+        x_valid = radial_vals[valid]
+        y_valid = y[valid]
+        try:
+            b, _ = pybaselines.Baseline(x_data=x_valid).iarpls(y_valid, lam=iarpls_lam)
+            if np.all(valid):
+                out_vals[idx] = b
+            else:
+                out_vals[idx] = np.interp(radial_vals, x_valid, b, left=np.nan, right=np.nan)
+        except Exception:
+            out_vals[idx] = y
+
+    if max_workers is None:
+        max_workers = min(16, (os.cpu_count() or 4))
+
+    if n_azim <= 1 or max_workers <= 1:
+        for i in range(n_azim):
+            _fit_row(i)
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            list(executor.map(_fit_row, range(n_azim)))
+
+    return xr.DataArray(
+        data=out_vals,
+        coords=da_2d.coords,
+        dims=da_2d.dims,
+        attrs=da_2d.attrs.copy(),
+    )
+
+
 class HiddenPrints:
     def __enter__(self):
         self._original_stdout = sys.stdout
@@ -90,8 +176,26 @@ class exrd:
     ):
 
         gpx_previous = copy.deepcopy(self.gpx)
-        ds_previous = copy.deepcopy(self.ds)
-        phases_previous = copy.deepcopy(self.phases)
+        if update_previous_ds:
+            vars_to_copy = [
+                k
+                for k in [
+                    "i1d",
+                    "i1d_refined",
+                    "i1d_gsas_background",
+                    "i1d_baseline",
+                ]
+                if k in self.ds
+            ]
+            ds_previous = self.ds[vars_to_copy].copy(deep=True)
+            ds_previous.attrs = self.ds.attrs.copy()
+        else:
+            ds_previous = None
+
+        if update_previous_phases:
+            phases_previous = copy.deepcopy(self.phases)
+        else:
+            phases_previous = None
 
         if self.verbose or verbose:
             print("\n\n\n\n\n")
@@ -321,20 +425,14 @@ class exrd:
 
         if update_phases or update_ds_phases:
             for e, p in enumerate(self.gpx.phases()):
-                p.export_CIF(
-                    outputname="%s/%s_refined.cif" % (self.gsasii_run_directory, p.name)
-                )
+                cif_path = "%s/%s_refined.cif" % (self.gsasii_run_directory, p.name)
+                p.export_CIF(outputname=cif_path)
+                with open(cif_path, "r") as ciffile:
+                    ciffile_content = ciffile.read()
                 if update_ds_phases:
-                    with open(
-                        "%s/%s_refined.cif" % (self.gsasii_run_directory, p.name), "r"
-                    ) as ciffile:
-                        ciffile_content = ciffile.read()
-                        self.ds.attrs["PhaseInd_%d_cif" % (e)] = ciffile_content
+                    self.ds.attrs["PhaseInd_%d_cif" % (e)] = ciffile_content
                 if update_phases:
-                    st = Structure.from_file(
-                        "%s/%s_refined.cif" % (self.gsasii_run_directory, p.name)
-                    )
-                    self.phases[p.name] = st
+                    self.phases[p.name] = Structure.from_str(ciffile_content, fmt="cif")
 
         if update_previous_gpx:
             self.gpx_previous = gpx_previous
@@ -806,7 +904,7 @@ class exrd:
                                 azimuthal_i2d=slice(
                                     roi_azimuthal_range[0], roi_azimuthal_range[1]
                                 )
-                            )
+                            ).copy()
                             da_i2d_bkg.values = median_filter(da_i2d_bkg.values, size=3)
                             da_i1d = da_i2d.mean(dim="azimuthal_i2d").dropna(
                                 dim="radial_i2d"
@@ -817,7 +915,7 @@ class exrd:
                         else:
                             da_i2d = self.ds.i2d
                             da_i2d.values = median_filter(da_i2d.values, size=3)
-                            da_i2d_bkg = input_bkg.ds.i2d
+                            da_i2d_bkg = input_bkg.ds.i2d.copy()
                             da_i2d_bkg.values = median_filter(da_i2d_bkg.values, size=3)
                             da_i1d = self.ds.i2d.mean(dim="azimuthal_i2d").dropna(
                                 dim="radial_i2d"
@@ -827,85 +925,21 @@ class exrd:
                             ).dropna(dim="radial_i2d")
 
                         if roi_radial_range is not None:
-                            # bkg_scale = 1
-                            bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
-
-                            diff_now = (
-                                da_i1d.sel(
-                                    radial_i2d=slice(
-                                        roi_radial_range[0], roi_radial_range[-1]
-                                    )
-                                )
-                                - bkg_scale
-                                * da_i1d_bkg.sel(
-                                    radial_i2d=slice(
-                                        roi_radial_range[0], roi_radial_range[-1]
-                                    )
+                            y_obs = da_i1d.sel(
+                                radial_i2d=slice(
+                                    roi_radial_range[0], roi_radial_range[-1]
                                 )
                             ).values
-                            c = 0
-                            if min(diff_now) > 0:
-                                while min(diff_now) > 0:
-                                    bkg_scale = bkg_scale * 1.01
-                                    diff_now = (
-                                        da_i1d.sel(
-                                            radial_i2d=slice(
-                                                roi_radial_range[0],
-                                                roi_radial_range[-1],
-                                            )
-                                        )
-                                        - bkg_scale
-                                        * da_i1d_bkg.sel(
-                                            radial_i2d=slice(
-                                                roi_radial_range[0],
-                                                roi_radial_range[-1],
-                                            )
-                                        )
-                                    ).values
-                                    c = c + 1
-                                    if c > 100:
-                                        break
-                            else:
-                                while min(diff_now) < 0:
-                                    bkg_scale = bkg_scale * 0.99
-                                    diff_now = (
-                                        da_i1d.sel(
-                                            radial_i2d=slice(
-                                                roi_radial_range[0],
-                                                roi_radial_range[-1],
-                                            )
-                                        )
-                                        - bkg_scale
-                                        * da_i1d_bkg.sel(
-                                            radial_i2d=slice(
-                                                roi_radial_range[0],
-                                                roi_radial_range[-1],
-                                            )
-                                        )
-                                    ).values
-                                    c = c + 1
-                                    if c > 100:
-                                        break
+                            y_bkg = da_i1d_bkg.sel(
+                                radial_i2d=slice(
+                                    roi_radial_range[0], roi_radial_range[-1]
+                                )
+                            ).values
                         else:
-                            # bkg_scale = 1
-                            bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
+                            y_obs = da_i1d.values
+                            y_bkg = da_i1d_bkg.values
+                        bkg_scale = _optimize_bkg_scale(y_obs, y_bkg)
 
-                            diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-                            c = 0
-                            if min(diff_now) > 0:
-                                while min(diff_now) > 0:
-                                    bkg_scale = bkg_scale * 1.01
-                                    diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-                                    c = c + 1
-                                    if c > 100:
-                                        break
-                            else:
-                                while min(diff_now) < 0:
-                                    bkg_scale = bkg_scale * 0.99
-                                    diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-                                    c = c + 1
-                                    if c > 100:
-                                        break
                         if use_iarpls:
                             if roi_azimuthal_range is not None:
                                 da_i2d_diff = self.ds.i2d.sel(
@@ -920,35 +954,9 @@ class exrd:
                             else:
                                 da_i2d_diff = self.ds.i2d - bkg_scale * input_bkg.ds.i2d
                             if get_i2d_baseline:
-                                da_i2d_diff_baseline = deepcopy(da_i2d_diff)
-                                # serial version (can be speed-up using threads)
-                                for a_ind in range(da_i2d_diff.shape[0]):
-                                    #
-                                    da_now = da_i2d_diff_baseline.isel(
-                                        azimuthal_i2d=a_ind
-                                    )
-                                    da_now_dropna = da_now.dropna(dim="radial_i2d")
-                                    try:
-                                        baseline_now, params = pybaselines.Baseline(
-                                            x_data=da_now_dropna.radial_i2d.values
-                                        ).iarpls(da_now_dropna.values, lam=iarpls_lam)
-                                        # create baseline da by copying
-                                        da_now_dropna_baseline = copy.deepcopy(
-                                            da_now_dropna
-                                        )
-                                        da_now_dropna_baseline.values = baseline_now
-                                        # now interpolate baseline da to original i2d radial range
-                                        da_now_dropna_baseline_interpolated = (
-                                            da_now_dropna_baseline.interp(
-                                                radial_i2d=da_i2d_diff.radial_i2d
-                                            )
-                                        )
-                                        da_i2d_diff_baseline[a_ind, :] = (
-                                            da_now_dropna_baseline_interpolated
-                                        )
-                                    except:
-                                        # da_now.values[:] = np.nan
-                                        da_i2d_diff_baseline[a_ind, :] = da_now
+                                da_i2d_diff_baseline = _compute_i2d_baseline(
+                                    da_i2d_diff, iarpls_lam=iarpls_lam
+                                )
                                 if roi_azimuthal_range is not None:
                                     self.ds["i2d_baseline"] = da_i2d_diff_baseline + (
                                         bkg_scale
@@ -1148,86 +1156,16 @@ class exrd:
                         da_i1d_bkg = input_bkg.ds.i1d
 
                     if roi_radial_range is not None:
-                        # bkg_scale = 1
-                        bkg_scale = (
-                            da_i1d.sel(
-                                radial=slice(roi_radial_range[0], roi_radial_range[-1])
-                            ).values[0]
-                        ) / max(
-                            da_i1d_bkg.sel(
-                                radial=slice(roi_radial_range[0], roi_radial_range[-1])
-                            ).values
-                        )
-
-                        diff_now = (
-                            da_i1d.sel(
-                                radial=slice(roi_radial_range[0], roi_radial_range[-1])
-                            )
-                            - bkg_scale
-                            * da_i1d_bkg.sel(
-                                radial=slice(roi_radial_range[0], roi_radial_range[-1])
-                            )
+                        y_obs = da_i1d.sel(
+                            radial=slice(roi_radial_range[0], roi_radial_range[-1])
                         ).values
-                        c = 0
-                        if min(diff_now) > 0:
-                            while min(diff_now) > 0:
-                                bkg_scale = bkg_scale * 1.01
-                                diff_now = (
-                                    da_i1d.sel(
-                                        radial=slice(
-                                            roi_radial_range[0], roi_radial_range[-1]
-                                        )
-                                    )
-                                    - bkg_scale
-                                    * da_i1d_bkg.sel(
-                                        radial=slice(
-                                            roi_radial_range[0], roi_radial_range[-1]
-                                        )
-                                    )
-                                ).values
-                                c = c + 1
-                                if c > 100:
-                                    break
-                        else:
-                            while min(diff_now) < 0:
-                                bkg_scale = bkg_scale * 0.99
-                                diff_now = (
-                                    da_i1d.sel(
-                                        radial=slice(
-                                            roi_radial_range[0], roi_radial_range[-1]
-                                        )
-                                    )
-                                    - bkg_scale
-                                    * da_i1d_bkg.sel(
-                                        radial=slice(
-                                            roi_radial_range[0], roi_radial_range[-1]
-                                        )
-                                    )
-                                ).values
-                                c = c + 1
-                                if c > 100:
-                                    break
+                        y_bkg = da_i1d_bkg.sel(
+                            radial=slice(roi_radial_range[0], roi_radial_range[-1])
+                        ).values
                     else:
-                        # bkg_scale = 1
-                        bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
-
-                        diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-
-                        c = 0
-                        if min(diff_now) > 0:
-                            while min(diff_now) > 0:
-                                bkg_scale = bkg_scale * 1.01
-                                diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-                                c = c + 1
-                                if c > 100:
-                                    break
-                        else:
-                            while min(diff_now) < 0:
-                                bkg_scale = bkg_scale * 0.99
-                                diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-                                c = c + 1
-                                if c > 100:
-                                    break
+                        y_obs = da_i1d.values
+                        y_bkg = da_i1d_bkg.values
+                    bkg_scale = _optimize_bkg_scale(y_obs, y_bkg)
 
                     if use_iarpls:
 
@@ -1278,73 +1216,16 @@ class exrd:
                     da_i1d_bkg = input_bkg.ds.i1d
 
                     if roi_radial_range is not None:
-                        # bkg_scale = 1
-                        bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
-
-                        diff_now = (
-                            da_i1d.sel(
-                                radial=slice(roi_radial_range[0], roi_radial_range[-1])
-                            )
-                            - bkg_scale
-                            * da_i1d_bkg.sel(
-                                radial=slice(roi_radial_range[0], roi_radial_range[-1])
-                            )
+                        y_obs = da_i1d.sel(
+                            radial=slice(roi_radial_range[0], roi_radial_range[-1])
                         ).values
-                        if min(diff_now) > 0:
-                            while min(diff_now) > 0:
-                                bkg_scale = bkg_scale * 1.01
-                                diff_now = (
-                                    da_i1d.sel(
-                                        radial=slice(
-                                            roi_radial_range[0], roi_radial_range[-1]
-                                        )
-                                    )
-                                    - bkg_scale
-                                    * da_i1d_bkg.sel(
-                                        radial=slice(
-                                            roi_radial_range[0], roi_radial_range[-1]
-                                        )
-                                    )
-                                ).values
-                        else:
-                            while min(diff_now) < 0:
-                                bkg_scale = bkg_scale * 0.99
-                                diff_now = (
-                                    da_i1d.sel(
-                                        radial=slice(
-                                            roi_radial_range[0], roi_radial_range[-1]
-                                        )
-                                    )
-                                    - bkg_scale
-                                    * da_i1d_bkg.sel(
-                                        radial=slice(
-                                            roi_radial_range[0], roi_radial_range[-1]
-                                        )
-                                    )
-                                ).values
+                        y_bkg = da_i1d_bkg.sel(
+                            radial=slice(roi_radial_range[0], roi_radial_range[-1])
+                        ).values
                     else:
-
-                        # bkg_scale = 1
-                        bkg_scale = (da_i1d.values[0]) / max(da_i1d_bkg.values)
-
-                        diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-
-                        c = 0
-                        if min(diff_now) > 0:
-
-                            while min(diff_now) > 0:
-                                bkg_scale = bkg_scale * 1.01
-                                diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-                                c = c + 1
-                                if c > 100:
-                                    break
-                        else:
-                            while min(diff_now) < 0:
-                                bkg_scale = bkg_scale * 0.99
-                                diff_now = (da_i1d - bkg_scale * da_i1d_bkg).values
-                                c = c + 1
-                                if c > 100:
-                                    break
+                        y_obs = da_i1d.values
+                        y_bkg = da_i1d_bkg.values
+                    bkg_scale = _optimize_bkg_scale(y_obs, y_bkg)
 
                     if use_iarpls:
 
@@ -1412,33 +1293,9 @@ class exrd:
                             da_i2d = self.ds.i2d
 
                         if get_i2d_baseline:
-                            da_i2d_baseline = deepcopy(da_i2d)
-                            # serial version (can be speed-up using threads)
-                            for a_ind in range(da_i2d.shape[0]):
-                                #
-                                da_now = da_i2d_baseline.isel(azimuthal_i2d=a_ind)
-                                da_now_dropna = da_now.dropna(dim="radial_i2d")
-                                try:
-                                    baseline_now, params = pybaselines.Baseline(
-                                        x_data=da_now_dropna.radial_i2d.values
-                                    ).iarpls(da_now_dropna.values, lam=iarpls_lam)
-                                    # create baseline da by copying
-                                    da_now_dropna_baseline = copy.deepcopy(
-                                        da_now_dropna
-                                    )
-                                    da_now_dropna_baseline.values = baseline_now
-                                    # now interpolate baseline da to original i2d radial range
-                                    da_now_dropna_baseline_interpolated = (
-                                        da_now_dropna_baseline.interp(
-                                            radial_i2d=da_i2d.radial_i2d
-                                        )
-                                    )
-                                    da_i2d_baseline[a_ind, :] = (
-                                        da_now_dropna_baseline_interpolated
-                                    )
-                                except:
-                                    # da_now.values[:] = np.nan
-                                    da_i2d_baseline[a_ind, :] = da_now
+                            da_i2d_baseline = _compute_i2d_baseline(
+                                da_i2d, iarpls_lam=iarpls_lam
+                            )
                             self.ds["i2d_baseline"] = da_i2d_baseline
                             self.ds["i2d_baseline"].attrs[
                                 "baseline_note"
@@ -1572,12 +1429,16 @@ class exrd:
                     .mean(dim="azimuthal_i2d")
                     .rename({"radial_i2d": "radial"})
                 )
+                wl_meter = self.ds["i2d"].attrs.get("wavelength_in_meter", None)
+                if wl_meter is not None:
+                    wl_angst = wl_meter * 1e10
+                else:
+                    wl_angst = self.ds["i1d"].attrs.get("wavelength_in_angst", 0.1814)
                 self.ds["i1d"].attrs = {
                     "radial_unit": "q_A^-1",
                     "xlabel": r"Scattering vector $q$ ($\AA^{-1}$)",
                     "ylabel": "Intensity (a.u.)",
-                    "wavelength_in_angst": self.ds["i2d"].attrs["wavelength_in_meter"]
-                    * 10e9,
+                    "wavelength_in_angst": wl_angst,
                 }
 
         if roi_radial_range is not None:
@@ -1775,14 +1636,18 @@ class exrd:
             phases_gpx = G2sc.G2Project(gpxfile=from_gpx)
             self.phases = {}
             for e, p in enumerate(phases_gpx.phases()):
-                p.export_CIF(outputname="tmp.cif")
-                st = Structure.from_file("tmp.cif")
-                self.phases[p.name] = st
-                with open("tmp.cif", "r") as ciffile:
+                tmp_cif = "%s/tmp_%d.cif" % (self.easyxrd_scratch_directory, e)
+                p.export_CIF(outputname=tmp_cif)
+                with open(tmp_cif, "r") as ciffile:
                     ciffile_content = ciffile.read()
-                    self.ds.attrs["PhaseInd_%d_cif" % (e)] = ciffile_content
+                try:
+                    os.remove(tmp_cif)
+                except OSError:
+                    pass
+                st = Structure.from_str(ciffile_content, fmt="cif")
+                self.phases[p.name] = st
+                self.ds.attrs["PhaseInd_%d_cif" % (e)] = ciffile_content
                 self.ds.attrs["PhaseInd_%d_label" % (e)] = p.name
-                os.remove("tmp.cif")
             self.ds.attrs["num_phases"] = e + 1
 
         elif from_nc is not None:
@@ -1790,56 +1655,28 @@ class exrd:
             with xr.open_dataset(from_nc) as ds_nc:
 
                 self.phases = {}
-                for p in range(ds_nc.attrs["num_phases"]):
+                num_p = ds_nc.attrs.get("num_phases", 0)
+                for p in range(num_p):
+                    cif_str = ds_nc.attrs["PhaseInd_%d_cif" % p]
+                    label = ds_nc.attrs["PhaseInd_%d_label" % p]
+                    self.phases[label] = Structure.from_str(cif_str, fmt="cif")
+                    self.ds.attrs["PhaseInd_%d_label" % p] = label
+                    self.ds.attrs["PhaseInd_%d_cif" % p] = cif_str
 
-                    randstr = "".join(
-                        random.choices(string.ascii_uppercase + string.digits, k=7)
-                    )
-                    with open(
-                        "%s/%s.cif" % (self.easyxrd_scratch_directory, randstr), "w"
-                    ) as ciffile:
-                        ciffile.write("%s" % ds_nc.attrs["PhaseInd_%d_cif" % p])
-                    st = Structure.from_file(
-                        "%s/%s.cif" % (self.easyxrd_scratch_directory, randstr)
-                    )
-                    self.phases[ds_nc.attrs["PhaseInd_%d_label" % p]] = st
-                    os.remove("%s/%s.cif" % (self.easyxrd_scratch_directory, randstr))
-
-                    self.ds.attrs["PhaseInd_%d_label" % (p)] = ds_nc.attrs[
-                        "PhaseInd_%d_label" % (p)
-                    ]
-                    self.ds.attrs["PhaseInd_%d_cif" % (p)] = ds_nc.attrs[
-                        "PhaseInd_%d_cif" % (p)
-                    ]
-
-                self.ds.attrs["num_phases"] = p + 1
+                self.ds.attrs["num_phases"] = num_p
 
         elif from_ds is not None:
 
             self.phases = {}
-            for p in range(from_ds.attrs["num_phases"]):
+            num_p = from_ds.attrs.get("num_phases", 0)
+            for p in range(num_p):
+                cif_str = from_ds.attrs["PhaseInd_%d_cif" % p]
+                label = from_ds.attrs["PhaseInd_%d_label" % p]
+                self.phases[label] = Structure.from_str(cif_str, fmt="cif")
+                self.ds.attrs["PhaseInd_%d_label" % p] = label
+                self.ds.attrs["PhaseInd_%d_cif" % p] = cif_str
 
-                randstr = "".join(
-                    random.choices(string.ascii_uppercase + string.digits, k=7)
-                )
-                with open(
-                    "%s/%s.cif" % (self.easyxrd_scratch_directory, randstr), "w"
-                ) as ciffile:
-                    ciffile.write("%s" % from_ds.attrs["PhaseInd_%d_cif" % p])
-                st = Structure.from_file(
-                    "%s/%s.cif" % (self.easyxrd_scratch_directory, randstr)
-                )
-                self.phases[from_ds.attrs["PhaseInd_%d_label" % p]] = st
-                os.remove("%s/%s.cif" % (self.easyxrd_scratch_directory, randstr))
-
-                self.ds.attrs["PhaseInd_%d_label" % (p)] = from_ds.attrs[
-                    "PhaseInd_%d_label" % (p)
-                ]
-                self.ds.attrs["PhaseInd_%d_cif" % (p)] = from_ds.attrs[
-                    "PhaseInd_%d_cif" % (p)
-                ]
-
-            self.ds.attrs["num_phases"] = p + 1
+            self.ds.attrs["num_phases"] = num_p
 
         if plot:
             exrd_plotter(

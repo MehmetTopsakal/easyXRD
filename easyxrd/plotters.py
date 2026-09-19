@@ -246,6 +246,51 @@ def i2d_plotter(
     ax.set_title(title_str, fontsize=8, color="r")
 
 
+_PATTERN_CACHE = {}
+
+
+def _calc_reflection_pattern(xrdc, st, wavelength, radial_min, radial_max):
+    """
+    Calculate or retrieve cached Bragg peak positions and intensities.
+    """
+    arg0 = np.clip(radial_min * (wavelength / (4 * np.pi)), -1.0, 1.0)
+    arg1 = np.clip(radial_max * (wavelength / (4 * np.pi)), -1.0, 1.0)
+    tth0 = float(np.rad2deg(2 * np.arcsin(arg0)))
+    tth1 = float(np.rad2deg(2 * np.arcsin(arg1)))
+    two_theta_range = (min(tth0, tth1), max(tth0, tth1))
+
+    try:
+        lat_tuple = tuple(np.round(st.lattice.matrix.flat, 4))
+        comp_str = st.composition.reduced_formula
+    except Exception:
+        lat_tuple = ()
+        comp_str = str(getattr(st, "formula", ""))
+
+    cache_key = (
+        comp_str,
+        lat_tuple,
+        round(float(wavelength), 6),
+        round(two_theta_range[0], 4),
+        round(two_theta_range[1], 4),
+    )
+
+    if cache_key in _PATTERN_CACHE:
+        return _PATTERN_CACHE[cache_key]
+
+    try:
+        ps = xrdc.get_pattern(st, scaled=True, two_theta_range=two_theta_range)
+        if len(ps.x) > 0:
+            refl_X = ((4 * np.pi) / wavelength) * np.sin(np.deg2rad(ps.x) / 2)
+            refl_Y = ps.y
+        else:
+            refl_X, refl_Y = np.array([]), np.array([])
+    except Exception:
+        refl_X, refl_Y = np.array([]), np.array([])
+
+    _PATTERN_CACHE[cache_key] = (refl_X, refl_Y)
+    return refl_X, refl_Y
+
+
 def phases_plotter(
     ds,
     ax_main,
@@ -256,86 +301,65 @@ def phases_plotter(
     phase_label_yshift=-0.2,
 ):
 
-    xrdc = XRDCalculator(wavelength=ds.i1d.attrs["wavelength_in_angst"])
+    wavelength = ds.i1d.attrs["wavelength_in_angst"]
+    xrdc = XRDCalculator(wavelength=wavelength)
 
-    if phases is not None:
-        for e, st in enumerate(phases):
-            ps = xrdc.get_pattern(
-                phases[st],
-                scaled=True,
-                two_theta_range=np.rad2deg(
-                    2
-                    * np.arcsin(
-                        np.array([ds.i1d.radial.values[0], ds.i1d.radial.values[-1]])
-                        * ((ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
-                    )
-                ),
-            )
-            refl_X, refl_Y = (
-                (4 * np.pi) / (ds.i1d.attrs["wavelength_in_angst"])
-            ) * np.sin(np.deg2rad(ps.x) / 2), ps.y
-            for i in refl_X:
-                ax_main.axvline(x=i, lw=0.3, linestyle="--", color="C%d" % e)
-                for a in line_axes:
-                    a.axvline(x=i, lw=0.3, linestyle="--", color="C%d" % e)
-
-            markerline, stemlines, stem_baseline = ax_main.stem(
-                refl_X, refl_Y, markerfmt="."
-            )
-            plt.setp(stemlines, linewidth=0.5, color="C%d" % e)
-            plt.setp(markerline, color="C%d" % e)
-
-            ax_main.text(
-                phase_label_x,
-                phase_label_y + e * phase_label_yshift,
-                st,
-                color="C%d" % e,
-                transform=ax_main.transAxes,
-            )
-
-    else:
+    if phases is None:
         ds_phases = {}
-        for a in ds.attrs.keys():
-            for aa in range(ds.attrs["num_phases"]):
-                if a == "PhaseInd_%d_cif" % aa:
-                    with open("tmp.cif", "w") as cif_file:
-                        cif_file.write(ds.attrs[a])
-                    st = Structure.from_file("tmp.cif")
-                    ds_phases[ds.attrs["PhaseInd_%d_label" % aa]] = st
-                    os.remove("tmp.cif")
-        for e, st in enumerate(ds_phases):
-            ps = xrdc.get_pattern(
-                ds_phases[st],
-                scaled=True,
-                two_theta_range=np.rad2deg(
-                    2
-                    * np.arcsin(
-                        np.array([ds.i1d.radial.values[0], ds.i1d.radial.values[-1]])
-                        * ((ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
-                    )
-                ),
+        num_phases = ds.attrs.get("num_phases", 0)
+        for aa in range(num_phases):
+            cif_key = "PhaseInd_%d_cif" % aa
+            label_key = "PhaseInd_%d_label" % aa
+            if cif_key in ds.attrs:
+                try:
+                    st = Structure.from_str(ds.attrs[cif_key], fmt="cif")
+                    label = ds.attrs.get(label_key, "Phase_%d" % aa)
+                    ds_phases[label] = st
+                except Exception as exc:
+                    print(f"Warning: could not parse CIF for phase {aa}: {exc}")
+        phases = ds_phases
+
+    radial_min = ds.i1d.radial.values[0]
+    radial_max = ds.i1d.radial.values[-1]
+
+    if isinstance(phases, dict):
+        phase_items = list(phases.items())
+    elif isinstance(phases, (list, tuple)):
+        phase_items = [(getattr(st, "formula", f"Phase_{idx}"), st) for idx, st in enumerate(phases)]
+    else:
+        phase_items = []
+
+    for e, (st_name, st) in enumerate(phase_items):
+        refl_X, refl_Y = _calc_reflection_pattern(
+            xrdc, st, wavelength, radial_min, radial_max
+        )
+
+        if len(refl_X) > 0:
+            color = "C%d" % e
+            # Vectorized vertical lines spanning full axes height
+            ax_main.vlines(
+                refl_X, 0, 1, transform=ax_main.get_xaxis_transform(),
+                lw=0.3, linestyle="--", colors=color
             )
-            refl_X, refl_Y = (
-                (4 * np.pi) / (ds.i1d.attrs["wavelength_in_angst"])
-            ) * np.sin(np.deg2rad(ps.x) / 2), ps.y
-            for i in refl_X:
-                ax_main.axvline(x=i, lw=0.3, linestyle="--", color="C%d" % e)
-                for a in line_axes:
-                    a.axvline(x=i, lw=0.3, linestyle="--", color="C%d" % e)
+            for a in line_axes:
+                a.vlines(
+                    refl_X, 0, 1, transform=a.get_xaxis_transform(),
+                    lw=0.3, linestyle="--", colors=color
+                )
 
             markerline, stemlines, stem_baseline = ax_main.stem(
                 refl_X, refl_Y, markerfmt="."
             )
-            plt.setp(stemlines, linewidth=0.5, color="C%d" % e)
-            plt.setp(markerline, color="C%d" % e)
+            plt.setp(stemlines, linewidth=0.5, color=color)
+            plt.setp(markerline, color=color)
 
-            ax_main.text(
-                phase_label_x,
-                phase_label_y + e * phase_label_yshift,
-                st,
-                color="C%d" % e,
-                transform=ax_main.transAxes,
-            )
+        ax_main.text(
+            phase_label_x,
+            phase_label_y + e * phase_label_yshift,
+            st_name,
+            color="C%d" % e,
+            transform=ax_main.transAxes,
+        )
 
     ax_main.set_xlabel(ds.i1d.attrs["xlabel"])
     ax_main.set_ylim(bottom=1, top=120)

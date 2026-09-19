@@ -51,15 +51,24 @@ required_packages = {
     "mp_api",
 }
 
+import importlib.util
+
 failed_packages = []
 for rp in required_packages:
     try:
-        globals()[rp] = importlib.import_module(rp)
-        print(
-            "---%s package with version %s is available and can be imported "
-            % (rp, version(rp))
-        )
-    except:
+        spec = importlib.util.find_spec(rp)
+        if spec is not None:
+            try:
+                pkg_version = version(rp)
+            except Exception:
+                pkg_version = "available"
+            print(
+                "---%s package with version %s is available and can be imported "
+                % (rp, pkg_version)
+            )
+        else:
+            failed_packages.append(rp)
+    except Exception:
         failed_packages.append(rp)
 
 
