@@ -29,52 +29,54 @@ class HiddenPrints:
         sys.stdout = self._original_stdout
 
 
-print("\n\nPython=%d.%d.%d | Platform=%s"%(sys.version_info.major,sys.version_info.minor,sys.version_info.micro,platform.platform()))
-try:
-    from importlib.metadata import version
-    print("easyXRD pypi version: %s\n"%(version('easyxrd')))
-except:
-    pass
-print("Checking required packages:\n")
-# These are big python libraries that we will need in pySULI.
-# If the required library doesn't exist, we can it via pip
-
-required_packages = {
-    "numpy",
-    "scipy",
-    "xarray",
-    "ipympl",
-    "pymatgen",
-    "pyFAI",
-    "fabio",
-    "pybaselines",
-    "mp_api",
-}
-
-import importlib.util
-
-failed_packages = []
-for rp in required_packages:
-    try:
-        spec = importlib.util.find_spec(rp)
-        if spec is not None:
-            try:
-                pkg_version = version(rp)
-            except Exception:
-                pkg_version = "available"
-            print(
-                "---%s package with version %s is available and can be imported "
-                % (rp, pkg_version)
-            )
-        else:
-            failed_packages.append(rp)
-    except Exception:
-        failed_packages.append(rp)
-
-
-for fp in failed_packages:
-    print("\n\n----Failed to import %s" % fp)
-    print('Try installing it via `pip install %s`\n'% fp.replace('_','-'))
+# print("\n\nPython=%d.%d.%d | Platform=%s"%(sys.version_info.major,sys.version_info.minor,sys.version_info.micro,platform.platform()))
+# try:
+#     from importlib.metadata import version
+#     print("easyXRD pypi version: %s\n"%(version('easyxrd')))
+# except:
+#     pass
+#
+#
+# print("Checking required packages:\n")
+# # These are big python libraries that we will need in pySULI.
+# # If the required library doesn't exist, we can it via pip
+#
+# required_packages = {
+#     "numpy",
+#     "scipy",
+#     "xarray",
+#     "ipympl",
+#     "pymatgen",
+#     "pyFAI",
+#     "fabio",
+#     "pybaselines",
+#     "mp_api",
+# }
+#
+# import importlib.util
+#
+# failed_packages = []
+# for rp in required_packages:
+#     try:
+#         spec = importlib.util.find_spec(rp)
+#         if spec is not None:
+#             try:
+#                 pkg_version = version(rp)
+#             except Exception:
+#                 pkg_version = "available"
+#             print(
+#                 "---%s package with version %s is available and can be imported "
+#                 % (rp, pkg_version)
+#             )
+#         else:
+#             failed_packages.append(rp)
+#     except Exception:
+#         failed_packages.append(rp)
+#
+#
+# for fp in failed_packages:
+#     print("\n\n----Failed to import %s" % fp)
+#     print('Try installing it via `pip install %s`\n'% fp.replace('_','-'))
 
 
 
