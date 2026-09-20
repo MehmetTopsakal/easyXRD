@@ -1,10 +1,5 @@
 # easyXRD
 
-[![image](https://img.shields.io/pypi/v/easyxrd.svg)](https://pypi.python.org/pypi/easyxrd)
-[![image](https://img.shields.io/pypi/l/easyxrd.svg)](https://pypi.python.org/pypi/easyxrd)
-[![image](https://img.shields.io/pypi/pyversions/easyxrd.svg)](https://pypi.python.org/pypi/easyxrd)
-
-
 
 We have developed a versatile X-ray diffraction (XRD) analysis tool that utilizes modern and open-source Python packages such as pyFAI, xarray, pymatgen, pybaselines,... for data processing/storage and interfaced to Jupyter notebooks powered with actively developed visualization packages such as ipywidgets, and matplotlib. It provides easy access to the Materials Project database which hosts thousands of crystal structures that can be used for phase identification - a critical part of XRD analysis - and utilizes [GSAS-II suite](https://github.com/AdvancedPhotonSource/GSAS-II) for XRD refinements in a user-friendly and intuitive manner. Ultimate goal of this tool is to make X-ray diffraction analysis easy for users and help them to process, refine, store, and share their XRD data conveniently.
 
@@ -86,65 +81,31 @@ conda init --all
 
 
 
-Once you have a working conda environment through these steps above, now we need to create a virtual environment as shown below:
+Then we need to create a virtual environment as shown below:
 
 
 
 ```bash
-conda create --name env_py3.14_np_2.4 -c conda-forge -y  python=3.14 numpy=2.4 jupyterlab
+conda create --name env_py3.14_np_2.4 -c conda-forge -y  python=3.14 numpy=2.4
 ```
-Once the new virtual environment is created, ne we need to activate it and then call jupyter lab interface
+Once the new virtual environment is created, we need to activate and install easyXRD and GSAS-II packages directly from GitHub. 
 
 ```bash
 conda activate env_py3.14_np_2.4
-cd
-jupyter lab
+
+# for easyXRD
+python -m pip install "easyXRD[notebook] @ git+https://github.com/MehmetTopsakal/easyXRD.git"
+
+# for GSAS-II
+python -m pip install meson-python ninja wheel Cython pyproject-metadata tomli
+NUMPY_PC_DIR="$(numpy-config --pkgconfigdir)"
+export PKG_CONFIG_PATH="$NUMPY_PC_DIR${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+python -m pip install --no-build-isolation "GSAS-II[useful] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git"
+
 ```
 
-Once you have the jupyter lab interface, we can continue from there. A browser window with a Jupyter session should open after you execute `jupyter lab` prompt. 
 
-In a new cell, we need to install additional python packages for `easyXRD`.\
-You need to Copy-Paste the contents of code below into the Jupyter lab cell and execute it (Ctrl+Enter).
-
-```python
-# Here we install the necessary packages via pip
-# It may take a while for this cell to complete. This will be quicker in next runs...
-required_packages = {
-    "mp-api",
-    "scipy",
-    "xarray",
-    "h5netcdf",
-    "ipympl",
-    "pymatgen",
-    "pyFAI",
-    "fabio",
-    "pybaselines",
-    "easyxrd"
-}
-import subprocess,sys
-for p in required_packages:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", p])
-from IPython.display import clear_output
-clear_output()
-
-
-# Finally, we nedd to reset kernel for the package installations to take effect
-import IPython
-IPython.Application.instance().kernel.do_shutdown(True)
-```
-
-If you successfully executed these in a Jupyter notebook cell, this means you have a working Python environment. As next, we need to install GSAS-II into our python environment based on the instructions shown here: https://advancedphotonsource.github.io/GSAS-II-tutorials/install-pip.html. Please note, we are using `pip` based installation.
-
-```python
-try:
-    import GSASII.GSASIIscriptable as G2sc
-except:
-    !! git clone --depth 1 https://github.com/AdvancedPhotonSource/GSAS-II.git ./G2
-    !! pip install ./G2[useful]
-```
-
-We can now import easyXRD.
-If you are running this cell for the first time, it will need to download GSAS-II libraries and binaries from GitHub. For the settings to take effect, the jupyter kernel needs to be restarted.
+If all is successful, you should be able to import easyXRD inside python:
 
 ```python
 from easyxrd.core import exrd
@@ -153,10 +114,14 @@ from easyxrd.core import exrd
 After this step, you can contine with `exrd` as we explained in the Google Colab notebooks that are listed above.
 
 
-It should be noted that, you need to acknowledge GSAS-II if you use the refinement components of `easyXRD`. You can check original GSAS-II repo, https://github.com/AdvancedPhotonSource/GSAS-II, for further details.
+
+## Acknowledgements
+
+Development of `easyXRD` was supported by FY24 Scientific Technique and Expertise Development – Instrument Scientist Support Project managed by Nuclear Science User Facilities (NSUF), https://nsuf.inl.gov/. If you find `easyXRD` useful for your research, please acknowldege using the sentence below:
+
+"This work utilized `easyXRD` an open-source tool used for processing and analyzing X-ray diffrection data and is supported by the DOE, Office of Nuclear Energy, under DOE Idaho Operations Office Contract DE-AC07-05ID14517, as part of a Nuclear Science User Facilities project."
+
+In addition, you need to acknowledge GSAS-II if you use the refinement components of `easyXRD`. You can check the original GSAS-II repo, https://github.com/AdvancedPhotonSource/GSAS-II, for further details.
 
 
 Feel free to contact me (metokal@gmail[-remove-this].com) if you have any questions about `easyXRD`
-
-
-

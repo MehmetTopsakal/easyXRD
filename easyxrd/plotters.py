@@ -1,52 +1,13 @@
-from scipy.signal import savgol_filter
-import pybaselines
-
-from pymatgen.core.structure import Structure
-from pymatgen.core.lattice import Lattice
-from pymatgen.analysis.diffraction.xrd import XRDCalculator
-from pymatgen.io.cif import CifWriter
-
-from IPython.display import clear_output
-
-
-import random, string
-import fnmatch
-
-import time
-import copy
-
-import os, sys
-
-
-import numpy as np
-import xarray as xr
-
-
-import matplotlib
-
-import matplotlib.pyplot as plt
-
-plt.rcParams.update({"figure.max_open_warning": 0})
-
-
 import warnings
+import numpy as np
+import matplotlib.patches
+import matplotlib.pyplot as plt
+from pymatgen.core.structure import Structure
+from pymatgen.analysis.diffraction.xrd import XRDCalculator
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
-
-
-class HiddenPrints:
-    """
-    This class hides print outputs from functions. It is useful for processes like refinement which produce a lot of text prints.
-    """
-
-    def __enter__(self):
-        self._original_stdout = sys.stdout
-        sys.stdout = open(os.devnull, "w")
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        sys.stdout.close()
-        sys.stdout = self._original_stdout
+plt.rcParams.update({"figure.max_open_warning": 0})
 
 
 def i1d_plotter(
@@ -60,8 +21,7 @@ def i1d_plotter(
     ncol=1,
     show_Ybkg_old=False,
 ):
-
-    yshift_multiplier = 0.01
+    """Plot 1D XRD intensity profile (observed, calculated, and background)."""
 
     if "i1d_baseline" in ds.keys():
         da_Y_obs = ds.i1d - ds.i1d_baseline
@@ -77,7 +37,6 @@ def i1d_plotter(
         ylabel = "Intensity"
 
     if i1d_ylogscale:
-        # check negative data boundaries
         if "i1d_refined" in ds.keys():
             min_obs = min(da_Y_obs.values)
             min_calc = min(da_Y_calc.values)
@@ -96,13 +55,6 @@ def i1d_plotter(
         if "i1d_refined" in ds.keys():
             da_Y_calc = da_Y_calc + extra_yshift
             da_Y_bkg = da_Y_bkg + extra_yshift
-
-        # da_Y_obs = np.log(da_Y_obs)
-        # if "i1d_refined" in ds.keys():
-        #     da_Y_calc = np.log(da_Y_calc)
-        #     da_Y_bkg = np.log(da_Y_bkg)
-
-        # ylabel = "Log$_{10}$(%s)" % ylabel
     else:
         extra_yshift = 0
 
@@ -125,10 +77,6 @@ def i1d_plotter(
             da_Y_calc_previous = da_Y_calc_previous + extra_yshift
             da_Y_bkg_previous = da_Y_bkg_previous + extra_yshift
 
-        # if i1d_ylogscale:
-        #     da_Y_calc_previous = np.log(da_Y_calc_previous)
-        #     da_Y_bkg_previous = np.log(da_Y_bkg_previous)
-
         da_Y_calc_previous.plot(
             ax=ax,
             alpha=0.9,
@@ -150,7 +98,6 @@ def i1d_plotter(
 
     ax.set_ylabel(ylabel)
     ax.set_title(title_str, fontsize=8, color="r")
-
     ax.legend(loc="upper right", fontsize=8, ncol=ncol)
     ax.set_xlim([ds.i1d.radial[0], ds.i1d.radial[-1]])
 
@@ -177,6 +124,7 @@ def i2d_plotter(
     title_str="",
     annotate=False,
 ):
+    """Plot 2D caked XRD pattern (azimuthal vs radial)."""
 
     if ("i2d_baseline" in ds.keys()) and ("roi_azimuthal_range" in ds.i2d.attrs):
         da_i2d = ds.i2d
@@ -186,7 +134,6 @@ def i2d_plotter(
         da_i2d = ds.i2d - ds.i2d_baseline
         vmin = 0
         i2d_str = "i2d-i2d_baseline"
-
     else:
         da_i2d = ds.i2d
         vmin = 0
@@ -250,9 +197,8 @@ _PATTERN_CACHE = {}
 
 
 def _calc_reflection_pattern(xrdc, st, wavelength, radial_min, radial_max):
-    """
-    Calculate or retrieve cached Bragg peak positions and intensities.
-    """
+    """Calculate or retrieve cached Bragg peak positions and intensities."""
+
     arg0 = np.clip(radial_min * (wavelength / (4 * np.pi)), -1.0, 1.0)
     arg1 = np.clip(radial_max * (wavelength / (4 * np.pi)), -1.0, 1.0)
     tth0 = float(np.rad2deg(2 * np.arcsin(arg0)))
@@ -300,6 +246,7 @@ def phases_plotter(
     phase_label_y=0.75,
     phase_label_yshift=-0.2,
 ):
+    """Plot Bragg reflection lines and phase labels."""
 
     wavelength = ds.i1d.attrs["wavelength_in_angst"]
     xrdc = XRDCalculator(wavelength=wavelength)
@@ -336,7 +283,6 @@ def phases_plotter(
 
         if len(refl_X) > 0:
             color = "C%d" % e
-            # Vectorized vertical lines spanning full axes height
             ax_main.vlines(
                 refl_X, 0, 1, transform=ax_main.get_xaxis_transform(),
                 lw=0.3, linestyle="--", colors=color
@@ -385,55 +331,42 @@ def exrd_plotter(
     site_str_y=0.8,
     show_wt_fractions=False,
 ):
+    """Main plotting coordinator for easyXRD workflow stages."""
 
-    #############################################################################
-    #############################################################################
-    #############################################################################
+    has_i2d = "i2d" in ds.keys()
+
     if plot_hint == "load_xrd_data":
-        if "i2d" in ds.keys():
-            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
+        fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
+        if has_i2d:
             mosaic = """
                         B
                         C
                         C
                         """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-            ax = ax_dict["B"]
-
             i2d_plotter(
                 ds,
-                ax,
+                ax=ax_dict["B"],
                 cbar=True,
                 i2d_robust=i2d_robust,
                 i2d_logscale=i2d_logscale,
                 annotate=True,
                 title_str=title,
             )
-
-            ax = ax_dict["C"]
-            # np.log(ds.i2d.mean(dim='azimuthal_i2d')).plot(ax=ax,color='k')
             i1d_plotter(
                 ds,
-                ax,
+                ax=ax_dict["C"],
                 ds_previous=None,
                 i1d_ylogscale=i1d_ylogscale,
                 xlabel=True,
                 return_da=False,
                 title_str="",
             )
-
         else:
-            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
-            mosaic = """
-                        C
-                        """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-            ax = ax_dict["C"]
-
+            ax_dict = fig.subplot_mosaic("C", sharex=True)
             i1d_plotter(
                 ds,
-                ax,
+                ax=ax_dict["C"],
                 ds_previous=None,
                 i1d_ylogscale=i1d_ylogscale,
                 xlabel=True,
@@ -441,15 +374,9 @@ def exrd_plotter(
                 title_str=title,
             )
 
-        if export_fig_as is not None:
-            plt.savefig(export_fig_as, dpi=128)
-
-    #############################################################################
-    #############################################################################
-    #############################################################################
     elif plot_hint == "get_baseline":
-        if "i2d" in ds.keys():
-            fig = plt.figure(figsize=figsize, dpi=128)
+        fig = plt.figure(figsize=figsize, dpi=128)
+        if has_i2d:
             mosaic = """
                         AA222
                         AA222
@@ -458,51 +385,43 @@ def exrd_plotter(
                         AA111
                         AA111
                         """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-            ax = ax_dict["A"]
-            ax.set_xlim([ds.i1d.radial[0], ds.i1d.radial[-1]])
         else:
-            fig = plt.figure(figsize=figsize, dpi=128)
             mosaic = """
                         AA111
                         AA111
                         AA111
                         AA111
                         """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-            ax = ax_dict["A"]
-            ax.set_xlim([ds.i1d.radial[0], ds.i1d.radial[-1]])
+        ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
+        ax_a = ax_dict["A"]
+        ax_a.set_xlim([ds.i1d.radial[0], ds.i1d.radial[-1]])
 
-        if "normalized_to" in ds.i1d.attrs:
-            (ds.i1d).plot(ax=ax, label="i1d (norm.)")
-        else:
-            (ds.i1d).plot(ax=ax, label="i1d")
-        if ("i1d_baseline" in ds.keys()) and ("normalized_to" in ds.i1d.attrs):
-            (ds.i1d_baseline).plot(ax=ax, label="i1d_baseline (norm.)")
-        elif "i1d_baseline" in ds.keys():
-            (ds.i1d_baseline).plot(ax=ax, label="i1d_baseline")
+        label_i1d = "i1d (norm.)" if "normalized_to" in ds.i1d.attrs else "i1d"
+        ds.i1d.plot(ax=ax_a, label=label_i1d)
 
-        ax.set_yscale("log")
-        ax.set_xlabel(ds.i1d.attrs["xlabel"])
-        ax.set_ylabel("Intensity (a.u.)")
-        ax.legend(fontsize=6)
-        ax.set_title(title)
+        if "i1d_baseline" in ds.keys():
+            label_bkg = "i1d_baseline (norm.)" if "normalized_to" in ds.i1d.attrs else "i1d_baseline"
+            ds.i1d_baseline.plot(ax=ax_a, label=label_bkg)
 
-        if "i2d" in ds.keys():
-            ax = ax_dict["2"]
+        ax_a.set_yscale("log")
+        ax_a.set_xlabel(ds.i1d.attrs["xlabel"])
+        ax_a.set_ylabel("Intensity (a.u.)")
+        ax_a.legend(fontsize=6)
+        ax_a.set_title(title)
+
+        if has_i2d:
             i2d_plotter(
                 ds,
-                ax,
+                ax=ax_dict["2"],
                 cbar=True,
                 i2d_robust=i2d_robust,
                 i2d_logscale=i2d_logscale,
                 annotate=True,
             )
 
-        ax = ax_dict["1"]
         i1d_plotter(
             ds,
-            ax,
+            ax=ax_dict["1"],
             ds_previous=None,
             i1d_ylogscale=i1d_ylogscale,
             xlabel=True,
@@ -510,19 +429,8 @@ def exrd_plotter(
             title_str="",
         )
 
-        if export_fig_as is not None:
-            plt.savefig(export_fig_as, dpi=128)
-
-    #############################################################################
-    #############################################################################
-    #############################################################################
     elif plot_hint == "load_phases":
-
-        # plot_label_x = 0.9,
-        # plot_label_y = 0.8,
-        # plot_label_y_shift = -0.2
-
-        if "i2d" in ds.keys():
+        if has_i2d:
             fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=128)
             mosaic = """
                         2
@@ -534,34 +442,32 @@ def exrd_plotter(
                         P
                         """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-            ax = ax_dict["1"]
+            ax_1 = ax_dict["1"]
             i1d_plotter(
                 ds,
-                ax,
+                ax=ax_1,
                 ds_previous=None,
                 i1d_ylogscale=i1d_ylogscale,
                 xlabel=True,
                 return_da=False,
                 title_str="",
             )
-            ax.set_xlabel(None)
+            ax_1.set_xlabel(None)
             phases_plotter(
                 ds,
                 ax_main=ax_dict["P"],
                 phases=phases,
                 line_axes=[ax_dict["1"], ax_dict["2"], ax_dict["P"]],
             )
-            ax = ax_dict["2"]
             i2d_plotter(
                 ds,
-                ax,
+                ax=ax_dict["2"],
                 cbar=True,
                 i2d_robust=i2d_robust,
                 i2d_logscale=i2d_logscale,
                 annotate=True,
             )
-            ax.set_title(title)
-
+            ax_dict["2"].set_title(title)
         else:
             fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
             mosaic = """
@@ -573,17 +479,17 @@ def exrd_plotter(
                         P
                         """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-            ax = ax_dict["1"]
+            ax_1 = ax_dict["1"]
             i1d_plotter(
                 ds,
-                ax,
+                ax=ax_1,
                 ds_previous=None,
                 i1d_ylogscale=i1d_ylogscale,
                 xlabel=True,
                 return_da=False,
                 title_str=title,
             )
-            ax.set_xlabel(None)
+            ax_1.set_xlabel(None)
             phases_plotter(
                 ds,
                 ax_main=ax_dict["P"],
@@ -591,235 +497,9 @@ def exrd_plotter(
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
 
-        if export_fig_as is not None:
-            plt.savefig(export_fig_as, dpi=128)
-
-    #############################################################################
-    #############################################################################
-    #############################################################################
-    elif plot_hint == "1st_refinement":
-
-        if "i2d" in ds.keys():
-            fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=128)
-            mosaic = """
-                        2
-                        1
-                        1
-                        1
-                        1
-                        P
-                    """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-            i2d_plotter(
-                ds,
-                ax=ax_dict["2"],
-                cbar=False,
-                i2d_robust=i2d_robust,
-                i2d_logscale=i2d_logscale,
-                title_str=title_str,
-                annotate=False,
-            )
-            i1d_plotter(
-                ds,
-                ax=ax_dict["1"],
-                ds_previous=ds_previous,
-                xlabel=False,
-                i1d_ylogscale=i1d_ylogscale,
-                return_da=False,
-            )
-            phases_plotter(
-                ds,
-                ax_main=ax_dict["P"],
-                phases=phases,
-                line_axes=[ax_dict["2"], ax_dict["1"], ax_dict["P"]],
-            )
-
-        else:
-            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
-            mosaic = """
-                        1
-                        1
-                        1
-                        1
-                        1
-                        P
-                    """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-            i1d_plotter(
-                ds,
-                ax=ax_dict["1"],
-                ds_previous=ds_previous,
-                xlabel=False,
-                i1d_ylogscale=i1d_ylogscale,
-                return_da=False,
-            )
-            ax_dict["1"].set_title(title_str, fontsize=8)
-            phases_plotter(
-                ds,
-                ax_main=ax_dict["P"],
-                phases=phases,
-                line_axes=[ax_dict["1"], ax_dict["P"]],
-            )
-
-        if export_fig_as is not None:
-            plt.savefig(export_fig_as, dpi=128)
-
-    #############################################################################
-    #############################################################################
-    #############################################################################
-    elif plot_hint == "refine_background":
-
-        if "i2d" in ds.keys():
-            fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=128)
-            mosaic = """
-                        2
-                        1
-                        1
-                        1
-                        1
-                        P
-                    """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-            i2d_plotter(
-                ds,
-                ax=ax_dict["2"],
-                cbar=False,
-                i2d_robust=i2d_robust,
-                i2d_logscale=i2d_logscale,
-                title_str=title_str,
-                annotate=False,
-            )
-            i1d_plotter(
-                ds,
-                ax=ax_dict["1"],
-                ds_previous=ds_previous,
-                xlabel=False,
-                i1d_ylogscale=i1d_ylogscale,
-                return_da=False,
-                show_Ybkg_old=True,
-            )
-            phases_plotter(
-                ds,
-                ax_main=ax_dict["P"],
-                phases=phases,
-                line_axes=[ax_dict["2"], ax_dict["1"], ax_dict["P"]],
-            )
-
-        else:
-            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
-            mosaic = """
-                        1
-                        1
-                        1
-                        1
-                        1
-                        P
-                    """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-            i1d_plotter(
-                ds,
-                ax=ax_dict["1"],
-                ds_previous=ds_previous,
-                xlabel=False,
-                i1d_ylogscale=i1d_ylogscale,
-                return_da=False,
-                show_Ybkg_old=True,
-            )
-            ax_dict["1"].set_title(title_str, fontsize=8)
-            phases_plotter(
-                ds,
-                ax_main=ax_dict["P"],
-                phases=phases,
-                line_axes=[ax_dict["1"], ax_dict["P"]],
-            )
-
-        if export_fig_as is not None:
-            plt.savefig(export_fig_as, dpi=128)
-
-    #############################################################################
-    #############################################################################
-    #############################################################################
-    elif plot_hint == "refine_cell_parameters":
-
-        if "i2d" in ds.keys():
-            fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=128)
-            mosaic = """
-                        2
-                        1
-                        1
-                        1
-                        1
-                        P
-                    """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-            i2d_plotter(
-                ds,
-                ax=ax_dict["2"],
-                cbar=False,
-                i2d_robust=i2d_robust,
-                i2d_logscale=i2d_logscale,
-                title_str=title_str,
-                annotate=False,
-            )
-            i1d_plotter(
-                ds,
-                ax=ax_dict["1"],
-                ds_previous=ds_previous,
-                xlabel=False,
-                i1d_ylogscale=i1d_ylogscale,
-                return_da=False,
-            )
-            phases_plotter(
-                ds,
-                ax_main=ax_dict["P"],
-                phases=phases,
-                line_axes=[ax_dict["2"], ax_dict["1"], ax_dict["P"]],
-            )
-
-        else:
-            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
-            mosaic = """
-                        1
-                        1
-                        1
-                        1
-                        1
-                        P
-                    """
-            ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
-            i1d_plotter(
-                ds,
-                ax=ax_dict["1"],
-                ds_previous=ds_previous,
-                xlabel=False,
-                i1d_ylogscale=i1d_ylogscale,
-                return_da=False,
-            )
-            ax_dict["1"].set_title(title_str, fontsize=8)
-            phases_plotter(
-                ds,
-                ax_main=ax_dict["P"],
-                phases=phases,
-                line_axes=[ax_dict["1"], ax_dict["P"]],
-            )
-
-        if export_fig_as is not None:
-            plt.savefig(export_fig_as, dpi=128)
-
-    #############################################################################
-    #############################################################################
-    #############################################################################
-    elif plot_hint == None:
-
+    elif plot_hint is None:
         fig = plt.figure(figsize=figsize, dpi=128)
-
-        if "i2d" in ds.keys():
+        if has_i2d:
             mosaic = """
                         2
                         2
@@ -833,7 +513,6 @@ def exrd_plotter(
                         P
                     """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
             i2d_plotter(
                 ds,
                 ax=ax_dict["2"],
@@ -845,7 +524,6 @@ def exrd_plotter(
             )
             ax_dict["2"].set_title(title)
             ax_dict["2"].set_yticks([])
-
             phases_plotter(
                 ds,
                 ax_main=ax_dict["P"],
@@ -853,7 +531,6 @@ def exrd_plotter(
                 line_axes=[ax_dict["2"], ax_dict["1"], ax_dict["D"], ax_dict["P"]],
             )
             ax_dict["P"].set_yticks([])
-
         else:
             mosaic = """
                         1
@@ -866,7 +543,6 @@ def exrd_plotter(
                         P
                     """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
             phases_plotter(
                 ds,
                 ax_main=ax_dict["P"],
@@ -899,7 +575,6 @@ def exrd_plotter(
 
         for e, si in enumerate(range(ds.attrs["num_phases"])):
             site_ind = si
-
             site_label = ds.attrs["PhaseInd_%d_label" % site_ind]
             site_SGSys = ds.attrs["PhaseInd_%d_SGSys" % site_ind]
             site_SpGrp = ds.attrs["PhaseInd_%d_SpGrp" % site_ind]
@@ -915,8 +590,6 @@ def exrd_plotter(
                 "PhaseInd_%d_size_broadening_type" % site_ind
             ][:3]
             site_size0 = ds.attrs["PhaseInd_%d_size_0" % site_ind]
-            site_size1 = ds.attrs["PhaseInd_%d_size_1" % site_ind]
-            site_size2 = ds.attrs["PhaseInd_%d_size_2" % site_ind]
             if site_size0 == 1.0:
                 size_str = ""
             else:
@@ -924,12 +597,11 @@ def exrd_plotter(
                     site_size0,
                     site_size_broadening_type,
                 )
+
             site_strain_broadening_type = ds.attrs[
                 "PhaseInd_%d_size_broadening_type" % site_ind
             ][:3]
             site_mustrain0 = ds.attrs["PhaseInd_%d_mustrain_0" % site_ind]
-            site_mustrain1 = ds.attrs["PhaseInd_%d_mustrain_1" % site_ind]
-            site_mustrain2 = ds.attrs["PhaseInd_%d_mustrain_2" % site_ind]
             if site_mustrain0 == 1000.0:
                 strain_str = ""
             else:
@@ -939,13 +611,10 @@ def exrd_plotter(
                 )
 
             site_wt_fraction = ds.attrs["PhaseInd_%d_wt_fraction" % site_ind]
-            if site_wt_fraction == 100.0:
+            if site_wt_fraction == 100.0 or not show_wt_fractions:
                 str_fraction = ""
             else:
-                if show_wt_fractions:
-                    str_fraction = "| wt%%=%.2f" % site_wt_fraction
-                else:
-                    str_fraction = ""
+                str_fraction = "| wt%%=%.2f" % site_wt_fraction
 
             site_str = (
                 "\n%s %s phase (%s)  %s %s %s \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n"
@@ -978,34 +647,27 @@ def exrd_plotter(
 
         (da_Y_obs - da_Y_calc).plot(ax=ax_dict["D"], color="b")
         ax_dict["D"].axhline(y=0, linestyle="--", color="k", lw=0.5)
-
         ax_dict["D"].set_xlabel(None)
 
         if i1d_plot_radial_range is not None:
-            ax_dict["1"].set_xlim([i1d_plot_radial_range[0], i1d_plot_radial_range[-1]])
-            if "i2d" in ds.keys():
-                ax_dict["2"].set_xlim(
-                    [i1d_plot_radial_range[0], i1d_plot_radial_range[-1]]
-                )
-            ax_dict["P"].set_xlim([i1d_plot_radial_range[0], i1d_plot_radial_range[-1]])
-            ax_dict["D"].set_xlim([i1d_plot_radial_range[0], i1d_plot_radial_range[-1]])
+            xlims = [i1d_plot_radial_range[0], i1d_plot_radial_range[-1]]
+            ax_dict["1"].set_xlim(xlims)
+            if has_i2d:
+                ax_dict["2"].set_xlim(xlims)
+            ax_dict["P"].set_xlim(xlims)
+            ax_dict["D"].set_xlim(xlims)
 
         ax_dict["1"].set_ylim(bottom=i1d_plot_bottom, top=i1d_plot_top)
-
         ax_dict["1"].legend(loc="upper left", fontsize=8, ncol=1)
 
-        if "i2d" not in ds.keys():
+        if not has_i2d:
             ax_dict["1"].set_title(title)
 
-        if export_fig_as is not None:
-            plt.savefig(export_fig_as, dpi=128)
-
-    #############################################################################
-    #############################################################################
-    #############################################################################
     else:
+        # Generic refinement step plotting (covers "1st_refinement", "refine_background", "refine_cell_parameters", etc.)
+        show_Ybkg_old = (plot_hint == "refine_background")
 
-        if "i2d" in ds.keys():
+        if has_i2d:
             fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=128)
             mosaic = """
                         2
@@ -1016,7 +678,6 @@ def exrd_plotter(
                         P
                     """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
             i2d_plotter(
                 ds,
                 ax=ax_dict["2"],
@@ -1033,6 +694,7 @@ def exrd_plotter(
                 xlabel=False,
                 i1d_ylogscale=i1d_ylogscale,
                 return_da=False,
+                show_Ybkg_old=show_Ybkg_old,
             )
             phases_plotter(
                 ds,
@@ -1040,7 +702,6 @@ def exrd_plotter(
                 phases=phases,
                 line_axes=[ax_dict["2"], ax_dict["1"], ax_dict["P"]],
             )
-
         else:
             fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
             mosaic = """
@@ -1052,7 +713,6 @@ def exrd_plotter(
                         P
                     """
             ax_dict = fig.subplot_mosaic(mosaic, sharex=True)
-
             i1d_plotter(
                 ds,
                 ax=ax_dict["1"],
@@ -1060,6 +720,7 @@ def exrd_plotter(
                 xlabel=False,
                 i1d_ylogscale=i1d_ylogscale,
                 return_da=False,
+                show_Ybkg_old=show_Ybkg_old,
             )
             ax_dict["1"].set_title(title_str, fontsize=8)
             phases_plotter(
@@ -1069,5 +730,14 @@ def exrd_plotter(
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
 
-        if export_fig_as is not None:
-            plt.savefig(export_fig_as, dpi=128)
+    if export_fig_as is not None:
+        plt.savefig(export_fig_as, dpi=128)
+
+
+__all__ = [
+    "i1d_plotter",
+    "i2d_plotter",
+    "phases_plotter",
+    "exrd_plotter",
+    "_calc_reflection_pattern",
+]

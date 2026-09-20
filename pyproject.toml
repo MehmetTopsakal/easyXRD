@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "easyxrd"
-version = "0.1.6"
+version = "2026.09.20"
 description = "X-ray diffraction analysis tool"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
-authors = [{name = "Mehmet Topsakal", email = "metokal@gmail.com"}]
+authors = [{name = "Mehmet Topsakal"}]
 dependencies = [
     "numpy", "scipy", "xarray", "matplotlib", "ipython",
-    "pymatgen", "pyFAI", "fabio", "pybaselines", "h5netcdf", "h5py",
+    "pymatgen", "pyFAI", "fabio", "pybaselines", "h5netcdf", "h5py", "mp-api"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -23,8 +23,6 @@ classifiers = [
 
 [project.optional-dependencies]
 notebook = ["jupyterlab", "ipympl", "ipywidgets"]
-materials = ["mp-api"]
-dev = ["build"]
 
 [project.urls]
 Homepage = "https://github.com/MehmetTopsakal/easyXRD"

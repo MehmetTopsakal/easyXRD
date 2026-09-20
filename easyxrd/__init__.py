@@ -91,11 +91,6 @@ if not os.path.isdir(os.path.join(user_home, ".easyxrd_scratch")):
 easyxrd_defaults["easyxrd_scratch_path"] = os.path.join(user_home, ".easyxrd_scratch")
 
 
-# Get GSAS-II and binaries from GitHub
-
-gsas2_path_in_easyxrd_scratch = os.path.join(user_home, ".easyxrd_scratch", "GSAS-II")
-sys.path += [os.path.join(gsas2_path_in_easyxrd_scratch, "GSASII")]
-
 try:
     with HiddenPrints():
         import GSASII.GSASIIscriptable as G2sc
@@ -105,9 +100,48 @@ try:
             % Path(G2sc.__file__).resolve().parent
         )
     easyxrd_defaults["gsasii_lib_path"] = '%s'%Path(G2sc.__file__).resolve().parent
-except Exception as exc:
-    print(exc)
+except:
+
+
+    if (platform.system() == "Linux") and (platform.machine() == 'x86_64'):
+            print('\nWARNING!!\nUnable to import GSASIIscriptable in this environment.')
+            print('\nIf you are using conda:')
+            print(' Please try installing GSAS-II via pip in your conda environment using instructions below:')
+            print(' https://advancedphotonsource.github.io/GSAS-II-tutorials/install-pip.html')
+            print('\nIf you are using pixi:')
+            print(' Please try installing GSAS-II by including line below in [pypi-dependencies] section of your pixi.toml:')
+            print(' GSAS-II = { git = "https://github.com/AdvancedPhotonSource/GSAS-II.git",  extras = ["useful"] } ')
+            print('\nand try again if you need run GSAS-II related functionalities of easyXRD ')
+
+            """
+            ## Use the following replacement to keep NumPy’s Python package and compiler headers consistent.
+            cd /users/software/pixi/main
+            # Install GSAS-II's build requirements into the active environment
+            pixi run python -m pip install \
+                meson-python ninja wheel Cython pyproject-metadata tomli
+            # Direct pkg-config to this environment's NumPy
+            NUMPY_PC_DIR="$(pixi run numpy-config --pkgconfigdir)"
+            export PKG_CONFIG_PATH="$NUMPY_PC_DIR${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            # Confirm this reports NumPy 2.5.2 and headers inside .pixi
+            pixi run pkg-config --modversion numpy
+            pixi run pkg-config --cflags numpy
+            # Build using the same environment, without a separate build environment
+            pixi run python -m pip install --no-build-isolation \
+                "GSAS-II[useful] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git"
+            """
+
+
+
     easyxrd_defaults["gsasii_lib_path"] = 'none'
+
+
+
+
+
+
+
+
+
 #
 #     if os.path.isdir(gsas2_path_in_easyxrd_scratch):
 #         shutil.rmtree(gsas2_path_in_easyxrd_scratch)
