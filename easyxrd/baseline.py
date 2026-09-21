@@ -19,8 +19,13 @@ def _optimize_bkg_scale(y_obs, y_bkg, initial_scale=None, max_iter=100):
     if not np.any(valid):
         return 1.0
 
-    y_o = y_obs[valid]
-    y_b = y_bkg[valid]
+    # Boolean indexing copies the entire input, so skip it for finite data.
+    if np.all(valid):
+        y_o = y_obs.ravel()
+        y_b = y_bkg.ravel()
+    else:
+        y_o = y_obs[valid]
+        y_b = y_bkg[valid]
     max_b = np.nanmax(y_b)
     if max_b <= 0:
         return 1.0
@@ -30,19 +35,25 @@ def _optimize_bkg_scale(y_obs, y_bkg, initial_scale=None, max_iter=100):
     else:
         bkg_scale = float(initial_scale)
 
-    diff = y_o - bkg_scale * y_b
+    # Reuse one work array throughout the search, retaining the same floating
+    # point operations and stopping rules as the allocation-based expression.
+    diff = np.empty_like(y_o)
+    np.multiply(y_b, bkg_scale, out=diff)
+    np.subtract(y_o, diff, out=diff)
     min_diff = np.nanmin(diff)
     c = 0
     if min_diff > 0:
         while min_diff > 0 and c < max_iter:
             bkg_scale *= 1.01
-            diff = y_o - bkg_scale * y_b
+            np.multiply(y_b, bkg_scale, out=diff)
+            np.subtract(y_o, diff, out=diff)
             min_diff = np.nanmin(diff)
             c += 1
     elif min_diff < 0:
         while min_diff < 0 and c < max_iter:
             bkg_scale *= 0.99
-            diff = y_o - bkg_scale * y_b
+            np.multiply(y_b, bkg_scale, out=diff)
+            np.subtract(y_o, diff, out=diff)
             min_diff = np.nanmin(diff)
             c += 1
     return bkg_scale
