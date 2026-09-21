@@ -5,6 +5,7 @@ import pybaselines
 from scipy.signal import savgol_filter
 from scipy.ndimage import median_filter
 from concurrent.futures import ThreadPoolExecutor
+import copy
 
 from .plotters import exrd_plotter
 
@@ -351,7 +352,7 @@ class BaselineMixin:
                                 self.ds["i1d_baseline"].attrs["iarpls_lam"] = iarpls_lam
                         else:
                             if roi_azimuthal_range is not None:
-                                self.ds["i2d_baseline"] = deepcopy(
+                                self.ds["i2d_baseline"] = copy.deepcopy(
                                     bkg_scale
                                     * input_bkg.ds.i2d.sel(
                                         azimuthal_i2d=slice(
@@ -361,7 +362,7 @@ class BaselineMixin:
                                     )
                                 )
                             else:
-                                self.ds["i2d_baseline"] = deepcopy(
+                                self.ds["i2d_baseline"] = copy.deepcopy(
                                     bkg_scale * input_bkg.ds.i2d
                                 )
                             self.ds["i2d_baseline"].attrs[
@@ -449,7 +450,7 @@ class BaselineMixin:
                             "baseline_note"
                         ] = "baseline is from provided input_bkg i1d and iarpls is used"
                     else:
-                        self.ds["i1d_baseline"] = deepcopy(bkg_scale * input_bkg.ds.i1d)
+                        self.ds["i1d_baseline"] = copy.deepcopy(bkg_scale * input_bkg.ds.i1d)
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
                         ] = "baseline is from provided input_bkg. i1d iarpls is not used"
@@ -512,7 +513,7 @@ class BaselineMixin:
                         ] = "baseline is from provided input_bkg i1d and iarpls is used"
 
                     else:
-                        self.ds["i1d_baseline"] = deepcopy(bkg_scale * input_bkg.ds.i1d)
+                        self.ds["i1d_baseline"] = copy.deepcopy(bkg_scale * input_bkg.ds.i1d)
                         self.ds["i1d_baseline"].attrs[
                             "baseline_note"
                         ] = "baseline is from provided input_bkg. i1d iarpls is not used"
