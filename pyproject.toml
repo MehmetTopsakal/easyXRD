@@ -23,9 +23,15 @@ classifiers = [
 
 [project.optional-dependencies]
 notebook = ["jupyterlab", "ipympl", "ipywidgets"]
+test = ["pytest"]
 
 [project.urls]
 Homepage = "https://github.com/MehmetTopsakal/easyXRD"
 
 [tool.setuptools]
 packages = ["easyxrd"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
