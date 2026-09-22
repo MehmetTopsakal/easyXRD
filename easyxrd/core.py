@@ -8,9 +8,6 @@ from .phases import PhasesMixin
 from .refinement import RefinementMixin
 from .plotters import exrd_plotter
 
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
-plt.rcParams.update({"figure.max_open_warning": 0})
 
 
 class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
@@ -63,15 +60,8 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         if i1d_ylogscale is None:
             i1d_ylogscale = self.i1d_ylogscale
 
-        try:
-            ds = self.ds
-        except:
-            ds = None
-
-        try:
-            ds_previous = self.ds_previous
-        except:
-            ds_previous = None
+        ds = getattr(self, "ds", None)
+        ds_previous = getattr(self, "ds_previous", None)
 
         exrd_plotter(
             ds=ds,

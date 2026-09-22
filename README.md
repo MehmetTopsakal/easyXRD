@@ -108,7 +108,7 @@ python -m pip install --no-build-isolation "GSAS-II[useful] @ git+https://github
 If all is successful, you should be able to import easyXRD inside python:
 
 ```python
-from easyxrd.core import exrd
+from easyxrd import exrd
 ```
 
 After this step, you can contine with `exrd` as we explained in the Google Colab notebooks that are listed above.

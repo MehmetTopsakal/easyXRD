@@ -5,9 +5,6 @@ import matplotlib.pyplot as plt
 from pymatgen.core.structure import Structure
 from pymatgen.analysis.diffraction.xrd import XRDCalculator
 
-warnings.filterwarnings("ignore", category=RuntimeWarning)
-warnings.filterwarnings("ignore", category=UserWarning)
-plt.rcParams.update({"figure.max_open_warning": 0})
 
 
 def i1d_plotter(
@@ -599,7 +596,7 @@ def exrd_plotter(
                 )
 
             site_strain_broadening_type = ds.attrs[
-                "PhaseInd_%d_size_broadening_type" % site_ind
+                "PhaseInd_%d_strain_broadening_type" % site_ind
             ][:3]
             site_mustrain0 = ds.attrs["PhaseInd_%d_mustrain_0" % site_ind]
             if site_mustrain0 == 1000.0:

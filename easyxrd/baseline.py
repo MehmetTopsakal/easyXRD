@@ -154,7 +154,7 @@ class BaselineMixin:
                                 azimuthal_i2d=slice(
                                     roi_azimuthal_range[0], roi_azimuthal_range[1]
                                 )
-                            )
+                            ).copy()
                             da_i2d.values = median_filter(da_i2d.values, size=3)
                             da_i2d_bkg = input_bkg.ds.i2d.sel(
                                 azimuthal_i2d=slice(
@@ -169,14 +169,14 @@ class BaselineMixin:
                                 dim="radial_i2d"
                             )
                         else:
-                            da_i2d = self.ds.i2d
+                            da_i2d = self.ds.i2d.copy()
                             da_i2d.values = median_filter(da_i2d.values, size=3)
                             da_i2d_bkg = input_bkg.ds.i2d.copy()
                             da_i2d_bkg.values = median_filter(da_i2d_bkg.values, size=3)
-                            da_i1d = self.ds.i2d.mean(dim="azimuthal_i2d").dropna(
+                            da_i1d = da_i2d.mean(dim="azimuthal_i2d").dropna(
                                 dim="radial_i2d"
                             )
-                            da_i1d_bkg = input_bkg.ds.i2d.mean(
+                            da_i1d_bkg = da_i2d_bkg.mean(
                                 dim="azimuthal_i2d"
                             ).dropna(dim="radial_i2d")
 
@@ -397,16 +397,22 @@ class BaselineMixin:
                 elif (("i2d" in self.ds.keys())) and ("i1d" in input_bkg.ds.keys()):
 
                     if roi_azimuthal_range is not None:
-                        da_i2d = self.ds.i2d.sel(
-                            azimuthal_i2d=slice(
-                                roi_azimuthal_range[0], roi_azimuthal_range[1]
+                        da_i2d = (
+                            self.ds.i2d.sel(
+                                azimuthal_i2d=slice(
+                                    roi_azimuthal_range[0], roi_azimuthal_range[1]
+                                )
                             )
-                        ).rename({"radial_i2d": "radial"})
+                            .rename({"radial_i2d": "radial"})
+                            .copy()
+                        )
                         da_i2d.values = median_filter(da_i2d.values, size=3)
                         da_i1d = da_i2d.mean(dim="azimuthal_i2d").dropna(dim="radial")
                         da_i1d_bkg = input_bkg.ds.i1d
                     else:
-                        da_i2d = self.ds.i2d.rename({"radial_i2d": "radial"})
+                        da_i2d = (
+                            self.ds.i2d.rename({"radial_i2d": "radial"}).copy()
+                        )
                         da_i2d.values = median_filter(da_i2d.values, size=3)
                         da_i1d = da_i2d.mean(dim="azimuthal_i2d").dropna(dim="radial")
                         da_i1d_bkg = input_bkg.ds.i1d

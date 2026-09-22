@@ -223,7 +223,7 @@ class DataLoaderMixin:
 
             X, Y = from_i1d_array[:, 0], from_i1d_array[:, 1]
             if i1d_array_radial_unit.lower()[0] == "t":
-                X = ((4 * np.pi) / (txt_file_wavelength_in_angstrom)) * np.sin(
+                X = ((4 * np.pi) / (i1d_array_wavelength_in_angstrom)) * np.sin(
                     np.deg2rad(X) / 2
                 )
             elif i1d_array_radial_unit.lower()[0] == "q":
@@ -323,8 +323,7 @@ class DataLoaderMixin:
         elif ((from_img_array is None) and (from_txt_file is None)) and (
             from_nc_file is not None
         ):
-            with xr.open_dataset(from_nc_file) as self.ds:
-                pass
+            self.ds = xr.load_dataset(from_nc_file)
 
         if plot:
             exrd_plotter(

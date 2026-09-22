@@ -379,84 +379,59 @@ class RefinementMixin:
             if k in self.ds.keys():
                 del self.ds[k]
 
-        try:
+        if hasattr(self, "gsasii_lib_path"):
             del self.gsasii_lib_path
-        except:
-            pass
-        try:
+        if hasattr(self, "gpx"):
             del self.gpx
-        except:
-            pass
-
-        for k in ["i1d_refined", "i1d_gsas_background"]:
-            if k in self.ds.keys():
-                del self.ds[k]
 
         self.yshift_multiplier = yshift_multiplier
 
-        if easyxrd_defaults["gsasii_lib_path"] == "not found":
+        # Resolve GSAS-II library
+        candidate_paths = []
+        if gsasii_lib_path:
+            candidate_paths.append(gsasii_lib_path)
+        if os.environ.get("GSASII_PATH"):
+            candidate_paths.append(os.environ["GSASII_PATH"])
+        default_lib = easyxrd_defaults.get("gsasii_lib_path")
+        if default_lib and default_lib not in ("none", "not found") and os.path.isdir(default_lib):
+            candidate_paths.append(default_lib)
+        candidate_paths.append(
+            os.path.join(os.path.expanduser("~"), "g2full/GSAS-II/GSASII")
+        )
+
+        G2sc = None
+        for p in candidate_paths:
+            if os.path.isdir(p) and p not in sys.path:
+                sys.path.insert(0, p)
             try:
-                default_install_path = os.path.join(
-                    os.path.expanduser("~"), "g2full/GSAS-II/GSASII"
-                )
-                sys.path += [default_install_path]
-                import GSASIIscriptable as G2sc
-                import GSASIIlattice as G2lat
+                import GSASII.GSASIIscriptable as G2sc
+                import GSASII.GSASIIlattice as G2lat
 
-                self.gsasii_lib_path = default_install_path
-            except Exception as exc:
-                print(exc)
-                user_loc = input(
-                    "Enter location of GSASII directory on your GSAS-II installation."
-                )
-                sys.path += [user_loc]
+                self.gsasii_lib_path = p
+                break
+            except ImportError:
                 try:
                     import GSASIIscriptable as G2sc
                     import GSASIIlattice as G2lat
 
-                    self.gsasii_lib_path = user_loc
-                except:
-                    try:
-                        user_loc = input(
-                            "\nUnable to import GSASIIscriptable. Please re-enter GSASII directory on your GSAS-II installation\n"
-                        )
-                        sys.path += [user_loc]
-                        import GSASIIscriptable as G2sc
-                        import GSASIIlattice as G2lat
+                    self.gsasii_lib_path = p
+                    break
+                except ImportError:
+                    continue
 
-                        self.gsasii_lib_path = user_loc
-                    except:
-                        print(
-                            "\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
-                        )
-        else:
-            if os.path.isdir(easyxrd_defaults["gsasii_lib_path"]):
+        if G2sc is None:
+            try:
+                import GSASII.GSASIIscriptable as G2sc
+                import GSASII.GSASIIlattice as G2lat
 
-                sys.path += [easyxrd_defaults["gsasii_lib_path"]]
-
-                try:
-                    import GSASIIscriptable as G2sc
-                    import GSASIIlattice as G2lat
-
-                    self.gsasii_lib_path = easyxrd_defaults["gsasii_lib_path"]
-                except Exception as exc:
-                    print(exc)
-                    try:
-                        gsasii_lib_path = input(
-                            "\nUnable to import GSASIIscriptable. Please enter GSASII directory on your GSAS-II installation\n"
-                        )
-                        sys.path += [gsasii_lib_path]
-                        import GSASIIscriptable as G2sc
-                        import GSASIIlattice as G2lat
-
-                        self.gsasii_lib_path = gsasii_lib_path
-                    except Exception as exc:
-                        print(exc)
-                        gsasii_lib_path = print(
-                            "\n Still unable to import GSASIIscriptable. Please check GSAS-II installation notes here: \n\n https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
-                        )
-            else:
-                print("%s does NOT exist. Please check!" % gsasii_lib_path)
+                self.gsasii_lib_path = "system"
+            except ImportError:
+                raise ImportError(
+                    "Unable to import GSASIIscriptable. Please ensure GSAS-II is installed and accessible. "
+                    "You can specify the GSAS-II directory via `setup_gsas2_refiner(gsasii_lib_path=...)` "
+                    "or by setting the GSASII_PATH environment variable. "
+                    "Installation notes: https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
+                )
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 

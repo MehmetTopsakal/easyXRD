@@ -31,10 +31,9 @@ class PhasesMixin:
                 del self.ds[k]
 
         if mp_rester_api_key is None:
-            try:
-                mp_rester_api_key = easyxrd_defaults["mp_api_key"]
-            except:
-                mp_rester_api_key = "none"
+            mp_rester_api_key = os.environ.get("MP_API_KEY") or easyxrd_defaults.get(
+                "mp_api_key", "none"
+            )
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 
@@ -43,30 +42,15 @@ class PhasesMixin:
             self.phases = {}
             for e, p in enumerate(from_phases_dict):
 
-                try:
-                    mp_id = p["mp_id"]
-                except:
-                    mp_id = "none"
+                mp_id = p.get("mp_id", "none")
 
                 if mp_id.lower() == "none":
                     st = Structure.from_file(p["cif"])
 
-                    try:
-                        scale = p["scale"]
-                    except:
-                        scale = 1
-                    try:
-                        scale_a = p["scale_a"]
-                    except:
-                        scale_a = 1
-                    try:
-                        scale_b = p["scale_b"]
-                    except:
-                        scale_b = 1
-                    try:
-                        scale_c = p["scale_c"]
-                    except:
-                        scale_c = 1
+                    scale = p.get("scale", 1)
+                    scale_a = p.get("scale_a", 1)
+                    scale_b = p.get("scale_b", 1)
+                    scale_c = p.get("scale_c", 1)
 
                     st.lattice = Lattice.from_parameters(
                         a=st.lattice.abc[0] * scale * scale_a,
@@ -80,64 +64,34 @@ class PhasesMixin:
 
                 else:
 
-                    if (mp_rester_api_key.lower() == "not found") or (
-                        mp_rester_api_key.lower() == "invalid"
+                    if (not mp_rester_api_key) or mp_rester_api_key.lower() in (
+                        "not found",
+                        "invalid",
+                        "none",
                     ):
-                        mp_rester_api_key = input(
-                            "\nIn order to retrieve structural information from Materials Project, api_key is needed. \nPlease enter your 32 character key it here:\n"
+                        raise ValueError(
+                            "A valid Materials Project API key is needed to retrieve crystal structures. "
+                            "Please provide `mp_rester_api_key`, set the MP_API_KEY environment variable, "
+                            "or save your key to ~/.easyxrd_scratch/mp_api_key.dat. "
+                            "API keys can be obtained from: https://profile.materialsproject.org/"
                         )
-                        easyxrd_defaults["mp_api_key"] = mp_rester_api_key
-                        with open(
-                            os.path.join(
-                                os.path.expanduser("~"),
-                                ".easyxrd_scratch",
-                                "mp_api_key.dat",
-                            ),
-                            "w",
-                        ) as mpapifile:
-                            mpapifile.write(mp_rester_api_key)
-                        mpapifile.close()
 
                     from mp_api.client import MPRester
 
                     try:
                         mpr = MPRester(mp_rester_api_key)
-                    except:
-                        print(
-                            "The Materials Project API key is not valid.\nPlease enter a new API key (32 characters, no space) that you can obtain from the link below.\n https://profile.materialsproject.org/"
+                    except Exception as exc:
+                        raise ValueError(
+                            f"The Materials Project API key is not valid or connection failed: {exc}. "
+                            "Please check your API key from https://profile.materialsproject.org/"
                         )
-                        mp_rester_api_key = input()
-                        mpr = MPRester(mp_rester_api_key)
-                        easyxrd_defaults["mp_api_key"] = mp_rester_api_key
-                        with open(
-                            os.path.join(
-                                os.path.expanduser("~"),
-                                ".easyxrd_scratch",
-                                "mp_api_key.dat",
-                            ),
-                            "w",
-                        ) as mpapifile:
-                            mpapifile.write(mp_rester_api_key)
-                        mpapifile.close()
 
                     st = mpr.get_structure_by_material_id(mp_id, final=False)[0]
 
-                    try:
-                        scale = p["scale"]
-                    except:
-                        scale = 1
-                    try:
-                        scale_a = p["scale_a"]
-                    except:
-                        scale_a = 1
-                    try:
-                        scale_b = p["scale_b"]
-                    except:
-                        scale_b = 1
-                    try:
-                        scale_c = p["scale_c"]
-                    except:
-                        scale_c = 1
+                    scale = p.get("scale", 1)
+                    scale_a = p.get("scale_a", 1)
+                    scale_b = p.get("scale_b", 1)
+                    scale_c = p.get("scale_c", 1)
 
                     st.lattice = Lattice.from_parameters(
                         a=st.lattice.abc[0] * scale * scale_a,
@@ -160,7 +114,7 @@ class PhasesMixin:
                 self.ds.attrs["PhaseInd_%d_label" % (e)] = p["label"]
                 os.remove("%s.cif" % randstr)
 
-            self.ds.attrs["num_phases"] = e + 1
+            self.ds.attrs["num_phases"] = len(from_phases_dict)
 
         elif from_gpx is not None:
             import GSASII.GSASIIscriptable as G2sc
@@ -180,7 +134,7 @@ class PhasesMixin:
                 self.phases[p.name] = st
                 self.ds.attrs["PhaseInd_%d_cif" % (e)] = ciffile_content
                 self.ds.attrs["PhaseInd_%d_label" % (e)] = p.name
-            self.ds.attrs["num_phases"] = e + 1
+            self.ds.attrs["num_phases"] = len(self.phases)
 
         elif from_nc is not None:
 
