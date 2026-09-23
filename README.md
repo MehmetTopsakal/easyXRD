@@ -96,12 +96,27 @@ conda activate env_py3.14_np_2.4
 # for easyXRD
 python -m pip install "easyXRD[notebook] @ git+https://github.com/MehmetTopsakal/easyXRD.git"
 
+
+
 # for GSAS-II
+
+# These worked nicely on my Ubuntu 26.04.1 LTS
 python -m pip install meson-python ninja wheel Cython pyproject-metadata tomli
 NUMPY_PC_DIR="$(numpy-config --pkgconfigdir)"
 export PKG_CONFIG_PATH="$NUMPY_PC_DIR${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 python -m pip install --no-build-isolation "GSAS-II[useful] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git"
 
+# It was a bit painful to install GSAS-II inside conda environment. These worked for me on my virtual Windows 11.
+python -m pip install meson-python ninja wheel Cython pyproject-metadata tomli
+conda install -c conda-forge fortran-compiler c-compiler ninja meson-python cython numpy scipy wxpython lld llvm-tools m2w64-toolchain
+python -m pip install --no-build-isolation "GSAS-II[useful] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git"
+# if it fails in the previous line by complaining "Microsoft Visual C++ 14.0 or greater is required. Get it with "Microsoft C++ Build Tools": https://visualstudio.microsoft.com/visual-cpp-build-tools/", do that and repeat previous line.
+
+# Unfortunately I don't have and Arm Mac. 
+# Try `python -m pip install --no-build-isolation "GSAS-II[useful] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git" `
+# and ask AI on what to do if it fails :)
+
+# 
 ```
 
 
