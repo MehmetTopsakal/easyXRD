@@ -86,7 +86,8 @@ class PhasesMixin:
                             "Please check your API key from https://profile.materialsproject.org/"
                         )
 
-                    st = mpr.get_structure_by_material_id(mp_id, final=False)[0]
+                    # st = mpr.get_structure_by_material_id(mp_id, final=False)[0]
+                    st = mpr.get_structure_by_material_id(mp_id, final=True, conventional_unit_cell=True)
 
                     scale = p.get("scale", 1)
                     scale_a = p.get("scale_a", 1)
