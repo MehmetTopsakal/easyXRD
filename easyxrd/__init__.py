@@ -21,6 +21,12 @@ scratch_dir = os.environ.get(
 os.makedirs(scratch_dir, exist_ok=True)
 easyxrd_defaults["easyxrd_scratch_path"] = scratch_dir
 
+try:
+    import sys
+    sys.modules.pop("wx", None)
+    sys.modules.pop("wx.__version__", None)
+except:
+    pass
 # Check GSAS-II library path
 try:
     with HiddenPrints():

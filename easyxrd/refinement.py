@@ -11,7 +11,7 @@ import numpy as np
 import xarray as xr
 from pymatgen.core.structure import Structure
 
-from .utils import HiddenPrints
+from .utils import HiddenPrints, ensure_wx_importable
 from . import easyxrd_defaults
 from .plotters import exrd_plotter
 
@@ -283,6 +283,7 @@ class RefinementMixin:
         if update_phases or update_ds_phases:
             for e, p in enumerate(self.gpx.phases()):
                 cif_path = "%s/%s_refined.cif" % (self.gsasii_run_directory, p.name)
+
                 p.export_CIF(outputname=cif_path)
                 with open(cif_path, "r") as ciffile:
                     ciffile_content = ciffile.read()
@@ -386,6 +387,10 @@ class RefinementMixin:
 
         self.yshift_multiplier = yshift_multiplier
 
+        # GSAS-II loads wxPython lazily when it creates a project. Validate it
+        # here so a stale Jupyter import cache is repaired before that happens.
+        ensure_wx_importable()
+
         # Resolve GSAS-II library
         candidate_paths = []
         if gsasii_lib_path:
@@ -396,8 +401,19 @@ class RefinementMixin:
         if default_lib and default_lib not in ("none", "not found") and os.path.isdir(default_lib):
             candidate_paths.append(default_lib)
         candidate_paths.append(
-            os.path.join(os.path.expanduser("~"), "g2full/GSAS-II/GSASII")
+            os.path.join(os.path.expanduser("~"), "g2full/GSAS-II/")
         )
+        candidate_paths.append(
+            os.path.join(os.path.expanduser("~"), "g2full/GSAS-II/")
+        )
+        candidate_paths.append(
+            os.path.join(os.path.expanduser("~"), "g2main/GSAS-II/")
+        )
+        candidate_paths.append(
+            os.path.join(os.path.expanduser("~"), "G2/GSAS-II/")
+        )
+
+
 
         G2sc = None
         for p in candidate_paths:
