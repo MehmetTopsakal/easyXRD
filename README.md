@@ -98,7 +98,7 @@ python -m pip install "easyXRD[notebook] @ git+https://github.com/MehmetTopsakal
 
 
 
-# for GSAS-II
+# for GSAS-II (or use the Python helper below)
 
 # These worked nicely on my Ubuntu 26.04.1 LTS
 python -m pip install meson-python ninja wheel Cython pyproject-metadata tomli
@@ -119,6 +119,31 @@ python -m pip install --no-build-isolation "GSAS-II[useful] @ git+https://github
 # 
 ```
 
+
+Once easyXRD is installed, you can install GSAS-II from Python in the same
+environment (also works in a notebook):
+
+```python
+import easyxrd
+
+gsas_path = easyxrd.install_gsas2()
+# Later, to update:
+# easyxrd.install_gsas2(upgrade=True)
+```
+
+This installs build dependencies and the official GSAS-II GitHub package using
+the running Python interpreter, verifies its scripting import in a fresh process,
+and updates `easyxrd.easyxrd_defaults["gsasii_lib_path"]`. Restart Python or your
+notebook kernel afterward. Git and C/Fortran compilers must already be installed;
+the helper does not install operating-system packages. Use a dedicated conda or
+virtual environment with internet access.
+
+GUI dependencies (including wxPython) are included by default because easyXRD's
+refinement setup requires wxPython. If you manage wxPython separately or only
+need GSAS-II scripting, use `easyxrd.install_gsas2(gui=False)`. Building wxPython
+on Linux can take considerable time and require system development libraries.
+See the [official pip installation instructions](https://advancedphotonsource.github.io/GSAS-II-tutorials/install-pip.html)
+for platform prerequisites; the manual commands above are also available.
 
 If all is successful, you should be able to import easyXRD inside python:
 

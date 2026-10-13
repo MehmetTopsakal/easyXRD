@@ -3,7 +3,7 @@ import sys
 import logging
 from pathlib import Path
 
-from .utils import HiddenPrints
+from .utils import HiddenPrints, install_gsas2
 
 logger = logging.getLogger("easyxrd")
 
@@ -77,6 +77,7 @@ from .core import exrd
 
 __all__ = [
     "exrd",
+    "install_gsas2",
     "easyxrd_defaults",
     "set_defaults",
     "print_defaults",

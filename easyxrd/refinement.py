@@ -401,19 +401,26 @@ class RefinementMixin:
         if default_lib and default_lib not in ("none", "not found") and os.path.isdir(default_lib):
             candidate_paths.append(default_lib)
         candidate_paths.append(
-            os.path.join(os.path.expanduser("~"), "g2full/GSAS-II/")
+            os.path.join(os.path.expanduser("~"), "g2full","GSAS-II")
         )
         candidate_paths.append(
-            os.path.join(os.path.expanduser("~"), "g2full/GSAS-II/")
+            os.path.join(os.path.expanduser("~"), "g2main","GSAS-II")
         )
         candidate_paths.append(
-            os.path.join(os.path.expanduser("~"), "g2main/GSAS-II/")
+            os.path.join(os.path.expanduser("~"), "G2")
         )
         candidate_paths.append(
-            os.path.join(os.path.expanduser("~"), "G2/GSAS-II/")
+            os.path.join(os.path.expanduser("~"), ".easyxrd_scratch","GSAS-II")
         )
-
-
+        candidate_paths.append(
+            os.path.join(os.path.expanduser("~"), ".easyxrd_scratch","g2main","GSAS-II")
+        )
+        candidate_paths.append(
+            os.path.join(os.path.expanduser("~"), ".easyxrd_scratch","g2full","GSAS-II")
+        )
+        candidate_paths.append(
+            os.path.join(os.path.expanduser("~"), ".easyxrd_scratch","G2")
+        )
 
         G2sc = None
         for p in candidate_paths:
@@ -443,10 +450,12 @@ class RefinementMixin:
                 self.gsasii_lib_path = "system"
             except ImportError:
                 raise ImportError(
-                    "Unable to import GSASIIscriptable. Please ensure GSAS-II is installed and accessible. "
-                    "You can specify the GSAS-II directory via `setup_gsas2_refiner(gsasii_lib_path=...)` "
-                    "or by setting the GSASII_PATH environment variable. "
-                    "Installation notes: https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html"
+                    "Unable to import GSASIIscriptable. Please ensure GSAS-II is installed and accessible. \n"
+                    "You can specify the GSAS-II directory via `setup_gsas2_refiner(gsasii_lib_path=...)` \n"
+                    "or by setting the GSASII_PATH environment variable. \n"
+                    "Installation notes: https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html \n"
+                    "\nNEW! \n"
+                    "    You can also try easyxrd.install_gsas2() and rerun from scratch \n"
                 )
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
