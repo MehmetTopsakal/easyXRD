@@ -20,6 +20,65 @@ class RefinementMixin:
     """
     Mixin class providing GSAS-II refinement setup, execution, and parameter controls.
     """
+    def _refine_gpx(self, gpx_previous, verbose=False):
+        """Run GSAS-II and restore the project if any isotropic U is negative.
+
+        Returns a rejection message, or None when the result is accepted. This
+        check must run before copying results into datasets or CIF structures.
+        """
+        # Rvals can contain nested dictionaries shared with dataset attributes
+        # (e.g. lastShifts). GSAS-II mutates these even before results are copied
+        # below, so preserve metadata independently of the update/history flags.
+        dataset_attrs_previous = [
+            (dataset, copy.deepcopy(dataset.attrs))
+            for dataset in (getattr(self, "ds", None),
+                            getattr(self, "ds_previous", None))
+            if isinstance(dataset, xr.Dataset)
+        ]
+        if self.verbose or verbose:
+            print("\n\n\n\n\n")
+            self.gpx.refine()
+        else:
+            with HiddenPrints():
+                self.gpx.refine()
+
+        negative_sites = []
+        for phase in self.gpx.phases():
+            # Atom offsets differ between GSAS-II phase types. cia points to
+            # the I/A flag; the following entry is Uiso. Anisotropic atoms have
+            # an unused Uiso slot, which must not determine acceptance.
+            _, ct, _, cia = phase.data["General"]["AtomPtrs"]
+            for atom in phase.data["Atoms"]:
+                if atom[cia] == "I" and atom[cia + 1] < 0:
+                    negative_sites.append(
+                        f"{phase.name}/{atom[ct - 1]}: Uiso={atom[cia + 1]:.6g}"
+                    )
+
+        self.last_refinement_accepted = not negative_sites
+        if not negative_sites:
+            return None
+
+        self.gpx = gpx_previous
+        for dataset, attrs in dataset_attrs_previous:
+            dataset.attrs = attrs
+        # G2Project.refine() writes its result before returning. Replace that
+        # rejected result on disk as well as in memory.
+        self.gpx_saver()
+        message = (
+            "Refinement discarded because of negative Uiso ("
+            + "; ".join(negative_sites)
+            + "). Previous project restored; dataset and phases unchanged."
+        )
+        print(" ⚠--" + message)
+        return message
+
+    def _report_refinement(self, title_str, ref_str):
+        """Keep helper messages and plot titles consistent with acceptance."""
+        if not self.last_refinement_accepted:
+            return ref_str
+        print(" ✅--" + title_str)
+        return title_str
+
     def refine(
         self,
         update_ds=True,
@@ -31,7 +90,12 @@ class RefinementMixin:
         verbose=False,
         plot=False,
     ):
+        """Refine, discarding the entire result if any isotropic U is negative.
 
+        Rejection restores the pre-refinement GPX in memory and on disk, leaves
+        datasets, structures and previous-result history unchanged, and returns
+        a diagnostic string. Zero Uiso is accepted.
+        """
         gpx_previous = copy.deepcopy(self.gpx)
         if update_previous_ds:
             vars_to_copy = [
@@ -54,12 +118,17 @@ class RefinementMixin:
         else:
             phases_previous = None
 
-        if self.verbose or verbose:
-            print("\n\n\n\n\n")
-            self.gpx.refine()
-        else:
-            with HiddenPrints():
-                self.gpx.refine()
+        rejection = self._refine_gpx(gpx_previous, verbose=verbose)
+        if rejection is not None:
+            if plot:
+                exrd_plotter(
+                    ds=self.ds,
+                    ds_previous=getattr(self, "ds_previous", None),
+                    figsize=self.figsize,
+                    plot_hint="refine",
+                    title_str=rejection,
+                )
+            return rejection
 
         if update_ds:
             histogram = self.gpx.histograms()[0]
@@ -704,7 +773,9 @@ class RefinementMixin:
                 verbose=False,
             )
 
-            print("\n ⏩--1st refinement with LeBail is completed. %s \n" % (ref_str))
+            title_str = self._report_refinement(
+                "1st refinement with LeBail is completed. %s" % ref_str, ref_str
+            )
 
             if plot:
                 exrd_plotter(
@@ -715,8 +786,7 @@ class RefinementMixin:
                     i2d_robust=self.i2d_robust,
                     i2d_logscale=self.i2d_logscale,
                     i1d_ylogscale=self.i1d_ylogscale,
-                    title_str="1st refinement with LeBail is completed. %s "
-                    % (ref_str),
+                    title_str=title_str,
                     export_fig_as=None,
                     plot_hint="1st_refinement",
                 )
@@ -754,7 +824,7 @@ class RefinementMixin:
             update_previous_phases=False,
         )
         title_str = "Background with %d coeffs is refined. %s" % (num_coeffs, ref_str)
-        print(" ✅--" + title_str)
+        title_str = self._report_refinement(title_str, ref_str)
 
         if set_to_false_after_refinement:
             self.gpx.set_refinement({"set": {"Background": {"refine": False}}})
@@ -839,7 +909,7 @@ class RefinementMixin:
             inst_pars_to_refine,
             ref_str,
         )
-        print(" ✅--" + title_str)
+        title_str = self._report_refinement(title_str, ref_str)
 
         if set_to_false_after_refinement:
             ParDict = {
@@ -928,11 +998,11 @@ class RefinementMixin:
             )
             if to:
                 title_str = "After setting LeBail refinement to True, %s" % (ref_str)
-                print("\n ✅--" + title_str)
+                title_str = self._report_refinement(title_str, ref_str)
 
             else:
                 title_str = "After setting LeBail refinement to False, %s" % (ref_str)
-                print("\n ✅--" + title_str)
+                title_str = self._report_refinement(title_str, ref_str)
         else:
             pass
 
@@ -977,7 +1047,7 @@ class RefinementMixin:
                 title_str = "Cell parameters of all phases are refined. %s" % (ref_str)
             else:
                 title_str = "Cell parameters are refined. %s" % (ref_str)
-            print(" ✅--" + title_str)
+            title_str = self._report_refinement(title_str, ref_str)
             if plot:
                 exrd_plotter(
                     ds=self.ds,
@@ -994,7 +1064,7 @@ class RefinementMixin:
                 self.gpx.phases()[phase_ind].name,
                 ref_str,
             )
-            print(" ✅--" + title_str)
+            title_str = self._report_refinement(title_str, ref_str)
             if plot:
                 exrd_plotter(
                     ds=self.ds,
@@ -1118,7 +1188,7 @@ class RefinementMixin:
         )
         if (phase_ind == "all") or (phase_ind == None):
             title_str = "Strain broadening of all phases are refined. %s" % (ref_str)
-            print(" ✅--" + title_str)
+            title_str = self._report_refinement(title_str, ref_str)
             if plot:
                 exrd_plotter(
                     ds=self.ds,
@@ -1135,7 +1205,7 @@ class RefinementMixin:
                 self.gpx.phases()[phase_ind].name,
                 ref_str,
             )
-            print(" ✅--" + title_str)
+            title_str = self._report_refinement(title_str, ref_str)
             if plot:
                 exrd_plotter(
                     ds=self.ds,
@@ -1254,7 +1324,7 @@ class RefinementMixin:
         )
         if (phase_ind == "all") or (phase_ind == None):
             title_str = "Size broadening of all phases are refined. %s" % (ref_str)
-            print(" ✅--" + title_str)
+            title_str = self._report_refinement(title_str, ref_str)
             if plot:
                 exrd_plotter(
                     ds=self.ds,
@@ -1271,7 +1341,7 @@ class RefinementMixin:
                 self.gpx.phases()[phase_ind].name,
                 ref_str,
             )
-            print(" ✅--" + title_str)
+            title_str = self._report_refinement(title_str, ref_str)
             if plot:
                 exrd_plotter(
                     ds=self.ds,
@@ -1382,7 +1452,7 @@ class RefinementMixin:
             update_previous_phases=True,
         )
         title_str = "Phase fractions of all phases are refined. %s" % (ref_str)
-        print(" ✅--" + title_str)
+        title_str = self._report_refinement(title_str, ref_str)
 
         if set_to_false_after_refinement:
             self.gpx["PWDR data.xy"]["Sample Parameters"]["Scale"][1] = True
@@ -1486,7 +1556,7 @@ class RefinementMixin:
             title_str = "Preferred orientation for all phases are refined. %s" % (
                 ref_str
             )
-            print(" ✅--" + title_str)
+            title_str = self._report_refinement(title_str, ref_str)
         else:
             ref_str = self.refine(
                 update_ds=True,
@@ -1500,7 +1570,7 @@ class RefinementMixin:
                 self.gpx.phases()[phase_ind].name,
                 ref_str,
             )
-            print(" ✅--" + title_str)
+            title_str = self._report_refinement(title_str, ref_str)
 
         if set_to_false_after_refinement:
             # self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
@@ -1616,7 +1686,7 @@ class RefinementMixin:
             self.gpx.phases()[phase_ind].name,
             ref_str,
         )
-        print(" ✅--" + title_str)
+        title_str = self._report_refinement(title_str, ref_str)
 
         if set_to_false_after_refinement:
             self.gpx.phases()[phase_ind].atom(site_label).refinement_flags = ""
@@ -1658,6 +1728,7 @@ class RefinementMixin:
 
     def fine_tune_gpx(self):
         """ """
+        gpx_previous = copy.deepcopy(self.gpx)
         subprocess.check_call(
             [
                 "%s/../../RunGSASII.sh" % self.gsasii_lib_path,
@@ -1667,16 +1738,17 @@ class RefinementMixin:
         import GSASIIscriptable as G2sc
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
-        self.gpx.refine()
+        self._refine_gpx(gpx_previous)
 
     ###############################################################################################
     def replace_gpx_with(self, newgpx_to_replace):
         """ """
+        gpx_previous = copy.deepcopy(self.gpx)
         shutil.copy(newgpx_to_replace, "%s/gsas.gpx" % self.gsasii_run_directory)
         import GSASIIscriptable as G2sc
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
-        self.gpx.refine()
+        self._refine_gpx(gpx_previous)
 
     ###############################################################################################
     def export_gpx_to(self, to="gsas.gpx"):
