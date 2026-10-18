@@ -3,6 +3,17 @@ import sys
 import logging
 from pathlib import Path
 
+# Preload Pixi environment's libfontconfig to prevent symbol collision (FcConfigSetDefaultSubstitute)
+# between PyQt6 (which loads the system fontconfig) and wxPython/Pango (which requires Pixi's fontconfig).
+if sys.platform.startswith("linux"):
+    try:
+        import ctypes
+        fc_lib = Path(sys.executable).resolve().parents[1] / "lib" / "libfontconfig.so.1"
+        if fc_lib.is_file():
+            ctypes.CDLL(str(fc_lib), mode=ctypes.RTLD_GLOBAL)
+    except Exception:
+        pass
+
 from .utils import HiddenPrints, install_gsas2
 
 logger = logging.getLogger("easyxrd")
