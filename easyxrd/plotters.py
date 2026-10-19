@@ -137,7 +137,7 @@ def i2d_plotter(
         i2d_str = "i2d"
 
     if i2d_logscale:
-        da_i2d = np.log(da_i2d)
+        da_i2d = np.log(da_i2d.where(da_i2d > 0))
         vmin = 1
         i2d_str = "Log$_{10}$(%s)" % (i2d_str)
 
