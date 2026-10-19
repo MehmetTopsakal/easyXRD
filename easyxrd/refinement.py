@@ -69,7 +69,7 @@ class RefinementMixin:
             + "; ".join(negative_sites)
             + "). Previous project restored; dataset and phases unchanged."
         )
-        print(" ⚠--" + message)
+        print(" ❌--" + message)
         return message
 
     def _report_refinement(self, title_str, ref_str):
