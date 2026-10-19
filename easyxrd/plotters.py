@@ -225,13 +225,14 @@ def _calc_reflection_pattern(xrdc, st, wavelength, radial_min, radial_max):
         if len(ps.x) > 0:
             refl_X = ((4 * np.pi) / wavelength) * np.sin(np.deg2rad(ps.x) / 2)
             refl_Y = ps.y
+            refl_HKLs = ps.hkls
         else:
-            refl_X, refl_Y = np.array([]), np.array([])
+            refl_X, refl_Y, refl_HKLs = np.array([]), np.array([]), np.array([])
     except Exception:
-        refl_X, refl_Y = np.array([]), np.array([])
+        refl_X, refl_Y, refl_HKLs = np.array([]), np.array([]), np.array([])
 
-    _PATTERN_CACHE[cache_key] = (refl_X, refl_Y)
-    return refl_X, refl_Y
+    _PATTERN_CACHE[cache_key] = (refl_X, refl_Y, refl_HKLs)
+    return refl_X, refl_Y, refl_HKLs
 
 
 def phases_plotter(
@@ -242,6 +243,7 @@ def phases_plotter(
     phase_label_x=0.9,
     phase_label_y=0.75,
     phase_label_yshift=-0.2,
+    show_hkls = True,
 ):
     """Plot Bragg reflection lines and phase labels."""
 
@@ -274,7 +276,7 @@ def phases_plotter(
         phase_items = []
 
     for e, (st_name, st) in enumerate(phase_items):
-        refl_X, refl_Y = _calc_reflection_pattern(
+        refl_X, refl_Y, refl_HKLs = _calc_reflection_pattern(
             xrdc, st, wavelength, radial_min, radial_max
         )
 
@@ -296,6 +298,19 @@ def phases_plotter(
             plt.setp(stemlines, linewidth=0.5, color=color)
             plt.setp(markerline, color=color)
 
+            if show_hkls:
+                for ee,y in enumerate(refl_Y):
+                    if y > 10:
+                        ax_main.annotate(refl_HKLs[ee][0]['hkl'],
+                                        xy = (refl_X[ee],refl_Y[ee]),
+                                        rotation=30,
+                                        fontsize=4,
+                                        ha='center',
+                                        va='bottom',
+                                        color=color
+                        )
+
+
         ax_main.text(
             phase_label_x,
             phase_label_y + e * phase_label_yshift,
@@ -305,7 +320,7 @@ def phases_plotter(
         )
 
     ax_main.set_xlabel(ds.i1d.attrs["xlabel"])
-    ax_main.set_ylim(bottom=1, top=120)
+    ax_main.set_ylim(bottom=1, top=130)
     ax_main.set_yticks([])
 
 
