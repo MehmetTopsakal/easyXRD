@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Include the committer's calendar date in easyXRD's package version."""
+
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+
+PROJECT = re.compile(rb"(?ms)(^\[project\][^\r\n]*\r?\n)(.*?)(?=^\[|\Z)")
+VERSION = re.compile(rb"(?m)^([ \t]*version[ \t]*=[ \t]*)(['\"])[^'\"\r\n]*\2")
+
+
+def git(*args, data=None):
+    return subprocess.run(
+        ["git", *args], input=data, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=True,
+    ).stdout
+
+
+def update_version(contents, version):
+    section = PROJECT.search(contents)
+    if section is None:
+        raise ValueError("pyproject.toml has no [project] table")
+    updated, count = VERSION.subn(
+        lambda match: match[1] + match[2] + version + match[2], section[2]
+    )
+    if count != 1:
+        raise ValueError("expected one version field in pyproject.toml's [project] table")
+    return contents[:section.start(2)] + updated + contents[section.end(2):]
+
+
+def main():
+    filename = "pyproject.toml"
+    entries = git("ls-files", "--stage", "--", filename).splitlines()
+    if not entries:
+        return  # Respect a staged deletion of the package manifest.
+    if len(entries) != 1 or entries[0].split()[2] != b"0":
+        raise ValueError("resolve pyproject.toml's merge conflicts before committing")
+    mode = entries[0].split()[0].decode("ascii")
+
+    # Git supplies the same timestamp and UTC offset for the new commit.
+    _, timestamp, offset = git("var", "GIT_COMMITTER_IDENT").strip().rsplit(b" ", 2)
+    minutes = int(offset[1:3]) * 60 + int(offset[3:5])
+    if offset[:1] == b"-":
+        minutes = -minutes
+    commit_date = datetime.fromtimestamp(
+        int(timestamp), timezone(timedelta(minutes=minutes))
+    )
+    version = commit_date.strftime("%Y.%m.%d").encode("ascii")
+
+    staged = git("show", f":{filename}")
+    updated_staged = update_version(staged, version)
+    path = Path(filename)
+    if path.exists():
+        working = path.read_bytes()
+        updated_working = update_version(working, version)
+        if updated_working != working:
+            path.write_bytes(updated_working)
+
+    if updated_staged != staged:
+        blob = git("hash-object", "-w", "--stdin", data=updated_staged).strip()
+        # Update only the staged version; never stage unrelated working-tree edits.
+        git("update-index", "--cacheinfo", mode, blob.decode("ascii"), filename)
+        print(f"easyXRD: set package version to {version.decode('ascii')}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+        print(f"easyXRD version hook failed: {exc}", file=sys.stderr)
+        sys.exit(1)

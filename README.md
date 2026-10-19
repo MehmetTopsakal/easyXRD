@@ -155,6 +155,24 @@ After this step, you can contine with `exrd` as we explained in the Google Colab
 
 
 
+## Automatic date versions
+
+Enable the repository's version hook once after cloning:
+
+```bash
+git config --local core.hooksPath .githooks
+```
+
+Before each normal `git commit`, including `git commit --amend`, the hook sets
+`[project].version` in `pyproject.toml` to the committer date as `YYYY.MM.DD`
+(for example, `2026.10.19`) and includes that version in the commit. It uses Git's
+committer timestamp and timezone, including an explicit `GIT_COMMITTER_DATE`.
+Commits on the same calendar day share the same version.
+
+The hook updates only the version in the staged manifest and preserves unrelated
+unstaged edits. It requires Python 3 and must be enabled separately in each clone.
+
+
 ## Acknowledgements
 
 Development of `easyXRD` was supported by FY24 Scientific Technique and Expertise Development – Instrument Scientist Support Project managed by Nuclear Science User Facilities (NSUF), https://nsuf.inl.gov/. If you find `easyXRD` useful for your research, please acknowldege using the sentence below:
