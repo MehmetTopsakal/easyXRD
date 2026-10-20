@@ -151,6 +151,15 @@ If all is successful, you should be able to import easyXRD inside python:
 from easyxrd import exrd
 ```
 
+To display package versions, the Python executable, the GSAS-II module location,
+and current configuration (including a masked Materials Project API key), run:
+
+```python
+import easyxrd
+
+easyxrd.show_config()
+```
+
 After this step, you can contine with `exrd` as we explained in the Google Colab notebooks that are listed above.
 
 

@@ -83,6 +83,46 @@ def print_defaults():
             print("%s : %s" % (key, masked))
 
 
+def show_config():
+    """Print environment versions and configuration, with the API key masked."""
+    import platform
+    from importlib import metadata
+
+    versions = {
+        "Platform": platform.platform(),
+        "python": sys.version.split()[0],
+        "executable": sys.executable,
+    }
+    for package in [
+        "easyxrd", "pyFAI", "fabio", "numpy", "scipy", "pandas",
+        "pymatgen", "GSAS-II",
+    ]:
+        try:
+            versions[package] = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            versions[package] = "not installed or local"
+
+    try:
+        with HiddenPrints():
+            from GSASII import GSASIIscriptable
+        versions["GSASII_module"] = GSASIIscriptable.__file__
+    except Exception:
+        versions["GSASII_module"] = "not found"
+
+    print("=" * 40)
+    print("easyXRD environment and configurations")
+    print("=" * 40)
+    for key, value in versions.items():
+        print(f"{key:<20}: {value}")
+    for key, value in easyxrd_defaults.items():
+        if key == "mp_api_key" and value not in (None, "", "not found", "invalid"):
+            value = str(value)
+            value = value[:5] + "......" if len(value) > 5 else "......"
+        print(f"{key:<20}: {value}")
+    print("-" * 40)
+    print()
+
+
 # Re-export exrd for convenient package imports
 from .core import exrd
 
@@ -92,5 +132,6 @@ __all__ = [
     "easyxrd_defaults",
     "set_defaults",
     "print_defaults",
+    "show_config",
     "HiddenPrints",
 ]
