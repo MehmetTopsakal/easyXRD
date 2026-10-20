@@ -35,3 +35,23 @@ packages = ["easyxrd"]
 testpaths = ["tests"]
 pythonpath = ["."]
 
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64"]
+
+[tool.pixi.pypi-dependencies]
+easyxrd = { path = ".", editable = true }
+
+[tool.pixi.dependencies]
+python = ">=3.12,<3.14"
+pip = "*"
+ninja = "*"
+meson-python = "*"
+git = "*"
+pytest = "*"
+
+[tool.pixi.target.linux-64.dependencies]
+fortran-compiler = "*"
+c-compiler = "*"
+
+
