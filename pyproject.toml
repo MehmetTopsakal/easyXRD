@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "easyxrd"
-version = "2026.10.20"
+version = "2026.10.20.post1"
 description = "X-ray diffraction analysis tool"
 readme = "README.md"
 requires-python = ">=3.11"

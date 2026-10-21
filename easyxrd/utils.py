@@ -17,6 +17,8 @@ def ensure_wx_importable():
     """
     try:
         import wx  # noqa: F401
+    except (ImportError, ModuleNotFoundError):
+        return
     except AttributeError as exc:
         if not (
             "partially initialized module 'wx'" in str(exc)
@@ -29,7 +31,11 @@ def ensure_wx_importable():
         for module_name in list(sys.modules):
             if module_name == "wx" or module_name.startswith("wx."):
                 sys.modules.pop(module_name, None)
-        import wx  # noqa: F401
+        try:
+            import wx  # noqa: F401
+        except (ImportError, ModuleNotFoundError):
+            pass
+
 
 
 class HiddenPrints:
