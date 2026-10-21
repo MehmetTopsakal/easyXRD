@@ -1502,7 +1502,10 @@ class RefinementMixin:
         plot=False,
     ):
         """ """
-        import GSASIIlattice as G2lat
+        try:
+            from GSASII import GSASIIlattice as G2lat
+        except ImportError:
+            import GSASIIlattice as G2lat
 
         L = harmonics_order
         for e, st in enumerate(self.phases):
@@ -1600,9 +1603,10 @@ class RefinementMixin:
         self, set_refine_to=True, phase_ind=0, harmonics_order_to=4, save_gpx=True
     ):
 
-        import GSASIIlattice as G2lat
-
-        L = harmonics_order_to
+        try:
+            from GSASII import GSASIIlattice as G2lat
+        except ImportError:
+            import GSASIIlattice as G2lat
 
         for e, st in enumerate(self.phases):
             if (phase_ind == "all") or (phase_ind == None):
