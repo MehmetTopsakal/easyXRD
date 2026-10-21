@@ -11,7 +11,7 @@ import numpy as np
 import xarray as xr
 from pymatgen.core.structure import Structure
 
-from .utils import HiddenPrints, ensure_wx_importable
+from .utils import HiddenPrints
 from . import easyxrd_defaults
 from .plotters import exrd_plotter
 
@@ -456,9 +456,6 @@ class RefinementMixin:
 
         self.yshift_multiplier = yshift_multiplier
 
-        # GSAS-II loads wxPython lazily when it creates a project. Validate it
-        # here so a stale Jupyter import cache is repaired before that happens.
-        ensure_wx_importable()
 
         # Resolve GSAS-II library
         candidate_paths = []
