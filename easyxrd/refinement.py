@@ -19,9 +19,46 @@ from .plotters import exrd_plotter
 class RefinementMixin:
     """
     Mixin class providing GSAS-II refinement setup, execution, and parameter controls.
+
+    Refinement methods require at least a 1% GoF decrease by default. Pass
+    min_gof_improvement to override the percentage, 0 to accept any strictly
+    positive decrease, or None to disable the improvement check. Setup creates
+    the initial fit and defaults to no improvement check.
     """
-    def _refine_gpx(self, gpx_previous, verbose=False):
-        """Run GSAS-II and restore the project if any isotropic U is negative.
+    @staticmethod
+    def _validate_gof_improvement(min_gof_improvement):
+        if min_gof_improvement is not None and (
+            not np.isfinite(min_gof_improvement) or min_gof_improvement < 0
+        ):
+            raise ValueError("min_gof_improvement must be a finite, nonnegative percentage")
+
+    def _prepare_refinement(self, min_gof_improvement):
+        """Validate before changing any flags and preserve the accepted GPX."""
+        self._validate_gof_improvement(min_gof_improvement)
+        return copy.deepcopy(self.gpx)
+
+    def _restore_rejected_refinement(self, gpx_previous, message, plot=False,
+                                     plot_hint="refine"):
+        """Restore wrapper changes as well as the optimizer's rejected result."""
+        self.gpx = gpx_previous
+        self.gpx_saver()
+        if plot and self.last_refinement_rejection_reason != "insufficient_gof_improvement":
+            exrd_plotter(
+                ds=self.ds,
+                ds_previous=getattr(self, "ds_previous", None),
+                figsize=self.figsize,
+                i2d_robust=self.i2d_robust,
+                i2d_logscale=self.i2d_logscale,
+                i1d_ylogscale=self.i1d_ylogscale,
+                plot_hint=plot_hint,
+                title_str=message,
+            )
+        # High-level helpers report via stdout; returning the diagnostic here
+        # would make Jupyter echo it again as the cell result.
+        return None
+
+    def _refine_gpx(self, gpx_previous, verbose=False, min_gof_improvement=None):
+        """Run GSAS-II and restore invalid or insufficiently improved results.
 
         Returns a rejection message, or None when the result is accepted. This
         check must run before copying results into datasets or CIF structures.
@@ -54,8 +91,24 @@ class RefinementMixin:
                         f"{phase.name}/{atom[ct - 1]}: Uiso={atom[cia + 1]:.6g}"
                     )
 
-        self.last_refinement_accepted = not negative_sites
-        if not negative_sites:
+        reason = None
+        self.last_refinement_rejection_reason = None
+        if negative_sites:
+            self.last_refinement_rejection_reason = "negative_uiso"
+            reason = "negative Uiso (" + "; ".join(negative_sites) + ")"
+        elif min_gof_improvement is not None:
+            old_gof = gpx_previous["Covariance"]["data"]["Rvals"]["GOF"]
+            new_gof = self.gpx["Covariance"]["data"]["Rvals"]["GOF"]
+            improvement = 100 * (old_gof - new_gof) / old_gof if old_gof > 0 else np.nan
+            if not np.isfinite(improvement) or improvement <= 0 or improvement < min_gof_improvement:
+                self.last_refinement_rejection_reason = "insufficient_gof_improvement"
+                reason = (
+                    f"insufficient GoF improvement ({improvement:.6g}%; "
+                    f"requires a decrease of at least {min_gof_improvement:g}%)"
+                )
+
+        self.last_refinement_accepted = reason is None
+        if reason is None:
             return None
 
         self.gpx = gpx_previous
@@ -65,9 +118,8 @@ class RefinementMixin:
         # rejected result on disk as well as in memory.
         self.gpx_saver()
         message = (
-            "Refinement discarded because of negative Uiso ("
-            + "; ".join(negative_sites)
-            + "). Previous project restored; dataset and phases unchanged."
+            "Refinement discarded because of " + reason
+            + ". \n      Previous project restored; dataset and phases unchanged."
         )
         print(" ❌--" + message)
         return message
@@ -89,14 +141,19 @@ class RefinementMixin:
         update_previous_phases=True,
         verbose=False,
         plot=False,
+        min_gof_improvement=None,
     ):
         """Refine, discarding the entire result if any isotropic U is negative.
 
         Rejection restores the pre-refinement GPX in memory and on disk, leaves
         datasets, structures and previous-result history unchanged, and returns
-        a diagnostic string. Zero Uiso is accepted.
+        a diagnostic string. Zero Uiso is accepted. When min_gof_improvement is
+        set, also require a positive GoF decrease of at least that percentage
+        (default 1%). Pass None to disable the improvement check.
+        Results discarded for insufficient GoF improvement never plot, even
+        when plot=True.
         """
-        gpx_previous = copy.deepcopy(self.gpx)
+        gpx_previous = self._prepare_refinement(min_gof_improvement)
         if update_previous_ds:
             vars_to_copy = [
                 k
@@ -118,9 +175,11 @@ class RefinementMixin:
         else:
             phases_previous = None
 
-        rejection = self._refine_gpx(gpx_previous, verbose=verbose)
+        rejection = self._refine_gpx(
+            gpx_previous, verbose=verbose, min_gof_improvement=min_gof_improvement
+        )
         if rejection is not None:
-            if plot:
+            if plot and self.last_refinement_rejection_reason != "insufficient_gof_improvement":
                 exrd_plotter(
                     ds=self.ds,
                     ds_previous=getattr(self, "ds_previous", None),
@@ -378,9 +437,9 @@ class RefinementMixin:
                 / self.gpx_previous["Covariance"]["data"]["Rvals"]["GOF"]
             )
             if gof_change < -10:
-                gof_symbol = "✨"  # https://www.compart.com/en/unicode/category/So
+                gof_symbol = "*"
             elif gof_change > -1:
-                gof_symbol = "❗"
+                gof_symbol = "!"
             else:
                 gof_symbol = ""
             refinement_str = "Rwp/GoF is now %.3f/%.3f (was %.3f(%.2f%%)/%.3f(%.2f%%%s))" % (
@@ -443,7 +502,14 @@ class RefinementMixin:
         normalize=False,
         normalize_to=100,
         plot=True,
+        min_gof_improvement=None,
     ):
+        """Create the initial fit; optionally gate the second, LeBail pass.
+
+        The first pass establishes the baseline GoF and is always ungated.
+        min_gof_improvement defaults to None during setup.
+        """
+        self._validate_gof_improvement(min_gof_improvement)
 
         for k in ["i1d_refined", "i1d_gsas_background"]:
             if k in self.ds.keys():
@@ -745,6 +811,7 @@ class RefinementMixin:
                 update_previous_gpx=False,
                 update_previous_phases=False,
                 verbose=False,
+                min_gof_improvement=None,
             )
 
             self.gpx.set_refinement(
@@ -768,6 +835,7 @@ class RefinementMixin:
                 update_previous_gpx=False,
                 update_previous_phases=False,
                 verbose=False,
+                min_gof_improvement=None,
             )
 
             title_str = self._report_refinement(
@@ -797,9 +865,11 @@ class RefinementMixin:
         background_type="chebyschev-1",
         set_to_false_after_refinement=True,
         plot=False,
+        min_gof_improvement=1.0,
     ):
-        """ """
+        """Refine the background, requiring the specified percent GoF decrease."""
 
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement(
             {
                 "set": {
@@ -819,7 +889,13 @@ class RefinementMixin:
             update_previous_ds=True,
             update_previous_gpx=True,
             update_previous_phases=False,
+            min_gof_improvement=min_gof_improvement,
         )
+        if not self.last_refinement_accepted:
+            return self._restore_rejected_refinement(
+                gpx_before_refinement, ref_str, plot=plot,
+                plot_hint="refine_background",
+            )
         title_str = "Background with %d coeffs is refined. %s" % (num_coeffs, ref_str)
         title_str = self._report_refinement(title_str, ref_str)
 
@@ -887,11 +963,14 @@ class RefinementMixin:
         inst_pars_to_refine=["U", "V", "W"],
         set_to_false_after_refinement=True,
         plot=False,
+        min_gof_improvement=1.0,
     ):
         """
+        Refine instrument parameters with a minimum percent GoF decrease.
         inst_pars_to_refine=['U', 'V', 'W',   'X', 'Y', 'Z', 'Zero', 'SH/L']
         """
 
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement({"set": {"Instrument Parameters": inst_pars_to_refine}})
 
         ref_str = self.refine(
@@ -901,7 +980,13 @@ class RefinementMixin:
             update_previous_ds=True,
             update_previous_gpx=True,
             update_previous_phases=False,
+            min_gof_improvement=min_gof_improvement,
         )
+        if not self.last_refinement_accepted:
+            return self._restore_rejected_refinement(
+                gpx_before_refinement, ref_str, plot=plot,
+                plot_hint="refine_instrument_parameters",
+            )
         title_str = "Instrument parameter %s is refined. %s" % (
             inst_pars_to_refine,
             ref_str,
@@ -976,9 +1061,13 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
-    def set_LeBail(self, to=True, phase_ind="all", refine=True, plot=False):
-        """ """
+    def set_LeBail(
+        self, to=True, phase_ind="all", refine=True, plot=False,
+        min_gof_improvement=None,
+    ):
+        """Set LeBail mode; when refining, require the minimum percent GoF decrease."""
 
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement({"set": {"LeBail": to}})
         else:
@@ -992,7 +1081,13 @@ class RefinementMixin:
                 update_previous_ds=True,
                 update_previous_gpx=True,
                 update_previous_phases=False,
+                min_gof_improvement=min_gof_improvement,
             )
+            if not self.last_refinement_accepted:
+                return self._restore_rejected_refinement(
+                    gpx_before_refinement, ref_str, plot=plot,
+                    plot_hint="set_LeBail",
+                )
             if to:
                 title_str = "After setting LeBail refinement to True, %s" % (ref_str)
                 title_str = self._report_refinement(title_str, ref_str)
@@ -1026,9 +1121,11 @@ class RefinementMixin:
         set_to_false_after_refinement=True,
         plot=False,
         report=False,
+        min_gof_improvement=0.1,
     ):
-        """ """
+        """Refine unit cells, requiring the specified percent GoF decrease."""
 
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement({"set": {"Cell": True}}, phase=phase_ind)
 
         ref_str = self.refine(
@@ -1038,7 +1135,13 @@ class RefinementMixin:
             update_previous_ds=True,
             update_previous_gpx=True,
             update_previous_phases=True,
+            min_gof_improvement=min_gof_improvement,
         )
+        if not self.last_refinement_accepted:
+            return self._restore_rejected_refinement(
+                gpx_before_refinement, ref_str, plot=plot,
+                plot_hint="refine_cell_parameters",
+            )
         if (phase_ind == "all") or (phase_ind == None):
             if len(self.phases) > 1:
                 title_str = "Cell parameters of all phases are refined. %s" % (ref_str)
@@ -1168,9 +1271,11 @@ class RefinementMixin:
         set_to_false_after_refinement=True,
         plot=False,
         report=False,
+        min_gof_improvement=1.0,
     ):
-        """ """
+        """Refine strain broadening, requiring the specified percent GoF decrease."""
 
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement(
             {"set": {"Mustrain": {"refine": True, "type": type}}}, phase=phase_ind
         )
@@ -1182,7 +1287,13 @@ class RefinementMixin:
             update_previous_ds=True,
             update_previous_gpx=True,
             update_previous_phases=True,
+            min_gof_improvement=min_gof_improvement,
         )
+        if not self.last_refinement_accepted:
+            return self._restore_rejected_refinement(
+                gpx_before_refinement, ref_str, plot=plot,
+                plot_hint="refine_strain_broadening",
+            )
         if (phase_ind == "all") or (phase_ind == None):
             title_str = "Strain broadening of all phases are refined. %s" % (ref_str)
             title_str = self._report_refinement(title_str, ref_str)
@@ -1304,9 +1415,11 @@ class RefinementMixin:
         set_to_false_after_refinement=True,
         plot=False,
         report=False,
+        min_gof_improvement=1.0,
     ):
-        """ """
+        """Refine size broadening, requiring the specified percent GoF decrease."""
 
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement(
             {"set": {"Size": {"refine": True, "type": type}}}, phase=phase_ind
         )
@@ -1318,7 +1431,13 @@ class RefinementMixin:
             update_previous_ds=True,
             update_previous_gpx=True,
             update_previous_phases=True,
+            min_gof_improvement=min_gof_improvement,
         )
+        if not self.last_refinement_accepted:
+            return self._restore_rejected_refinement(
+                gpx_before_refinement, ref_str, plot=plot,
+                plot_hint="refine_size_broadening",
+            )
         if (phase_ind == "all") or (phase_ind == None):
             title_str = "Size broadening of all phases are refined. %s" % (ref_str)
             title_str = self._report_refinement(title_str, ref_str)
@@ -1433,9 +1552,13 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
-    def refine_phase_fractions(self, set_to_false_after_refinement=True, plot=False):
-        """ """
+    def refine_phase_fractions(
+        self, set_to_false_after_refinement=True, plot=False,
+        min_gof_improvement=0.1,
+    ):
+        """Refine phase fractions, requiring the specified percent GoF decrease."""
 
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx["PWDR data.xy"]["Sample Parameters"]["Scale"][1] = False
         for e, p in enumerate(self.phases):
             self.gpx["Phases"][p]["Histograms"]["PWDR data.xy"]["Scale"][1] = True
@@ -1447,7 +1570,13 @@ class RefinementMixin:
             update_previous_ds=True,
             update_previous_gpx=True,
             update_previous_phases=True,
+            min_gof_improvement=min_gof_improvement,
         )
+        if not self.last_refinement_accepted:
+            return self._restore_rejected_refinement(
+                gpx_before_refinement, ref_str, plot=plot,
+                plot_hint="refine_phase_fractions",
+            )
         title_str = "Phase fractions of all phases are refined. %s" % (ref_str)
         title_str = self._report_refinement(title_str, ref_str)
 
@@ -1500,8 +1629,10 @@ class RefinementMixin:
         harmonics_order=4,
         set_to_false_after_refinement=True,
         plot=False,
+        min_gof_improvement=1.0,
     ):
-        """ """
+        """Refine preferred orientation with a minimum percent GoF decrease."""
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         try:
             from GSASII import GSASIIlattice as G2lat
         except ImportError:
@@ -1552,7 +1683,13 @@ class RefinementMixin:
                 update_previous_ds=True,
                 update_previous_gpx=True,
                 update_previous_phases=True,
+                min_gof_improvement=min_gof_improvement,
             )
+            if not self.last_refinement_accepted:
+                return self._restore_rejected_refinement(
+                    gpx_before_refinement, ref_str, plot=plot,
+                    plot_hint="refine_preferred_orientation",
+                )
             title_str = "Preferred orientation for all phases are refined. %s" % (
                 ref_str
             )
@@ -1565,7 +1702,13 @@ class RefinementMixin:
                 update_previous_ds=True,
                 update_previous_gpx=True,
                 update_previous_phases=True,
+                min_gof_improvement=min_gof_improvement,
             )
+            if not self.last_refinement_accepted:
+                return self._restore_rejected_refinement(
+                    gpx_before_refinement, ref_str, plot=plot,
+                    plot_hint="refine_preferred_orientation",
+                )
             title_str = "Preferred orientation for %s phase is refined. %s" % (
                 self.gpx.phases()[phase_ind].name,
                 ref_str,
@@ -1665,9 +1808,17 @@ class RefinementMixin:
         refinement_flags="",
         set_to_false_after_refinement=True,
         plot=False,
+        min_gof_improvement=0.1,
     ):
-        """ """
+        """Refine a site, accepting only a sufficient percentage decrease in GoF.
 
+        Rejected trials preserve the project, site flags, structures, dataset,
+        and previous-result history. The default requires at least a 1% decrease
+        in GoF. Set min_gof_improvement=None to disable
+        the improvement check, or 0 to accept any strictly positive decrease.
+        """
+
+        gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         site_label = self.gpx.phases()[phase_ind]["Atoms"][site_ind][0]
         self.gpx.phases()[phase_ind].atom(
             site_label
@@ -1680,7 +1831,13 @@ class RefinementMixin:
             update_previous_ds=True,
             update_previous_gpx=True,
             update_previous_phases=True,
+            min_gof_improvement=min_gof_improvement,
         )
+        if not self.last_refinement_accepted:
+            return self._restore_rejected_refinement(
+                gpx_before_refinement, ref_str, plot=plot,
+                plot_hint="refine_site_property",
+            )
         title_str = "%s property of %s site of %s phase is refined. %s" % (
             refinement_flags,
             site_label,
@@ -1727,9 +1884,9 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def fine_tune_gpx(self):
-        """ """
-        gpx_previous = copy.deepcopy(self.gpx)
+    def fine_tune_gpx(self, min_gof_improvement=1.0):
+        """Edit and refine the GPX, requiring the minimum percent GoF decrease."""
+        gpx_previous = self._prepare_refinement(min_gof_improvement)
         subprocess.check_call(
             [
                 "%s/../../RunGSASII.sh" % self.gsasii_lib_path,
@@ -1739,17 +1896,17 @@ class RefinementMixin:
         import GSASIIscriptable as G2sc
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
-        self._refine_gpx(gpx_previous)
+        self._refine_gpx(gpx_previous, min_gof_improvement=min_gof_improvement)
 
     ###############################################################################################
-    def replace_gpx_with(self, newgpx_to_replace):
-        """ """
-        gpx_previous = copy.deepcopy(self.gpx)
+    def replace_gpx_with(self, newgpx_to_replace, min_gof_improvement=1.0):
+        """Refine a replacement GPX, accepting it only on sufficient GoF decrease."""
+        gpx_previous = self._prepare_refinement(min_gof_improvement)
         shutil.copy(newgpx_to_replace, "%s/gsas.gpx" % self.gsasii_run_directory)
         import GSASIIscriptable as G2sc
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
-        self._refine_gpx(gpx_previous)
+        self._refine_gpx(gpx_previous, min_gof_improvement=min_gof_improvement)
 
     ###############################################################################################
     def export_gpx_to(self, to="gsas.gpx"):
