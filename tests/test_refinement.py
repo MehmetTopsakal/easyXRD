@@ -2,8 +2,10 @@
 
 import copy
 import json
+from datetime import datetime
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 import xarray as xr
 
@@ -100,7 +102,8 @@ def test_negative_uiso_rolls_back_entire_result(tmp_path, capsys, verbose, updat
     assert s.gpx.filename.read_text() == old_file
     assert s.gpx.phases()[0].data["Atoms"][0][10] == 0.01
     assert s.gpx["Covariance"]["data"]["Rvals"]["Rwp"] == 12.
-    xr.testing.assert_identical(s.ds, old_ds)
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), old_ds)
+    assert s.ds.refinement_status.item() == "rejected"
     assert s.phases == old_phases
     assert (s.ds_previous, s.gpx_previous, s.phases_previous) == old_histories
     assert "discarded" in capsys.readouterr().out
@@ -148,7 +151,8 @@ def test_rejection_restores_shared_nested_fit_metadata(tmp_path):
     s.refine(update_ds=False, update_ds_phases=False, update_phases=False,
              update_previous_ds=False, update_previous_gpx=False,
              update_previous_phases=False)
-    xr.testing.assert_identical(s.ds, before_ds)
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), before_ds)
+    assert s.ds.refinement_status.item() == "rejected"
     xr.testing.assert_identical(s.ds_previous, before_history)
     assert s.ds_previous is history
 
@@ -204,7 +208,8 @@ def test_insufficient_improvement_preserves_all_state(tmp_path, gof):
     assert not s.last_refinement_accepted
     assert "insufficient GoF improvement" in message
     assert s.gpx.filename.read_bytes() == before_file
-    xr.testing.assert_identical(s.ds, before_ds)
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), before_ds)
+    assert s.ds.refinement_status.item() == "rejected"
     xr.testing.assert_identical(s.ds_previous, before_previous)
     assert s.phases == phases
     assert all(a is b for a, b in zip(
@@ -263,7 +268,8 @@ def test_site_rejection_restores_original_flags(tmp_path, clear_flags):
     assert not s.last_refinement_accepted
     assert s.gpx.phases()[0].atom("Ni1").refinement_flags == "X"
     assert s.gpx.filename.read_bytes() == before
-    xr.testing.assert_identical(s.ds, old_ds)
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), old_ds)
+    assert s.ds.refinement_status.item() == "rejected"
     assert all(a is b for a, b in zip(
         histories, (s.ds_previous, s.gpx_previous, s.phases_previous)))
 
@@ -319,10 +325,12 @@ def test_all_wrappers_restore_full_state(tmp_path, monkeypatch, capsys, method, 
     assert printed.count("Refinement discarded") == 1
     assert "insufficient GoF improvement" in printed
     assert s.gpx.filename.read_bytes() == before_file
-    xr.testing.assert_identical(s.ds, before_ds)
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), before_ds)
+    assert s.ds.refinement_status.item() == "rejected"
     assert s.phases == before_phases
     assert all(a is b for a, b in zip(history,
         (s.gpx_previous, s.ds_previous, s.phases_previous)))
+    assert s.ds.refinement_label.item() == method
     assert plotted == []
     assert s.last_refinement_rejection_reason == "insufficient_gof_improvement"
 
@@ -397,3 +405,87 @@ def test_direct_entry_points_reject_insufficient_improvement(tmp_path, monkeypat
         s.replace_gpx_with(source)
     assert not s.last_refinement_accepted
     assert s.gpx.filename.read_bytes() == before
+    assert s.ds.refinement_label.item() == method
+
+
+def refine_without_updates(s, **kwargs):
+    return s.refine(update_ds=False, update_ds_phases=False, update_phases=False,
+                    update_previous_ds=False, update_previous_gpx=False,
+                    update_previous_phases=False, **kwargs)
+
+
+def test_rwp_history_records_retained_and_attempted_values(tmp_path):
+    s = sample(tmp_path, [phase()], [[-0.01]])
+    before = s.ds.copy(deep=True)
+    refine_without_updates(s, log_label="trial Uiso")
+    s.gpx.outcomes = [[0.02]]
+    refine_without_updates(s, log_label="valid Uiso")
+    refine_without_updates(s)
+
+    np.testing.assert_equal(s.ds.refinement_step.values, [1, 2, 3])
+    np.testing.assert_equal(s.ds.rwp_history.values, [12., 1., 1.])
+    np.testing.assert_equal(s.ds.rwp_attempted_history.values, [1., 1., 1.])
+    assert s.ds.refinement_status.values.tolist() == ["rejected", "accepted", "accepted"]
+    assert s.ds.refinement_reason.values.tolist() == ["negative_uiso", "", ""]
+    assert s.ds.refinement_label.values.tolist() == ["trial Uiso", "valid Uiso", "refine"]
+    assert s.ds.rwp_history.attrs["units"] == "%"
+    times = [datetime.fromisoformat(t) for t in s.ds.refinement_timestamp.values]
+    assert times == sorted(times)
+    assert all(t.utcoffset().total_seconds() == 0 for t in times)
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), before)
+
+
+def test_rwp_history_logs_optimizer_error_and_reraises(tmp_path, monkeypatch):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    def fail():
+        raise RuntimeError("optimizer failed")
+    monkeypatch.setattr(s.gpx, "refine", fail)
+    with pytest.raises(RuntimeError, match="optimizer failed"):
+        refine_without_updates(s)
+    assert np.isnan(s.ds.rwp_history.item())
+    assert np.isnan(s.ds.rwp_attempted_history.item())
+    assert s.ds.refinement_status.item() == "error"
+    assert s.ds.refinement_reason.item() == "RuntimeError: optimizer failed"
+
+
+@pytest.mark.parametrize("initial_status", [None, "accepted", "rejected", "error"])
+def test_rwp_history_netcdf_round_trip_and_continue(tmp_path, monkeypatch, initial_status):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s._reset_rwp_history()
+    if initial_status == "rejected":
+        s.gpx.outcomes = [[-0.01]]
+    if initial_status == "error":
+        with monkeypatch.context() as patch:
+            def fail():
+                raise RuntimeError("optimizer failed")
+            patch.setattr(s.gpx, "refine", fail)
+            with pytest.raises(RuntimeError, match="optimizer failed"):
+                refine_without_updates(s)
+    elif initial_status is not None:
+        refine_without_updates(s)
+    s.gpx.outcomes = [[0.02]]
+    before = s.ds.copy(deep=True)
+    path = tmp_path / "history.nc"
+    s.export_ds_to(path)
+    s.load_xrd_data(from_nc_file=path, plot=False)
+    xr.testing.assert_identical(s.ds, before)
+    refine_without_updates(s)
+    count = int(initial_status is not None) + 1
+    assert s.ds.sizes["refinement_step"] == count
+    np.testing.assert_equal(s.ds.refinement_step.values, np.arange(1, count + 1))
+    assert s.ds.rwp_history.values[-1] == 1.
+    if initial_status is not None:
+        assert s.ds.refinement_status.values[0] == initial_status
+
+
+def test_rwp_history_reset_preserves_profile_and_is_per_instance(tmp_path):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    other = sample(tmp_path, [phase()], [[0.02]])
+    before = s.ds.copy(deep=True)
+    refine_without_updates(s)
+    assert "rwp_history" not in other.ds
+    s._reset_rwp_history()
+    assert s.ds.sizes["refinement_step"] == 0
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), before)
+    refine_without_updates(s)
+    assert s.ds.refinement_step.item() == 1

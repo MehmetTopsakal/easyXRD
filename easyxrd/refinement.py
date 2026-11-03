@@ -7,6 +7,7 @@ import string
 import fnmatch
 import time
 import copy
+from datetime import datetime, timezone
 import numpy as np
 import xarray as xr
 from pymatgen.core.structure import Structure
@@ -25,6 +26,71 @@ class RefinementMixin:
     positive decrease, or None to disable the improvement check. Setup creates
     the initial fit and defaults to no improvement check.
     """
+    def _reset_rwp_history(self):
+        """Start an empty dataset history for a new GSAS-II engine session."""
+        if "refinement_step" in self.ds.dims:
+            self.ds = self.ds.drop_dims("refinement_step")
+        history = xr.Dataset(
+            {
+                "rwp_history": ("refinement_step", np.array([], dtype=float)),
+                "rwp_attempted_history": ("refinement_step", np.array([], dtype=float)),
+            },
+            coords={
+                "refinement_step": np.array([], dtype=int),
+                **{name: ("refinement_step", np.array([], dtype=str)) for name in (
+                    "refinement_status", "refinement_label", "refinement_timestamp",
+                    "refinement_reason",
+                )},
+            },
+        )
+        history.rwp_history.attrs = {
+            "long_name": "Retained Rwp after each refinement attempt",
+            "units": "%",
+        }
+        history.rwp_attempted_history.attrs = {
+            "long_name": "Optimizer Rwp before acceptance or rollback",
+            "units": "%",
+        }
+        history.refinement_timestamp.attrs["timezone"] = "UTC"
+        self.ds = xr.merge([self.ds, history], join="exact")
+
+    @staticmethod
+    def _project_rwp(project):
+        """A new GSAS-II project may not have fit statistics yet."""
+        try:
+            return float(project["Covariance"]["data"]["Rvals"]["Rwp"])
+        except (KeyError, TypeError, ValueError):
+            return np.nan
+
+    def _record_rwp(self, attempted_rwp, status, label, reason=""):
+        """Append independently of dataset/phase update flags and rollback."""
+        if "rwp_history" not in self.ds:
+            self._reset_rwp_history()
+        previous = self.ds[["rwp_history", "rwp_attempted_history"]]
+        entry = xr.Dataset(
+            {
+                "rwp_history": ("refinement_step", [
+                    self._project_rwp(self.gpx) if status != "error" else np.nan
+                ]),
+                "rwp_attempted_history": ("refinement_step", [attempted_rwp]),
+            },
+            coords={
+                "refinement_step": [previous.sizes["refinement_step"] + 1],
+                "refinement_status": ("refinement_step", [status]),
+                "refinement_label": ("refinement_step", [label]),
+                "refinement_timestamp": ("refinement_step", [
+                    datetime.now(timezone.utc).isoformat()
+                ]),
+                "refinement_reason": ("refinement_step", [reason]),
+            },
+        )
+        history = xr.concat([previous, entry], dim="refinement_step")
+        # Assigning into the old dataset would align with its old step index
+        # and silently discard the appended row. Merge against the profile data.
+        self.ds = xr.merge([
+            self.ds.drop_dims("refinement_step"), history
+        ], join="exact")
+
     @staticmethod
     def _validate_gof_improvement(min_gof_improvement):
         if min_gof_improvement is not None and (
@@ -57,7 +123,8 @@ class RefinementMixin:
         # would make Jupyter echo it again as the cell result.
         return None
 
-    def _refine_gpx(self, gpx_previous, verbose=False, min_gof_improvement=None):
+    def _refine_gpx(self, gpx_previous, verbose=False, min_gof_improvement=None,
+                    log_label="refine"):
         """Run GSAS-II and restore invalid or insufficiently improved results.
 
         Returns a rejection message, or None when the result is accepted. This
@@ -72,12 +139,18 @@ class RefinementMixin:
                             getattr(self, "ds_previous", None))
             if isinstance(dataset, xr.Dataset)
         ]
-        if self.verbose or verbose:
-            print("\n\n\n\n\n")
-            self.gpx.refine()
-        else:
-            with HiddenPrints():
+        try:
+            if self.verbose or verbose:
+                print("\n\n\n\n\n")
                 self.gpx.refine()
+            else:
+                with HiddenPrints():
+                    self.gpx.refine()
+        except Exception as exc:
+            self._record_rwp(np.nan, "error", log_label,
+                             f"{type(exc).__name__}: {exc}")
+            raise
+        attempted_rwp = self._project_rwp(self.gpx)
 
         negative_sites = []
         for phase in self.gpx.phases():
@@ -109,6 +182,7 @@ class RefinementMixin:
 
         self.last_refinement_accepted = reason is None
         if reason is None:
+            self._record_rwp(attempted_rwp, "accepted", log_label)
             return None
 
         self.gpx = gpx_previous
@@ -117,9 +191,11 @@ class RefinementMixin:
         # G2Project.refine() writes its result before returning. Replace that
         # rejected result on disk as well as in memory.
         self.gpx_saver()
+        self._record_rwp(attempted_rwp, "rejected", log_label,
+                         self.last_refinement_rejection_reason)
         message = (
             "Refinement discarded because of " + reason
-            + ". \n      Previous project restored; dataset and phases unchanged."
+            + ". \n      Previous project restored; profile data and phases unchanged."
         )
         print(" ❌--" + message)
         return message
@@ -142,16 +218,22 @@ class RefinementMixin:
         verbose=False,
         plot=False,
         min_gof_improvement=None,
+        log_label="refine",
     ):
         """Refine, discarding the entire result if any isotropic U is negative.
 
         Rejection restores the pre-refinement GPX in memory and on disk, leaves
-        datasets, structures and previous-result history unchanged, and returns
+        profile data, structures and previous-result snapshots unchanged, and returns
         a diagnostic string. Zero Uiso is accepted. When min_gof_improvement is
         set, also require a positive GoF decrease of at least that percentage
         (default 1%). Pass None to disable the improvement check.
         Results discarded for insufficient GoF improvement never plot, even
         when plot=True.
+
+        Each optimizer attempt appends to ds.rwp_history, even with update_ds
+        disabled or when the result is rejected. ds.rwp_attempted_history and
+        refinement_status distinguish trial values from retained fits. Use
+        log_label to describe a manually configured refinement step.
         """
         gpx_previous = self._prepare_refinement(min_gof_improvement)
         if update_previous_ds:
@@ -176,7 +258,8 @@ class RefinementMixin:
             phases_previous = None
 
         rejection = self._refine_gpx(
-            gpx_previous, verbose=verbose, min_gof_improvement=min_gof_improvement
+            gpx_previous, verbose=verbose, min_gof_improvement=min_gof_improvement,
+            log_label=log_label,
         )
         if rejection is not None:
             if plot and self.last_refinement_rejection_reason != "insufficient_gof_improvement":
@@ -508,6 +591,9 @@ class RefinementMixin:
 
         The first pass establishes the baseline GoF and is always ungated.
         min_gof_improvement defaults to None during setup.
+        Starts a new ds.rwp_history on the refinement_step dimension. Setup's
+        initial optimizer passes are logged too; do_1st_refinement=False leaves
+        an empty history until the first refinement attempt.
         """
         self._validate_gof_improvement(min_gof_improvement)
 
@@ -801,6 +887,7 @@ class RefinementMixin:
                     min(self.ds.i1d.values),
                 ]
 
+        self._reset_rwp_history()
         if do_1st_refinement:
 
             _ = self.refine(
@@ -812,6 +899,7 @@ class RefinementMixin:
                 update_previous_phases=False,
                 verbose=False,
                 min_gof_improvement=None,
+                log_label="setup_initial",
             )
 
             self.gpx.set_refinement(
@@ -836,6 +924,7 @@ class RefinementMixin:
                 update_previous_phases=False,
                 verbose=False,
                 min_gof_improvement=None,
+                log_label="setup_LeBail",
             )
 
             title_str = self._report_refinement(
@@ -890,6 +979,7 @@ class RefinementMixin:
             update_previous_gpx=True,
             update_previous_phases=False,
             min_gof_improvement=min_gof_improvement,
+            log_label="refine_background",
         )
         if not self.last_refinement_accepted:
             return self._restore_rejected_refinement(
@@ -981,6 +1071,7 @@ class RefinementMixin:
             update_previous_gpx=True,
             update_previous_phases=False,
             min_gof_improvement=min_gof_improvement,
+            log_label="refine_instrument_parameters",
         )
         if not self.last_refinement_accepted:
             return self._restore_rejected_refinement(
@@ -1082,6 +1173,7 @@ class RefinementMixin:
                 update_previous_gpx=True,
                 update_previous_phases=False,
                 min_gof_improvement=min_gof_improvement,
+                log_label="set_LeBail",
             )
             if not self.last_refinement_accepted:
                 return self._restore_rejected_refinement(
@@ -1136,6 +1228,7 @@ class RefinementMixin:
             update_previous_gpx=True,
             update_previous_phases=True,
             min_gof_improvement=min_gof_improvement,
+            log_label="refine_cell_parameters",
         )
         if not self.last_refinement_accepted:
             return self._restore_rejected_refinement(
@@ -1288,6 +1381,7 @@ class RefinementMixin:
             update_previous_gpx=True,
             update_previous_phases=True,
             min_gof_improvement=min_gof_improvement,
+            log_label="refine_strain_broadening",
         )
         if not self.last_refinement_accepted:
             return self._restore_rejected_refinement(
@@ -1432,6 +1526,7 @@ class RefinementMixin:
             update_previous_gpx=True,
             update_previous_phases=True,
             min_gof_improvement=min_gof_improvement,
+            log_label="refine_size_broadening",
         )
         if not self.last_refinement_accepted:
             return self._restore_rejected_refinement(
@@ -1571,6 +1666,7 @@ class RefinementMixin:
             update_previous_gpx=True,
             update_previous_phases=True,
             min_gof_improvement=min_gof_improvement,
+            log_label="refine_phase_fractions",
         )
         if not self.last_refinement_accepted:
             return self._restore_rejected_refinement(
@@ -1684,6 +1780,7 @@ class RefinementMixin:
                 update_previous_gpx=True,
                 update_previous_phases=True,
                 min_gof_improvement=min_gof_improvement,
+                log_label="refine_preferred_orientation",
             )
             if not self.last_refinement_accepted:
                 return self._restore_rejected_refinement(
@@ -1703,6 +1800,7 @@ class RefinementMixin:
                 update_previous_gpx=True,
                 update_previous_phases=True,
                 min_gof_improvement=min_gof_improvement,
+                log_label="refine_preferred_orientation",
             )
             if not self.last_refinement_accepted:
                 return self._restore_rejected_refinement(
@@ -1832,6 +1930,7 @@ class RefinementMixin:
             update_previous_gpx=True,
             update_previous_phases=True,
             min_gof_improvement=min_gof_improvement,
+            log_label="refine_site_property",
         )
         if not self.last_refinement_accepted:
             return self._restore_rejected_refinement(
@@ -1896,7 +1995,8 @@ class RefinementMixin:
         import GSASIIscriptable as G2sc
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
-        self._refine_gpx(gpx_previous, min_gof_improvement=min_gof_improvement)
+        self._refine_gpx(gpx_previous, min_gof_improvement=min_gof_improvement,
+                         log_label="fine_tune_gpx")
 
     ###############################################################################################
     def replace_gpx_with(self, newgpx_to_replace, min_gof_improvement=1.0):
@@ -1906,7 +2006,8 @@ class RefinementMixin:
         import GSASIIscriptable as G2sc
 
         self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
-        self._refine_gpx(gpx_previous, min_gof_improvement=min_gof_improvement)
+        self._refine_gpx(gpx_previous, min_gof_improvement=min_gof_improvement,
+                         log_label="replace_gpx_with")
 
     ###############################################################################################
     def export_gpx_to(self, to="gsas.gpx"):

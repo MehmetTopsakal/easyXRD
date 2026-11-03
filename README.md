@@ -164,6 +164,31 @@ After this step, you can contine with `exrd` as we explained in the Google Colab
 
 
 
+## Rwp history in the dataset
+
+`sample.setup_gsas2_refiner(...)` starts a new refinement history in
+`sample.ds`. Each optimizer attempt, including setup's initial passes and calls
+through helpers such as `refine_background()`, appends one `refinement_step`:
+
+```python
+sample.ds.rwp_history                    # retained Rwp (%) after each attempt
+sample.ds.rwp_attempted_history          # optimizer Rwp before acceptance/rollback
+sample.ds.refinement_status              # "accepted", "rejected", or "error"
+sample.ds.refinement_label               # helper name or a custom log_label
+
+sample.refine(log_label="Final joint refinement")
+sample.ds.rwp_history.plot(marker="o")
+sample.export_ds_to("refined.nc")         # includes the history
+```
+
+The history updates even when `refine(update_ds=False, ...)` disables profile
+updates. Rejected attempts retain the previous fit's Rwp in `rwp_history` and
+keep the trial value in `rwp_attempted_history`; `refinement_reason` records why
+the result was rejected. Optimizer errors are logged with NaN Rwp values and
+then re-raised. Each entry has a UTC `refinement_timestamp`. History survives
+NetCDF export/reload; setting up a new GSAS-II engine resets it. With
+`do_1st_refinement=False`, the history starts empty.
+
 ## Automatic date versions
 
 Enable the repository's version hook once after cloning:
