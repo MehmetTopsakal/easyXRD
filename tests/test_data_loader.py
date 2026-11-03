@@ -2,6 +2,7 @@ import os
 import tempfile
 import numpy as np
 import pytest
+import xarray as xr
 from easyxrd import exrd
 
 
@@ -96,3 +97,83 @@ def test_export_and_load_netcdf():
         e2.load_xrd_data(from_nc_file=nc_path, plot=False)
         assert "i1d" in e2.ds
         np.testing.assert_allclose(e2.ds.i1d.values, e1.ds.i1d.values, rtol=1e-5)
+
+
+@pytest.mark.parametrize("use_save_dir", [False, True])
+@pytest.mark.parametrize("include_i2d", [False, True])
+def test_export_refinement_metadata(tmp_path, use_save_dir, include_i2d):
+    """GSAS-II Rvals must export without changing the live analysis dataset."""
+    sample = exrd()
+    shifts = {":0:Scale": np.float64(6.616707336669345e-05),
+              "0::A0": np.float64(-1.026268973268291e-05)}
+    sample.ds = xr.Dataset(
+        {"i1d": ("radial", [10., 20.]),
+         "i1d_refined": ("radial", [9., 19.]),
+         "i1d_baseline": ("radial", [1., 1.])},
+        coords={"radial": [2., 3.]},
+        attrs={"lastShifts": shifts, "converged": np.bool_(True),
+               "Aborted": False, "Rwp": np.float64(8.53), "Nobs": 2,
+               "PhaseInd_0_cif": "data_Ni\n_cell_length_a 3.52254"},
+    )
+    if include_i2d:
+        sample.ds["i2d"] = (("azimuthal_i2d", "radial_i2d"), [[1., 2.], [3., 4.]])
+    sample.ds.i1d.attrs = {"radial_unit": "q_A^-1", "metadata": {"source": "Ni"},
+                           "optional": None}
+    sample.ds.radial.attrs = {"calibrated": True}
+    before = sample.ds.copy(deep=True)
+    path = tmp_path / "refined.nc"
+    if use_save_dir:
+        sample.export_ds_to(save_dir=tmp_path, save_name=path.name)
+    else:
+        sample.export_ds_to(to=path)
+
+    restored = exrd()
+    restored.load_xrd_data(from_nc_file=path, plot=False)
+    xr.testing.assert_equal(restored.ds, before)
+    assert restored.ds.attrs["lastShifts"] == str(shifts)
+    assert restored.ds.attrs["converged"] == "True"
+    assert restored.ds.attrs["Aborted"] == "False"
+    assert restored.ds.attrs["Rwp"] == 8.53
+    assert restored.ds.attrs["Nobs"] == 2
+    assert restored.ds.attrs["PhaseInd_0_cif"] == before.attrs["PhaseInd_0_cif"]
+    assert restored.ds.i1d.attrs["metadata"] == "{'source': 'Ni'}"
+    assert restored.ds.i1d.attrs["optional"] == "None"
+    assert restored.ds.radial.attrs["calibrated"] == "True"
+    if include_i2d:
+        assert restored.ds.i2d.encoding["zlib"]
+        assert restored.ds.i2d.encoding["complevel"] == 9
+    xr.testing.assert_identical(sample.ds, before)
+    assert sample.ds.attrs["lastShifts"] is shifts
+
+
+@pytest.mark.parametrize("value, expected", [
+    ([1, 2], [1, 2]),
+    ((1.5, 2.5), [1.5, 2.5]),
+    (["Ni", "Cu"], ["Ni", "Cu"]),
+    (np.array(["Ni", "Cu"]), ["Ni", "Cu"]),
+    (np.array([1., 2.]), [1., 2.]),
+    (np.array(3.), 3.),
+    (np.array([True, False]), [1, 0]),
+    ([[1, 2], [3, 4]], "[[1, 2], [3, 4]]"),
+    ([1, [2, 3]], "[1, [2, 3]]"),
+    ([{"Ni": 1.}], "[{'Ni': 1.0}]"),
+    (np.array([{"Ni": 1.}], dtype=object), "[{'Ni': 1.0}]"),
+])
+def test_export_attribute_arrays(tmp_path, value, expected):
+    sample = exrd()
+    sample.ds = xr.Dataset({"i1d": ("radial", [1., 2.])}, attrs={"metadata": value})
+    before = sample.ds.copy(deep=True)
+    path = tmp_path / "arrays.nc"
+    sample.export_ds_to(path)
+    with xr.open_dataset(path, engine="h5netcdf") as restored:
+        np.testing.assert_equal(restored.attrs["metadata"], expected)
+    xr.testing.assert_identical(sample.ds, before)
+
+
+def test_export_write_errors_propagate(tmp_path):
+    sample = exrd()
+    sample.ds = xr.Dataset({"i1d": ("radial", [1., 2.])})
+    before = sample.ds.copy(deep=True)
+    with pytest.raises(OSError):
+        sample.export_ds_to(tmp_path / "missing_directory" / "refined.nc")
+    xr.testing.assert_identical(sample.ds, before)

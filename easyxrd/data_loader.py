@@ -8,6 +8,30 @@ from scipy.signal import medfilt2d
 from .plotters import exrd_plotter
 
 
+def _netcdf_attr_value(value):
+    """Keep NetCDF-compatible metadata and represent other values as text."""
+    # h5netcdf rejects booleans even though Python considers them numbers.
+    if isinstance(value, (bool, np.bool_)):
+        return str(bool(value))
+    if isinstance(value, (str, bytes, int, float, np.integer, np.floating)):
+        return value
+    if isinstance(value, (np.ndarray, list, tuple)):
+        try:
+            array = np.asarray(value)
+        except (TypeError, ValueError):
+            return str(value)
+        if array.ndim <= 1 and array.dtype.kind in "biufSU":
+            if array.dtype.kind == "b":
+                return array.astype("int8")
+            if array.dtype.kind == "U":
+                # h5py accepts Python strings, but not NumPy Unicode arrays.
+                return array.tolist()
+            return value
+    # Includes GSAS-II dictionaries (e.g. lastShifts), None, nested lists,
+    # and object arrays, which cannot be written as NetCDF attributes.
+    return str(value)
+
+
 class DataLoaderMixin:
     """
     Mixin class providing XRD data loading (1D and 2D) and data export capabilities.
@@ -336,32 +360,24 @@ class DataLoaderMixin:
             )
 
     def export_ds_to(self, to=None, save_dir=None, save_name=None):
-        """Export xarray dataset to NetCDF format."""
+        """Export the dataset to NetCDF without changing in-memory metadata.
 
-        if to is None:
-            try:
-                self.ds.to_netcdf(
-                    "%s/%s" % (save_dir, save_name),
-                    engine="h5netcdf",
-                    encoding={"i2d": {"zlib": True, "complevel": 9}},
-                )
-            except:
-                self.ds.to_netcdf(
-                    "%s/%s" % (save_dir, save_name),
-                    engine="h5netcdf",
-                )
-        else:
-            try:
-                self.ds.to_netcdf(
-                    "%s" % (to),
-                    engine="h5netcdf",
-                    encoding={"i2d": {"zlib": True, "complevel": 9}},
-                )
-            except:
-                self.ds.to_netcdf(
-                    "%s" % (to),
-                    engine="h5netcdf",
-                )
+        Unsupported dataset, variable, and coordinate attributes (including
+        GSAS-II dictionaries and boolean scalars) are stored as text. Boolean
+        attribute arrays are stored as integers. Numeric and string metadata
+        retain their native representation. The i2d variable is compressed
+        when present.
+        """
+        ds_out = self.ds.copy(deep=False)
+        ds_out.attrs = {k: _netcdf_attr_value(v) for k, v in self.ds.attrs.items()}
+        for name in ds_out.variables:
+            ds_out[name].attrs = {
+                k: _netcdf_attr_value(v) for k, v in self.ds[name].attrs.items()
+            }
+
+        path = to if to is not None else os.path.join(save_dir, save_name)
+        encoding = {"i2d": {"zlib": True, "complevel": 9}} if "i2d" in ds_out else {}
+        ds_out.to_netcdf(path, engine="h5netcdf", encoding=encoding)
 
     def export_i1d_to(
         self, to="data.dat", mode="xy", subtract_baseline=False, fmt="%.4e %.4e", header=False,
