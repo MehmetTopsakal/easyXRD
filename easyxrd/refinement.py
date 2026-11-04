@@ -14,7 +14,7 @@ from pymatgen.core.structure import Structure
 
 from .utils import HiddenPrints
 from . import easyxrd_defaults
-from .plotters import exrd_plotter
+from .plotters import exrd_plotter, refinement_plotter
 
 
 class RefinementMixin:
@@ -2015,3 +2015,28 @@ class RefinementMixin:
         shutil.copy("%s/gsas.gpx" % self.gsasii_run_directory, to)
 
     ###############################################################################################
+    def plot_refinement_history(
+        self,
+        figsize=(8, 6),
+        dpi=128,
+        min_step_detail=4,
+        export_fig_as=None,
+        show=False,
+        return_fig=False,
+    ):
+        """
+        Plot comprehensive refinement convergence history showing accepted values and rollbacks.
+        """
+        ds = getattr(self, "ds", None)
+        return refinement_plotter(
+            ds,
+            figsize=figsize,
+            dpi=dpi,
+            min_step_detail=min_step_detail,
+            export_fig_as=export_fig_as,
+            show=show,
+            return_fig=return_fig,
+        )
+
+    # Backward-compatible alias
+    plot_refinement = plot_refinement_history

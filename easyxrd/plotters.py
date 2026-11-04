@@ -509,6 +509,13 @@ def exrd_plotter(
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
 
+    elif plot_hint in ("refinement_history", "plot_refinement_history", "refinement", "plot_refinement"):
+        return refinement_plotter(
+            ds,
+            figsize=figsize,
+            export_fig_as=export_fig_as,
+        )
+
     elif plot_hint is None:
         fig = plt.figure(figsize=figsize, dpi=128)
         if has_i2d:
@@ -746,10 +753,261 @@ def exrd_plotter(
         plt.savefig(export_fig_as, dpi=128)
 
 
+def refinement_plotter(
+    ds,
+    figsize=(8, 6),
+    dpi=150,
+    min_step_detail=4,
+    export_fig_as=None,
+    show=False,
+    return_fig=False,
+):
+    """
+    Plot comprehensive refinement convergence history showing full progression
+    and zoomed-in micro-refinements with accepted vs. rejected attempts.
+    """
+    if ds is None or "rwp_history" not in ds or ds.sizes.get("refinement_step", 0) == 0:
+        raise ValueError(
+            "No refinement history found in dataset. Run a refinement step first."
+        )
+
+    steps = np.asarray(ds.refinement_step.values)
+    rwp = np.asarray(ds.rwp_history.values)
+    rwp_att = np.asarray(ds.rwp_attempted_history.values)
+    status = np.asarray(ds.refinement_status.values)
+    labels = np.asarray(ds.refinement_label.values)
+
+    # Clean parameter labels
+    def format_label(l):
+        l_str = str(l).replace("refine_", "").replace("setup_", "")
+        mapping = {
+            "initial": "Init",
+            "LeBail": "Le Bail",
+            "background": "Bkg",
+            "cell_parameters": "Cell",
+            "size_broadening": "Size",
+            "strain_broadening": "Strain",
+            "site_property": "Site U",
+            "phase_fractions": "Phase Frac",
+            "preferred_orientation": "Pref Orient",
+            "instrument_parameters": "Inst Prm",
+        }
+        return mapping.get(l_str, l_str.replace("_", " "))
+
+    step_labels = [format_label(l) for l in labels]
+
+    # Detect boundary where Le Bail was switched off
+    lebail_off_indices = [i for i, l in enumerate(labels) if l == "set_LeBail"]
+    has_stage_split = len(lebail_off_indices) > 0
+    if has_stage_split:
+        split_idx = lebail_off_indices[0]
+        split_step = steps[split_idx] - 0.5
+    else:
+        split_step = None
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=figsize, dpi=dpi, gridspec_kw={"height_ratios": [1, 1.35]}
+    )
+
+    # --- Panel 1: Full Refinement Overview ---
+    y_min_val = max(0, float(np.nanmin(rwp)) - 1)
+    y_max_val = float(np.nanmax(rwp)) + (float(np.nanmax(rwp)) - y_min_val) * 0.15
+
+    if split_step is not None and 1 < split_idx < len(steps):
+        ax1.axvspan(0.5, split_step, color="#f1f5f9", alpha=0.8, zorder=1)
+        ax1.axvspan(split_step, len(steps) + 0.5, color="#fefce8", alpha=0.6, zorder=1)
+        ax1.axvline(split_step, color="#94a3b8", linestyle="--", lw=1, zorder=2)
+
+        text_y = y_max_val - (y_max_val - y_min_val) * 0.15
+        ax1.text(
+            split_step / 2,
+            text_y,
+            "Le Bail Stage",
+            ha="center",
+            fontsize=10,
+            fontweight="bold",
+            color="#475569",
+        )
+        ax1.text(
+            (split_step + len(steps)) / 2,
+            text_y,
+            "Rietveld Stage",
+            ha="center",
+            fontsize=10,
+            fontweight="bold",
+            color="#854d0e",
+        )
+
+    ax1.plot(
+        steps,
+        rwp,
+        color="#0284c7",
+        lw=2.2,
+        label=r"Accepted $R_{\mathrm{wp}}$",
+        zorder=3,
+    )
+    ax1.scatter(
+        steps[status == "accepted"],
+        rwp[status == "accepted"],
+        color="#16a34a",
+        edgecolor="white",
+        s=55,
+        lw=1.2,
+        zorder=5,
+        label="Accepted step",
+    )
+    if np.any(status == "rejected"):
+        ax1.scatter(
+            steps[status == "rejected"],
+            rwp_att[status == "rejected"],
+            color="#dc2626",
+            marker="x",
+            s=60,
+            lw=2,
+            zorder=5,
+            label="Rejected attempt",
+        )
+
+    ax1.set_xlabel("Refinement Step", fontsize=11, fontweight="bold")
+    ax1.set_ylabel(r"$R_{\mathrm{wp}}$ [%]", fontsize=11, fontweight="bold")
+    ax1.set_title("Full Refinement History", fontsize=12, fontweight="bold", pad=10)
+    tick_step = 2 if len(steps) > 8 else 1
+    ax1.set_xticks(range(1, len(steps) + 1, tick_step))
+    ax1.set_xlim(0.5, len(steps) + 0.5)
+    ax1.set_ylim(y_min_val, y_max_val)
+    ax1.grid(True, linestyle="--", alpha=0.4, color="#cbd5e1")
+    ax1.legend(
+        loc="center right",
+        frameon=True,
+        facecolor="white",
+        edgecolor="#cbd5e1",
+        framealpha=0.95,
+    )
+
+    # --- Panel 2: Detailed Micro-refinements ---
+    effective_min_step = min_step_detail if len(steps) >= min_step_detail + 2 else 1
+    sub_mask = steps >= effective_min_step
+    s_steps = steps[sub_mask]
+    s_rwp = rwp[sub_mask]
+    s_att = rwp_att[sub_mask]
+    s_status = status[sub_mask]
+    s_labels = [step_labels[int(s) - 1] for s in s_steps]
+
+    if split_step is not None and effective_min_step < split_step:
+        ax2.axvspan(
+            effective_min_step - 0.5,
+            split_step,
+            color="#f1f5f9",
+            alpha=0.8,
+            zorder=1,
+        )
+        ax2.axvspan(
+            split_step,
+            len(steps) + 0.5,
+            color="#fefce8",
+            alpha=0.6,
+            zorder=1,
+        )
+        ax2.axvline(split_step, color="#94a3b8", linestyle="--", lw=1, zorder=2)
+
+    ax2.plot(s_steps, s_rwp, color="#0284c7", lw=2.2, zorder=3)
+    acc_m = s_status == "accepted"
+    rej_m = s_status == "rejected"
+
+    ax2.scatter(
+        s_steps[acc_m],
+        s_rwp[acc_m],
+        color="#16a34a",
+        edgecolor="white",
+        s=65,
+        lw=1.2,
+        zorder=5,
+        label="Accepted",
+    )
+    if np.any(rej_m):
+        ax2.scatter(
+            s_steps[rej_m],
+            s_att[rej_m],
+            color="#dc2626",
+            marker="x",
+            s=75,
+            lw=2,
+            zorder=5,
+            label="Rejected attempt",
+        )
+        for s, att, acc in zip(s_steps[rej_m], s_att[rej_m], s_rwp[rej_m]):
+            ax2.plot(
+                [s, s], [acc, att], color="#dc2626", linestyle=":", lw=1.4, zorder=4
+            )
+
+    ax2.set_xticks(s_steps)
+    ax2.set_xticklabels(
+        [f"{s}\n{lbl}" for s, lbl in zip(s_steps, s_labels)],
+        fontsize=8.5,
+        rotation=30,
+        ha="right",
+    )
+    ax2.set_xlabel("Step & Refined Parameter", fontsize=11, fontweight="bold")
+    ax2.set_ylabel(r"$R_{\mathrm{wp}}$ [%]", fontsize=11, fontweight="bold")
+    ax2.set_title(
+        f"Detailed Convergence & Rollbacks (Steps {s_steps[0]}–{s_steps[-1]})",
+        fontsize=12,
+        fontweight="bold",
+        pad=10,
+    )
+    ax2.set_xlim(effective_min_step - 0.5, len(steps) + 0.5)
+
+    detail_min = min(float(np.nanmin(s_rwp)), float(np.nanmin(s_att)))
+    detail_max = max(float(np.nanmax(s_rwp)), float(np.nanmax(s_att)))
+    ax2.set_ylim(max(0, detail_min - 0.25), detail_max + 0.35)
+    ax2.grid(True, linestyle="--", alpha=0.4, color="#cbd5e1")
+
+    if has_stage_split:
+        switch_step = steps[split_idx]
+        if switch_step in s_steps:
+            rwp_switch = rwp[split_idx]
+            ax2.annotate(
+                "Switch to Rietveld\n(Le Bail = False)",
+                xy=(switch_step, rwp_switch),
+                xytext=(switch_step + 1.0, min(detail_max + 0.15, rwp_switch + 0.15)),
+                arrowprops=dict(arrowstyle="->", color="#334155", lw=1.2),
+                fontsize=9,
+                fontweight="normal",
+                ha="left",
+                bbox=dict(
+                    boxstyle="round,pad=0.3",
+                    facecolor="#fefce8",
+                    edgecolor="#ca8a04",
+                    alpha=0.9,
+                ),
+            )
+
+    ax2.legend(
+        loc="best",
+        frameon=True,
+        facecolor="white",
+        edgecolor="#cbd5e1",
+        framealpha=0.95,
+    )
+
+    if fig.get_layout_engine() is None:
+        fig.tight_layout()
+
+    if export_fig_as is not None:
+        plt.savefig(export_fig_as, dpi=dpi)
+
+    if show:
+        plt.show()
+
+    if return_fig:
+        return fig, (ax1, ax2)
+
+
 __all__ = [
     "i1d_plotter",
     "i2d_plotter",
     "phases_plotter",
     "exrd_plotter",
+    "refinement_plotter",
     "_calc_reflection_pattern",
 ]

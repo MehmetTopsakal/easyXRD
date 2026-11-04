@@ -8,7 +8,12 @@ from pymatgen.core.structure import Structure
 from pymatgen.core.lattice import Lattice
 from pymatgen.analysis.diffraction.xrd import XRDCalculator
 from easyxrd import exrd
-from easyxrd.plotters import _calc_reflection_pattern, exrd_plotter, i2d_plotter
+from easyxrd.plotters import (
+    _calc_reflection_pattern,
+    exrd_plotter,
+    i2d_plotter,
+    refinement_plotter,
+)
 
 
 def test_calc_reflection_pattern():
@@ -79,3 +84,69 @@ def test_i2d_plotter_nonpositive_intensities(with_baseline, logscale):
         xr.testing.assert_identical(ds, original)
     finally:
         plt.close(fig)
+
+
+def test_plot_refinement_history_empty():
+    e = exrd()
+    with pytest.raises(ValueError, match="No refinement history found"):
+        e.plot_refinement_history()
+
+
+def test_plot_refinement_history_execution(tmp_path):
+    ds = xr.Dataset(
+        {
+            "rwp_history": (
+                "refinement_step",
+                [29.4, 29.4, 17.6, 6.8, 6.7, 6.7, 6.7, 7.8, 7.6, 6.8],
+            ),
+            "rwp_attempted_history": (
+                "refinement_step",
+                [29.4, 29.4, 17.6, 6.8, 6.7, 6.7, 6.6, 7.8, 7.6, 6.8],
+            ),
+        },
+        coords={
+            "refinement_step": list(range(1, 11)),
+            "refinement_status": (
+                "refinement_step",
+                ["accepted"] * 6 + ["rejected"] + ["accepted"] * 3,
+            ),
+            "refinement_label": (
+                "refinement_step",
+                [
+                    "setup_initial",
+                    "setup_LeBail",
+                    "refine_background",
+                    "refine_cell_parameters",
+                    "refine_background",
+                    "refine_cell_parameters",
+                    "refine_size_broadening",
+                    "set_LeBail",
+                    "refine_background",
+                    "refine_strain_broadening",
+                ],
+            ),
+        },
+    )
+    e = exrd()
+    e.ds = ds
+
+    export_path = str(tmp_path / "refinement.png")
+    fig, (ax1, ax2) = e.plot_refinement_history(return_fig=True, export_fig_as=export_path)
+    assert fig is not None
+    assert ax1 is not None
+    assert ax2 is not None
+    assert len(ax1.lines) > 0
+    assert len(ax2.lines) > 0
+    plt.close("all")
+
+    # Also test default call without return_fig
+    assert e.plot_refinement_history() is None
+    plt.close("all")
+
+    # Test backward-compatible alias
+    assert e.plot_refinement() is None
+    plt.close("all")
+
+    # Also test via plot(plot_hint="refinement_history")
+    e.plot(plot_hint="refinement_history", export_fig_as=export_path)
+    plt.close("all")
