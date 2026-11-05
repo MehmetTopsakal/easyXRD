@@ -1207,6 +1207,121 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    def _refine_cell_scale_trials(self, scales, phase_ind, min_gof_improvement):
+        """Refine independent lattice starts, retaining the best accepted fit."""
+        indices = (list(range(len(self.gpx.phases()))) if phase_ind == "all"
+                   else [phase_ind])
+        # Resolve the selection before changing any state.
+        for index in indices:
+            self.gpx.phases()[index]
+        if "rwp_history" not in self.ds:
+            self._reset_rwp_history()
+        names = ("gpx", "ds", "phases", "gpx_previous", "ds_previous",
+                 "phases_previous")
+        original = {name: getattr(self, name) for name in names if hasattr(self, name)}
+
+        def restore(state):
+            for name in names:
+                if name in state:
+                    setattr(self, name, state[name])
+                elif hasattr(self, name):
+                    delattr(self, name)
+
+        def with_history(dataset, history):
+            return xr.merge([dataset.drop_dims("refinement_step"), history], join="exact")
+
+        history = self.ds[["rwp_history", "rwp_attempted_history"]].copy(deep=True)
+        original_rwp = self._project_rwp(self.gpx)
+        best_rwp = original_rwp if np.isfinite(original_rwp) else np.inf
+        best = None
+        best_scale = None
+        best_message = "No lattice scale trial improved Rwp; previous fit retained."
+        results = []
+        try:
+            for scale in scales:
+                restore(copy.deepcopy(original))
+                self.ds = with_history(self.ds, history)
+                label = f"refine_cell_parameters(scale={scale:g})"
+                previous_steps = self.ds.sizes["refinement_step"]
+                try:
+                    for index in indices:
+                        cell = self.gpx.phases()[index].data["General"]["Cell"]
+                        cell[1:4] = [length * scale for length in cell[1:4]]
+                        cell[7] *= scale ** 3
+                    self.gpx.set_refinement({"set": {"Cell": True}}, phase=phase_ind)
+                    message = self.refine(
+                        min_gof_improvement=min_gof_improvement, log_label=label,
+                    )
+                    rwp = float(self.ds.rwp_attempted_history.values[-1])
+                    reason = self.last_refinement_rejection_reason or ""
+                    valid_cells = all(
+                        np.all(np.isfinite(p.data["General"]["Cell"][1:8]))
+                        and np.all(np.asarray(p.data["General"]["Cell"][1:4]) > 0)
+                        and np.all(np.asarray(p.data["General"]["Cell"][4:7]) > 0)
+                        and np.all(np.asarray(p.data["General"]["Cell"][4:7]) < 180)
+                        and p.data["General"]["Cell"][7] > 0
+                        for p in self.gpx.phases()
+                    )
+                    if not np.isfinite(rwp) or rwp < 0 or not valid_cells:
+                        reason = "invalid_cell_or_rwp"
+                    elif self.last_refinement_accepted:
+                        if rwp < best_rwp:
+                            best_rwp, best_scale = rwp, float(scale)
+                            best_message = f"Best lattice scale {scale:g}. {message}"
+                            best = copy.deepcopy({
+                                name: getattr(self, name) for name in names
+                                if hasattr(self, name)
+                            })
+                        else:
+                            reason = "no_rwp_improvement"
+                    status = "rejected" if reason else "accepted"
+                except Exception as exc:
+                    # Numerical failures at one start must not hide a valid fit
+                    # at another. Keep a diagnostic for every attempted scale.
+                    status, reason, rwp = "error", f"{type(exc).__name__}: {exc}", np.nan
+                    if self.ds.sizes["refinement_step"] == previous_steps:
+                        self._record_rwp(np.nan, status, label, reason)
+
+                history = self.ds[["rwp_history", "rwp_attempted_history"]].copy(deep=True)
+                # Assigning through .values truncates longer strings, so replace
+                # the coordinate using a new array with an adequate string dtype.
+                for key, value in (("refinement_status", status),
+                                   ("refinement_reason", reason)):
+                    values = history[key].values.tolist()
+                    values[-1] = value
+                    history = history.assign_coords({key: ("refinement_step", values)})
+                history.rwp_history.values[-1] = (
+                    np.nan if status == "error" else
+                    best_rwp if np.isfinite(best_rwp) else original_rwp
+                )
+                results.append({"scale": float(scale), "rwp": rwp,
+                                "status": status, "reason": reason})
+                print(f"   Lattice scale {scale:g}: Rwp={rwp:.6g} ({status})")
+        finally:
+            # The saved GPX, profile, CIF structures and comparison snapshots
+            # must all describe the same winner, including after a failed trial.
+            restore(best if best is not None else original)
+            self.ds = with_history(self.ds, history)
+            self.cell_scale_trials = results
+            self.cell_scale_best = best_scale
+            self.last_refinement_accepted = best is not None
+            self.last_refinement_rejection_reason = (
+                None if best is not None else "no_scale_improvement"
+            )
+            if best is not None:
+                self.gpx_previous = copy.deepcopy(original["gpx"])
+                for index, p in enumerate(original["gpx"].phases()):
+                    for offset, parameter in enumerate(
+                        ("a", "b", "c", "alpha", "beta", "gamma"), start=1
+                    ):
+                        self.ds.attrs[f"PhaseInd_{index}_cell_{parameter}_previous"] = (
+                            p.data["General"]["Cell"][offset]
+                        )
+            self.gpx_saver()
+        if best is None:
+            print(" ❌--" + best_message)
+        return best_message
+
     def refine_cell_parameters(
         self,
         phase_ind="all",
@@ -1214,23 +1329,55 @@ class RefinementMixin:
         plot=False,
         report=False,
         min_gof_improvement=0.1,
+        scale_trials=None,
     ):
-        """Refine unit cells, requiring the specified percent GoF decrease."""
+        """Refine unit cells, optionally trying several initial lattice scales.
+
+        scale_trials is a nonempty sequence of positive, finite factors, e.g.
+        np.linspace(0.98, 1.01, 5). Each factor multiplies a, b and c of the
+        selected phase(s), relative to the cells at entry; angles are unchanged.
+        With phase_ind='all' (or None), the same factor applies to every phase.
+        Each trial starts from the same project. Keep the lowest finite Rwp
+        that improves the original fit and passes the Uiso and specified GoF
+        checks. Failed trials are logged and skipped; if none improves the fit,
+        restore the original project. Only the retained result is plotted.
+
+        cell_scale_trials contains per-scale diagnostics and cell_scale_best
+        the winning factor (None if no improvement). Trials also appear in
+        ds.rwp_attempted_history with their scale in refinement_label. Omitting
+        scale_trials preserves the usual single-refinement behavior.
+        """
+
+        if scale_trials is not None:
+            try:
+                scales = np.asarray(list(scale_trials), dtype=float)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("scale_trials must be a nonempty 1D sequence of positive finite factors") from exc
+            if (scales.ndim != 1 or not scales.size or
+                    not np.all(np.isfinite(scales)) or np.any(scales <= 0)):
+                raise ValueError("scale_trials must be a nonempty 1D sequence of positive finite factors")
 
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
-        self.gpx.set_refinement({"set": {"Cell": True}}, phase=phase_ind)
+        if phase_ind is None:
+            phase_ind = "all"
+        if scale_trials is not None:
+            ref_str = self._refine_cell_scale_trials(scales, phase_ind, min_gof_improvement)
+        else:
+            self.gpx.set_refinement({"set": {"Cell": True}}, phase=phase_ind)
 
-        ref_str = self.refine(
-            update_ds=True,
-            update_ds_phases=True,
-            update_phases=True,
-            update_previous_ds=True,
-            update_previous_gpx=True,
-            update_previous_phases=True,
-            min_gof_improvement=min_gof_improvement,
-            log_label="refine_cell_parameters",
-        )
+            ref_str = self.refine(
+                update_ds=True,
+                update_ds_phases=True,
+                update_phases=True,
+                update_previous_ds=True,
+                update_previous_gpx=True,
+                update_previous_phases=True,
+                min_gof_improvement=min_gof_improvement,
+                log_label="refine_cell_parameters",
+            )
         if not self.last_refinement_accepted:
+            if scale_trials is not None:
+                return None
             return self._restore_rejected_refinement(
                 gpx_before_refinement, ref_str, plot=plot,
                 plot_hint="refine_cell_parameters",

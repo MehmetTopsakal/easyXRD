@@ -189,6 +189,31 @@ then re-raised. Each entry has a UTC `refinement_timestamp`. History survives
 NetCDF export/reload; setting up a new GSAS-II engine resets it. With
 `do_1st_refinement=False`, the history starts empty.
 
+## Trying initial lattice scales
+
+If cell refinement gets stuck because the starting lattice is too far from the
+measured peaks, try several initial scales:
+
+```python
+sample.refine_cell_parameters(
+    scale_trials=np.linspace(0.98, 1.02, 9),
+    phase_ind="all",
+    plot=True,
+)
+sample.cell_scale_best    # winning starting factor, or None if none improved Rwp
+sample.cell_scale_trials  # scale, attempted Rwp, status and reason for each trial
+```
+
+Each factor multiplies `a`, `b`, and `c` relative to the cells at the start of the
+call, preserving angles. Use `phase_ind=0` to scale one phase; `"all"` scales all
+phases by the same factor. Trials start from independent copies of the same
+project. The method retains the lowest finite Rwp that improves the original
+fit and passes the existing Uiso and `min_gof_improvement` checks. Failed trials
+are logged and skipped. If none improves the fit, the original fit is restored.
+Only the retained fit is plotted. The existing Rwp history includes every trial
+and its scale in `refinement_label`. Omitting `scale_trials` keeps the ordinary
+single-refinement behavior.
+
 ## Automatic date versions
 
 Enable the repository's version hook once after cloning:
