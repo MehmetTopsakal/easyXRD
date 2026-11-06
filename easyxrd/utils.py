@@ -6,6 +6,11 @@ import shutil
 import subprocess
 import sys
 
+import fabio
+import matplotlib.pyplot as plt
+import numpy as np
+import xarray as xr
+
 
 class HiddenPrints:
     """
@@ -124,3 +129,43 @@ def install_gsas2(*, upgrade=False, gui=False):
         library_path,
     )
     return library_path
+
+
+def read_tiff_as_DataArray(tiff, plot=False):
+    """Read a TIFF image into an xarray DataArray with pixel coordinates.
+
+    Parameters
+    ----------
+    tiff : str or Path
+        Path to the TIFF image file.
+    plot : bool, optional
+        If True, displays a 2D imshow plot of the image with robust color scaling.
+        Default is False.
+
+    Returns
+    -------
+    xr.DataArray
+        2D DataArray containing image intensity, with dimensions ('pixel_y', 'pixel_x')
+        and header metadata in attrs.
+    """
+    fabio_img = fabio.open(str(tiff))
+    tiff_data = fabio_img.data
+    header_dict = dict(fabio_img.header)
+
+    da = xr.DataArray(
+        tiff_data,
+        dims=("pixel_y", "pixel_x"),
+        coords={
+            "pixel_y": np.arange(tiff_data.shape[0]),
+            "pixel_x": np.arange(tiff_data.shape[1]),
+        },
+        attrs={"tiff_source": str(tiff), **header_dict},
+    )
+
+    if plot:
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+        da.plot.imshow(robust=True, ax=ax, cbar_kwargs={"shrink": 0.5}, origin="upper")
+        ax.set_aspect("equal")
+
+    return da

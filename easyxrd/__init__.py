@@ -14,7 +14,7 @@ if sys.platform.startswith("linux"):
     except Exception:
         pass
 
-from .utils import HiddenPrints, install_gsas2
+from .utils import HiddenPrints, install_gsas2, read_tiff_as_DataArray
 
 logger = logging.getLogger("easyxrd")
 
@@ -134,4 +134,5 @@ __all__ = [
     "print_defaults",
     "show_config",
     "HiddenPrints",
+    "read_tiff_as_DataArray",
 ]

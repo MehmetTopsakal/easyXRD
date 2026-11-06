@@ -92,3 +92,24 @@ def test_show_config_with_missing_packages(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "not installed or local" in output
     assert "GSASII_module       : not found" in output
+
+
+def test_read_tiff_as_dataarray(tmp_path):
+    import easyxrd
+    import fabio
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    img_data = np.arange(12, dtype=np.float32).reshape(3, 4)
+    tiff_path = tmp_path / "test.tif"
+    fabio.tifimage.TifImage(data=img_data).write(str(tiff_path))
+
+    da = easyxrd.read_tiff_as_DataArray(tiff_path, plot=True)
+    plt.close("all")
+
+    assert da.dims == ("pixel_y", "pixel_x")
+    assert da.shape == (3, 4)
+    np.testing.assert_array_equal(da.coords["pixel_y"], np.arange(3))
+    np.testing.assert_array_equal(da.coords["pixel_x"], np.arange(4))
+    assert str(tiff_path) in da.attrs["tiff_source"]
+
