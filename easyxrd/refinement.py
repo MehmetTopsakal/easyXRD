@@ -24,7 +24,10 @@ class RefinementMixin:
     Refinement methods require at least a 1% GoF decrease by default. Pass
     min_gof_improvement to override the percentage, 0 to accept any strictly
     positive decrease, or None to disable the improvement check. Setup creates
-    the initial fit and defaults to no improvement check.
+    the initial fit and defaults to no improvement check. Negative Uiso
+    or negative/nonfinite calculated CW instrument peak widths always
+    discard the entire result. Individual profile coefficients may be
+    negative; zero width components are allowed.
     """
     def _reset_rwp_history(self):
         """Start an empty dataset history for a new GSAS-II engine session."""
@@ -103,6 +106,59 @@ class RefinementMixin:
         self._validate_gof_improvement(min_gof_improvement)
         return copy.deepcopy(self.gpx)
 
+    @staticmethod
+    def _invalid_instrument_peak_widths(project):
+        """Find negative/nonfinite CW profile widths within each fit's 2theta limits.
+
+        Use the current GSAS-II coefficients: sigma^2 = U*tan(theta)^2 +
+        V*tan(theta) + W, gamma = X/cos(theta) + Y*tan(theta) + Z.
+        Endpoints and stationary points cover the entire continuous interval,
+        including minima between measured bins. Negative coefficients are valid
+        when these combined functions remain nonnegative. Other profile types
+        use different equations and are not checked here.
+        """
+        invalid = []
+        for histogram in project.histograms():
+            instrument = histogram.data.get("Instrument Parameters")
+            if not instrument:
+                continue
+            parameters = instrument[0]
+            if "C" not in parameters.get("Type", [""])[0]:
+                continue
+            if not all(name in parameters for name in ("U", "V", "W", "X", "Y")):
+                continue
+            u, v, w, x, y = (float(parameters[name][1])
+                              for name in ("U", "V", "W", "X", "Y"))
+            z = float(parameters["Z"][1]) if "Z" in parameters else 0.
+            lower, upper = histogram.data["Limits"][1]
+            positions = [lower, upper]
+
+            # Gaussian stationary point: tan(theta) = -V/(2U).
+            if u != 0:
+                position = np.rad2deg(2 * np.arctan(-v / (2 * u)))
+                if lower < position < upper:
+                    positions.append(position)
+            # Lorentzian derivative: (X*sin(theta) + Y) / cos(theta)^2.
+            if x != 0 and -1 <= -y / x <= 1:
+                position = np.rad2deg(2 * np.arcsin(-y / x))
+                if lower < position < upper:
+                    positions.append(position)
+
+            theta = np.deg2rad(np.asarray(positions) / 2)
+            with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+                gaussian = u * np.tan(theta)**2 + v * np.tan(theta) + w
+                lorentzian = x / np.cos(theta) + y * np.tan(theta) + z
+            for label, widths in (("Gaussian variance", gaussian),
+                                  ("Lorentzian width", lorentzian)):
+                bad = np.flatnonzero(~np.isfinite(widths) | (widths < 0))
+                if bad.size:
+                    i = bad[0]
+                    invalid.append(
+                        f"{histogram.name}/{label}={widths[i]:.6g} "
+                        f"at 2theta={positions[i]:.6g} deg"
+                    )
+        return invalid
+
     def _restore_rejected_refinement(self, gpx_previous, message, plot=False,
                                      plot_hint="refine"):
         """Restore wrapper changes as well as the optimizer's rejected result."""
@@ -164,11 +220,19 @@ class RefinementMixin:
                         f"{phase.name}/{atom[ct - 1]}: Uiso={atom[cia + 1]:.6g}"
                     )
 
+        invalid_peak_widths = self._invalid_instrument_peak_widths(self.gpx)
+
         reason = None
         self.last_refinement_rejection_reason = None
         if negative_sites:
             self.last_refinement_rejection_reason = "negative_uiso"
             reason = "negative Uiso (" + "; ".join(negative_sites) + ")"
+        elif invalid_peak_widths:
+            self.last_refinement_rejection_reason = "invalid_peak_width"
+            reason = (
+                "negative or nonfinite instrument peak widths ("
+                + "; ".join(invalid_peak_widths) + ")"
+            )
         elif min_gof_improvement is not None:
             old_gof = gpx_previous["Covariance"]["data"]["Rvals"]["GOF"]
             new_gof = self.gpx["Covariance"]["data"]["Rvals"]["GOF"]
@@ -220,11 +284,15 @@ class RefinementMixin:
         min_gof_improvement=None,
         log_label="refine",
     ):
-        """Refine, discarding the entire result if any isotropic U is negative.
+        """Refine, discarding negative Uiso or invalid CW instrument peak widths.
 
         Rejection restores the pre-refinement GPX in memory and on disk, leaves
         profile data, structures and previous-result snapshots unchanged, and returns
-        a diagnostic string. Zero Uiso is accepted. When min_gof_improvement is
+        a diagnostic string. Negative profile coefficients are allowed when
+        the resulting Gaussian variance and Lorentzian width are finite and
+        nonnegative throughout each CW histogram's fitted 2theta interval.
+        This check also applies with the GoF improvement check disabled.
+        Zero Uiso and zero width components are accepted. When min_gof_improvement is
         set, also require a positive GoF decrease of at least that percentage
         (default 1%). Pass None to disable the improvement check.
         Results discarded for insufficient GoF improvement never plot, even

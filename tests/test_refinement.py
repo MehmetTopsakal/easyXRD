@@ -24,17 +24,36 @@ def phase(name="Ni", uiso=0.01, *, ct=1, cia=9, mode="I"):
     )
 
 
+class Histogram:
+    def __init__(self, name="PWDR data.xy"):
+        self.name = name
+        self.data = {
+            "Instrument Parameters": [{
+                **{name: [1., 1., False] for name in ("U", "V", "W", "X", "Y", "Z")},
+                "Type": ["PXC", "PXC", False],
+            }, {}],
+            "Limits": [[5., 60.], [5., 60.]],
+        }
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+
 class Project:
     """Model GSAS-II's mutation of both its project and its saved file."""
 
     def __init__(self, filename, phases, outcomes):
         self.filename = filename
         self._phases = phases
+        self._histograms = [Histogram()]
         self.outcomes = outcomes
         self.data = {"Covariance": {"data": {"Rvals": {"Rwp": 12., "GOF": 2.}}}}
 
     def phases(self):
         return self._phases
+
+    def histograms(self):
+        return self._histograms
 
     def __getitem__(self, key):
         return self.data[key]
@@ -45,6 +64,7 @@ class Project:
     def save(self):
         self.filename.write_text(json.dumps({
             "phases": [p.data for p in self._phases], "data": self.data,
+            "histograms": [{"name": h.name, "data": h.data} for h in self._histograms],
         }))
 
     def refine(self):
@@ -57,6 +77,9 @@ class Project:
             cia = p.data["General"]["AtomPtrs"][3]
             for atom, value in zip(p.data["Atoms"], values):
                 atom[cia + 1] = value
+        for histogram, values in zip(self._histograms, getattr(self, "instrument_outcomes", [])):
+            for name, value in values.items():
+                histogram["Instrument Parameters"][0][name][1] = value
         self.data["Covariance"]["data"]["Rvals"] = {
             "Rwp": 1., "GOF": getattr(self, "outcome_gof", 1.)
         }
@@ -398,11 +421,11 @@ def test_direct_entry_points_reject_insufficient_improvement(tmp_path, monkeypat
                         SimpleNamespace(G2Project=lambda **kw: candidate))
     monkeypatch.setattr("easyxrd.refinement.subprocess.check_call", lambda *a: None)
     if method == "fine_tune_gpx":
-        s.fine_tune_gpx()
+        s.fine_tune_gpx(min_gof_improvement=1.)
     else:
         source = tmp_path / "candidate.gpx"
         source.write_text("candidate project")
-        s.replace_gpx_with(source)
+        s.replace_gpx_with(source, min_gof_improvement=1.)
     assert not s.last_refinement_accepted
     assert s.gpx.filename.read_bytes() == before
     assert s.ds.refinement_label.item() == method
@@ -489,3 +512,205 @@ def test_rwp_history_reset_preserves_profile_and_is_per_instance(tmp_path):
     xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), before)
     refine_without_updates(s)
     assert s.ds.refinement_step.item() == 1
+
+
+VALID_PROFILE = dict(U=1., V=0., W=1., X=1., Y=0., Z=0.)
+
+
+@pytest.mark.parametrize("component", ["Gaussian variance", "Lorentzian width"])
+@pytest.mark.parametrize("value", [-1., -1.e-15])
+@pytest.mark.parametrize("minimum", [None, 1.])
+def test_negative_peak_width_restores_entire_result(tmp_path, component, value, minimum):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    bad = {"U": 0., "V": 0., "W": value} if component == "Gaussian variance" else {"X": 0., "Y": 0., "Z": value}
+    s.gpx.instrument_outcomes = [VALID_PROFILE | bad]
+    shared_shifts = {"scale": 0.001}
+    s.gpx["Covariance"]["data"]["Rvals"]["lastShifts"] = shared_shifts
+    s.ds.attrs["lastShifts"] = shared_shifts
+    s.ds_previous = s.ds.copy(deep=True)
+    s.gpx.save()
+    old_file = s.gpx.filename.read_bytes()
+    old_ds = s.ds.copy(deep=True)
+    old_previous = s.ds_previous.copy(deep=True)
+    old_phases = copy.deepcopy(s.phases)
+    histories = (s.ds_previous, s.gpx_previous, s.phases_previous)
+
+    message = s.refine(min_gof_improvement=minimum)
+
+    assert not s.last_refinement_accepted
+    assert s.last_refinement_rejection_reason == "invalid_peak_width"
+    assert f"PWDR data.xy/{component}={value:.6g}" in message
+    assert "2theta=" in message
+    assert s.gpx.filename.read_bytes() == old_file
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), old_ds)
+    xr.testing.assert_identical(s.ds_previous, old_previous)
+    assert s.phases == old_phases
+    assert all(a is b for a, b in zip(histories,
+        (s.ds_previous, s.gpx_previous, s.phases_previous)))
+    assert s.ds.refinement_status.item() == "rejected"
+    assert s.ds.refinement_reason.item() == "invalid_peak_width"
+    assert s.ds.rwp_history.item() == 12.
+    assert s.ds.rwp_attempted_history.item() == 1.
+
+
+@pytest.mark.parametrize("changes", [
+    {"U": -0.1}, {"V": -1.}, {"W": -0.001},
+    {"X": -0.1, "Z": 1.}, {"Y": -0.1}, {"Z": -0.1},
+])
+def test_negative_coefficients_with_valid_widths_are_accepted(tmp_path, changes):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s.gpx.instrument_outcomes = [VALID_PROFILE | changes]
+    refine_without_updates(s)
+    assert s.last_refinement_accepted
+    assert s.last_refinement_rejection_reason is None
+
+
+@pytest.mark.parametrize("zero_terms", [
+    {"U": 0., "V": 0., "W": 0.}, {"X": 0., "Y": 0., "Z": 0.},
+])
+def test_zero_width_components_are_accepted(tmp_path, zero_terms):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s.gpx.instrument_outcomes = [VALID_PROFILE | zero_terms]
+    refine_without_updates(s)
+    assert s.last_refinement_accepted
+
+
+@pytest.mark.parametrize("changes,component", [
+    ({"U": 1., "V": -0.4, "W": 0.0399}, "Gaussian variance"),
+    ({"X": 1., "Y": -0.5, "Z": -0.8661}, "Lorentzian width"),
+])
+def test_negative_interior_minimum_is_rejected_even_with_positive_endpoints(tmp_path, changes, component):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s.gpx.histograms()[0].data["Limits"] = [[5., 100.], [5., 100.]]
+    profile = VALID_PROFILE | changes
+    theta = np.deg2rad(np.array([5., 100.]) / 2)
+    if component == "Gaussian variance":
+        endpoints = profile["U"] * np.tan(theta)**2 + profile["V"] * np.tan(theta) + profile["W"]
+    else:
+        endpoints = profile["X"] / np.cos(theta) + profile["Y"] * np.tan(theta) + profile["Z"]
+    assert (endpoints > 0).all()
+    s.gpx.instrument_outcomes = [profile]
+    message = refine_without_updates(s)
+    assert not s.last_refinement_accepted
+    assert component in message
+
+
+def test_negative_width_outside_fitted_limits_does_not_reject(tmp_path):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s.gpx.histograms()[0].data["Limits"] = [[1., 150.], [5., 10.]]
+    # This Gaussian is positive at 5–10 degrees but negative near 53 degrees.
+    s.gpx.instrument_outcomes = [VALID_PROFILE | {"U": 1., "V": -1., "W": 0.1}]
+    refine_without_updates(s)
+    assert s.last_refinement_accepted
+
+
+@pytest.mark.parametrize("changes", [{"W": float("nan")}, {"X": float("inf")}])
+def test_nonfinite_width_is_rejected(tmp_path, changes):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s.gpx.instrument_outcomes = [VALID_PROFILE | changes]
+    message = refine_without_updates(s)
+    assert not s.last_refinement_accepted
+    assert "nonfinite" in message
+    assert s.last_refinement_rejection_reason == "invalid_peak_width"
+
+
+def test_checks_all_histograms_and_reports_both_width_components(tmp_path):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s.gpx._histograms.append(Histogram("PWDR second"))
+    s.gpx.instrument_outcomes = [{}, dict(U=0., V=0., W=-0.2, X=0., Y=0., Z=-0.3)]
+    s.gpx.save()
+    old_file = s.gpx.filename.read_bytes()
+    message = refine_without_updates(s)
+    assert "PWDR second/Gaussian variance=-0.2" in message
+    assert "PWDR second/Lorentzian width=-0.3" in message
+    assert s.gpx.filename.read_bytes() == old_file
+
+
+def test_checks_current_values_and_ignores_initial_values(tmp_path):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    parameters = s.gpx.histograms()[0]["Instrument Parameters"][0]
+    parameters["W"][0] = -1.
+    refine_without_updates(s)
+    assert s.last_refinement_accepted
+    # Fixed parameters still determine the resulting width.
+    parameters = s.gpx.histograms()[0]["Instrument Parameters"][0]
+    parameters["W"][1] = -10.
+    message = refine_without_updates(s)
+    assert "Gaussian variance" in message
+    assert not s.last_refinement_accepted
+
+
+def test_z_is_optional_for_older_cw_instruments(tmp_path):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    del s.gpx.histograms()[0]["Instrument Parameters"][0]["Z"]
+    refine_without_updates(s)
+    assert s.last_refinement_accepted
+
+
+@pytest.mark.parametrize("histogram_type", ["PNT", "PXE"])
+def test_other_profile_types_do_not_use_cw_width_equations(tmp_path, histogram_type):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    parameters = s.gpx.histograms()[0]["Instrument Parameters"][0]
+    parameters["Type"] = [histogram_type, histogram_type, False]
+    s.gpx.instrument_outcomes = [{"W": -10.}]
+    refine_without_updates(s)
+    assert s.last_refinement_accepted
+
+
+def test_histograms_without_cw_profile_parameters_are_ignored(tmp_path):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    single_crystal = Histogram("HKLF second")
+    single_crystal.data = {}
+    s.gpx._histograms.append(single_crystal)
+    # Also allow a non-CW powder instrument that lacks U, V, W.
+    s.gpx.histograms()[0]["Instrument Parameters"][0].clear()
+    refine_without_updates(s)
+    assert s.last_refinement_accepted
+
+
+@pytest.mark.parametrize("method", ["refine_instrument_parameters", "refine_background"])
+def test_peak_width_guard_restores_wrapper_flags(tmp_path, method):
+    s = configurable_sample(tmp_path)
+    s.gpx.instrument_outcomes = [{"W": -10.}]
+    old_file = s.gpx.filename.read_bytes()
+    old_ds = s.ds.copy(deep=True)
+    getattr(s, method)(min_gof_improvement=None)
+    assert not s.last_refinement_accepted
+    assert s.gpx.filename.read_bytes() == old_file
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), old_ds)
+    assert s.ds.refinement_reason.item() == "invalid_peak_width"
+
+
+def test_valid_refinement_can_follow_invalid_peak_width(tmp_path):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s.gpx.instrument_outcomes = [{"W": -10.}]
+    refine_without_updates(s)
+    s.gpx.instrument_outcomes = [VALID_PROFILE | {"V": -1.}]
+    refine_without_updates(s)
+    assert s.last_refinement_accepted
+    assert s.last_refinement_rejection_reason is None
+    assert s.ds.refinement_status.values.tolist() == ["rejected", "accepted"]
+
+
+@pytest.mark.parametrize("method", ["fine_tune_gpx", "replace_gpx_with"])
+def test_direct_entry_points_reject_invalid_peak_width(tmp_path, monkeypatch, method):
+    s = sample(tmp_path, [phase()], [[0.02]])
+    s.gsasii_run_directory = str(tmp_path)
+    s.gsasii_lib_path = str(tmp_path)
+    old_file = s.gpx.filename.read_bytes()
+    old_ds = s.ds.copy(deep=True)
+    candidate = Project(s.gpx.filename, [phase(uiso=0.03)], [[0.04]])
+    candidate.instrument_outcomes = [{"W": -10.}]
+    monkeypatch.setitem(__import__("sys").modules, "GSASIIscriptable",
+                        SimpleNamespace(G2Project=lambda **kw: candidate))
+    monkeypatch.setattr("easyxrd.refinement.subprocess.check_call", lambda *a: None)
+    if method == "fine_tune_gpx":
+        s.fine_tune_gpx(min_gof_improvement=None)
+    else:
+        source = tmp_path / "candidate.gpx"
+        source.write_text("candidate project")
+        s.replace_gpx_with(source, min_gof_improvement=None)
+    assert not s.last_refinement_accepted
+    assert s.gpx.filename.read_bytes() == old_file
+    xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), old_ds)
+    assert s.ds.refinement_reason.item() == "invalid_peak_width"
