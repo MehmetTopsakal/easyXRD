@@ -337,6 +337,42 @@ dark/flat/variance arrays and raw images are not archived or hashed; retain thos
 inputs separately. Calibration records describe the supplied geometry, not its
 experimental accuracy or calibration uncertainty.
 
+### Configurable defaults
+
+`easyxrd_defaults` in `easyxrd/__init__.py` holds plotting, data loading,
+baseline, refinement, and export-format defaults. List them with
+`easyxrd.print_defaults()` and change session settings with `set_defaults()`:
+
+```python
+import easyxrd
+
+easyxrd.set_defaults("plot_figsize", (10, 7))
+easyxrd.set_defaults("plot_dpi", 160)
+easyxrd.set_defaults("load_xrd_data_plot", False)
+easyxrd.set_defaults("get_baseline_iarpls_lam", 1e6)
+easyxrd.set_defaults("refine_background_num_coeffs", 12)
+
+sample = easyxrd.exrd()
+# After loading data:
+sample.plot(figsize=(12, 8), dpi=200)  # explicit values override defaults
+```
+
+Shared plotting keys start with `plot_`; other keys generally use
+`<method>_<parameter>`. The refinement-history wrapper and standalone
+`refinement_plotter` retain their original separate DPI defaults (128 and 150).
+Omitted arguments read the current dictionary at call time, including after
+modules have already been imported. Signatures display `<easyxrd default>` for
+these arguments; use `print_defaults()` for their current values. Explicit
+arguments, including `False` and `None`, keep their existing meanings.
+
+An `exrd` object copies `verbose`, `figsize`, `i2d_robust`, `i2d_logscale`, and
+`i1d_ylogscale` at construction. Changing package defaults later affects new
+objects; change an existing object's attributes or pass a plot argument to
+override its settings. Mutable configuration values are copied for each call.
+Input datasets, arrays, file destinations, and internal helper defaults remain
+local to their calls. Settings are session-only; put `set_defaults()` calls in
+your script or notebook to reuse them.
+
 ### Logging and development checks
 
 Automatic easyXRD progress and rejection messages use Python logging. Enable

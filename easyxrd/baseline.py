@@ -1,3 +1,5 @@
+from . import DEFAULT, resolve_default
+
 from .results import clear_fit_results
 import warnings
 from concurrent.futures import ThreadPoolExecutor
@@ -57,11 +59,11 @@ def _same_grid(a, b, rtol=1e-5, atol=1e-7):
 
 
 class BaselineMixin:
-    def get_baseline(self, input_bkg=None, use_iarpls=True, radial_rolling=-1,
-                     iarpls_lam=1e5, plot=True, get_i2d_baseline=False,
-                     use_i2d_baseline=False, roi_radial_range=None,
-                     roi_azimuthal_range=None, spotty_data_correction=False,
-                     spotty_data_correction_threshold=1):
+    def get_baseline(self, input_bkg=None, use_iarpls=DEFAULT, radial_rolling=DEFAULT,
+                     iarpls_lam=DEFAULT, plot=DEFAULT, get_i2d_baseline=DEFAULT,
+                     use_i2d_baseline=DEFAULT, roi_radial_range=None,
+                     roi_azimuthal_range=None, spotty_data_correction=DEFAULT,
+                     spotty_data_correction_threshold=DEFAULT):
         """Estimate a baseline without mutating raw images or losing coordinates.
 
         Backgrounds must be explicitly interpolated onto the sample grid before
@@ -70,6 +72,15 @@ class BaselineMixin:
         not estimated. Spot selection is a separate diagnostic product, never
         the quantitative observation supplied to refinement.
         """
+        use_iarpls = resolve_default(use_iarpls, "get_baseline_use_iarpls")
+        radial_rolling = resolve_default(radial_rolling, "get_baseline_radial_rolling")
+        iarpls_lam = resolve_default(iarpls_lam, "get_baseline_iarpls_lam")
+        plot = resolve_default(plot, "get_baseline_plot")
+        get_i2d_baseline = resolve_default(get_i2d_baseline, "get_baseline_get_i2d_baseline")
+        use_i2d_baseline = resolve_default(use_i2d_baseline, "get_baseline_use_i2d_baseline")
+        spotty_data_correction = resolve_default(spotty_data_correction, "get_baseline_spotty_data_correction")
+        spotty_data_correction_threshold = resolve_default(spotty_data_correction_threshold, "get_baseline_spotty_data_correction_threshold")
+
         if input_bkg is None and not use_iarpls:
             return
         if use_i2d_baseline and not get_i2d_baseline:

@@ -1,3 +1,5 @@
+from . import DEFAULT, resolve_default
+
 import os
 import sys
 import subprocess
@@ -410,15 +412,15 @@ class RefinementMixin:
     @refinement_transaction
     def refine(
         self,
-        update_ds=True,
-        update_ds_phases=True,
-        update_phases=True,
-        update_previous_ds=True,
-        update_previous_gpx=True,
-        update_previous_phases=True,
-        verbose=False,
-        plot=False,
-        min_gof_improvement=None,
+        update_ds=DEFAULT,
+        update_ds_phases=DEFAULT,
+        update_phases=DEFAULT,
+        update_previous_ds=DEFAULT,
+        update_previous_gpx=DEFAULT,
+        update_previous_phases=DEFAULT,
+        verbose=DEFAULT,
+        plot=DEFAULT,
+        min_gof_improvement=DEFAULT,
         log_label="refine",
     ):
         """Refine, discarding negative Uiso or invalid CW instrument peak widths.
@@ -440,6 +442,16 @@ class RefinementMixin:
         refinement_status distinguish trial values from retained fits. Use
         log_label to describe a manually configured refinement step.
         """
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_min_gof_improvement")
+        update_ds = resolve_default(update_ds, "refine_update_ds")
+        update_ds_phases = resolve_default(update_ds_phases, "refine_update_ds_phases")
+        update_phases = resolve_default(update_phases, "refine_update_phases")
+        update_previous_ds = resolve_default(update_previous_ds, "refine_update_previous_ds")
+        update_previous_gpx = resolve_default(update_previous_gpx, "refine_update_previous_gpx")
+        update_previous_phases = resolve_default(update_previous_phases, "refine_update_previous_phases")
+        verbose = resolve_default(verbose, "refine_verbose")
+        plot = resolve_default(plot, "refine_plot")
+
         gpx_previous = self._prepare_refinement(min_gof_improvement)
         if update_previous_ds:
             vars_to_copy = [
@@ -631,23 +643,23 @@ class RefinementMixin:
         instprm_from_gpx=None,
         instprm_from_nc=None,
         instprm_file=None,
-        instprm_preset=None,
-        instprm_Polariz=0,
-        instprm_Azimuth=0,
-        instprm_Zero=0,
-        instprm_U=100,
-        instprm_V=5,
-        instprm_W=0.5,
-        instprm_X=0,
-        instprm_Y=0,
-        instprm_Z=0,
-        instprm_SHL=0.002,
-        do_1st_refinement=True,
-        yshift_multiplier=0.01,
-        normalize=False,
-        normalize_to=100,
-        plot=True,
-        min_gof_improvement=None,
+        instprm_preset=DEFAULT,
+        instprm_Polariz=DEFAULT,
+        instprm_Azimuth=DEFAULT,
+        instprm_Zero=DEFAULT,
+        instprm_U=DEFAULT,
+        instprm_V=DEFAULT,
+        instprm_W=DEFAULT,
+        instprm_X=DEFAULT,
+        instprm_Y=DEFAULT,
+        instprm_Z=DEFAULT,
+        instprm_SHL=DEFAULT,
+        do_1st_refinement=DEFAULT,
+        yshift_multiplier=DEFAULT,
+        normalize=DEFAULT,
+        normalize_to=DEFAULT,
+        plot=DEFAULT,
+        min_gof_improvement=DEFAULT,
     ):
         """Create the initial fit; optionally gate the second, LeBail pass.
 
@@ -660,6 +672,24 @@ class RefinementMixin:
         a NetCDF file (instprm_from_nc), a GSAS-II .instprm file (instprm_file),
         or a standard preset such as 'CuKa_lab' or 'synchrotron' (instprm_preset).
         """
+        instprm_preset = resolve_default(instprm_preset, "setup_gsas2_refiner_instprm_preset")
+        min_gof_improvement = resolve_default(min_gof_improvement, "setup_gsas2_refiner_min_gof_improvement")
+        instprm_Polariz = resolve_default(instprm_Polariz, "setup_gsas2_refiner_instprm_Polariz")
+        instprm_Azimuth = resolve_default(instprm_Azimuth, "setup_gsas2_refiner_instprm_Azimuth")
+        instprm_Zero = resolve_default(instprm_Zero, "setup_gsas2_refiner_instprm_Zero")
+        instprm_U = resolve_default(instprm_U, "setup_gsas2_refiner_instprm_U")
+        instprm_V = resolve_default(instprm_V, "setup_gsas2_refiner_instprm_V")
+        instprm_W = resolve_default(instprm_W, "setup_gsas2_refiner_instprm_W")
+        instprm_X = resolve_default(instprm_X, "setup_gsas2_refiner_instprm_X")
+        instprm_Y = resolve_default(instprm_Y, "setup_gsas2_refiner_instprm_Y")
+        instprm_Z = resolve_default(instprm_Z, "setup_gsas2_refiner_instprm_Z")
+        instprm_SHL = resolve_default(instprm_SHL, "setup_gsas2_refiner_instprm_SHL")
+        do_1st_refinement = resolve_default(do_1st_refinement, "setup_gsas2_refiner_do_1st_refinement")
+        yshift_multiplier = resolve_default(yshift_multiplier, "setup_gsas2_refiner_yshift_multiplier")
+        normalize = resolve_default(normalize, "setup_gsas2_refiner_normalize")
+        normalize_to = resolve_default(normalize_to, "setup_gsas2_refiner_normalize_to")
+        plot = resolve_default(plot, "setup_gsas2_refiner_plot")
+
         self._validate_gof_improvement(min_gof_improvement)
         validate_profile(self.ds.i1d)
         q_to_two_theta(self.ds.i1d.radial.values, self.ds.i1d.attrs["wavelength_in_angst"])
@@ -950,13 +980,18 @@ class RefinementMixin:
     @refinement_transaction
     def refine_background(
         self,
-        num_coeffs=10,
-        background_type="chebyschev-1",
-        set_to_false_after_refinement=True,
-        plot=False,
-        min_gof_improvement=1.0,
+        num_coeffs=DEFAULT,
+        background_type=DEFAULT,
+        set_to_false_after_refinement=DEFAULT,
+        plot=DEFAULT,
+        min_gof_improvement=DEFAULT,
     ):
         """Refine the background, requiring the specified percent GoF decrease."""
+        num_coeffs = resolve_default(num_coeffs, "refine_background_num_coeffs")
+        background_type = resolve_default(background_type, "refine_background_background_type")
+        set_to_false_after_refinement = resolve_default(set_to_false_after_refinement, "refine_background_set_to_false_after_refinement")
+        plot = resolve_default(plot, "refine_background_plot")
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_background_min_gof_improvement")
 
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement(
@@ -1007,12 +1042,16 @@ class RefinementMixin:
 
     def set_background_refinement(
         self,
-        set_num_coeffs_to=10,
-        set_background_type_to="chebyschev-1",
-        set_refine_to=True,
-        save_gpx=True,
+        set_num_coeffs_to=DEFAULT,
+        set_background_type_to=DEFAULT,
+        set_refine_to=DEFAULT,
+        save_gpx=DEFAULT,
     ):
         """Configure the background model and refinement flag; optionally save without fitting."""
+        set_num_coeffs_to = resolve_default(set_num_coeffs_to, "set_background_refinement_set_num_coeffs_to")
+        set_background_type_to = resolve_default(set_background_type_to, "set_background_refinement_set_background_type_to")
+        set_refine_to = resolve_default(set_refine_to, "set_background_refinement_set_refine_to")
+        save_gpx = resolve_default(save_gpx, "set_background_refinement_save_gpx")
 
         self.gpx.set_refinement(
             {
@@ -1029,8 +1068,9 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def clear_background_refinement(self, save_gpx=True):
+    def clear_background_refinement(self, save_gpx=DEFAULT):
         """Disable background refinement and optionally save the project."""
+        save_gpx = resolve_default(save_gpx, "clear_background_refinement_save_gpx")
 
         self.gpx.set_refinement(
             {
@@ -1051,15 +1091,20 @@ class RefinementMixin:
     @refinement_transaction
     def refine_instrument_parameters(
         self,
-        inst_pars_to_refine=("U", "V", "W"),
-        set_to_false_after_refinement=True,
-        plot=False,
-        min_gof_improvement=1.0,
+        inst_pars_to_refine=DEFAULT,
+        set_to_false_after_refinement=DEFAULT,
+        plot=DEFAULT,
+        min_gof_improvement=DEFAULT,
     ):
         """
         Refine instrument parameters with a minimum percent GoF decrease.
         inst_pars_to_refine=['U', 'V', 'W',   'X', 'Y', 'Z', 'Zero', 'SH/L']
         """
+        inst_pars_to_refine = resolve_default(inst_pars_to_refine, "refine_instrument_parameters_inst_pars_to_refine")
+        set_to_false_after_refinement = resolve_default(set_to_false_after_refinement, "refine_instrument_parameters_set_to_false_after_refinement")
+        plot = resolve_default(plot, "refine_instrument_parameters_plot")
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_instrument_parameters_min_gof_improvement")
+
         sample_broadening_active = False
         if hasattr(self, "gpx") and self.gpx is not None:
             hist_name = getattr(self, "_histogram_name", "PWDR data.xy")
@@ -1154,9 +1199,12 @@ class RefinementMixin:
             )
 
     def set_instrument_parameters_refinement(
-        self, set_inst_pars_to_refine=("U", "V", "W"), set_refine_to=True, save_gpx=True
+        self, set_inst_pars_to_refine=DEFAULT, set_refine_to=DEFAULT, save_gpx=DEFAULT
     ):
         """Enable or disable the named instrument parameters; optionally save without fitting."""
+        set_inst_pars_to_refine = resolve_default(set_inst_pars_to_refine, "set_instrument_parameters_refinement_set_inst_pars_to_refine")
+        set_refine_to = resolve_default(set_refine_to, "set_instrument_parameters_refinement_set_refine_to")
+        save_gpx = resolve_default(save_gpx, "set_instrument_parameters_refinement_save_gpx")
 
         self.gpx.set_refinement(
             {"set" if set_refine_to else "clear": {"Instrument Parameters": set_inst_pars_to_refine}}
@@ -1165,8 +1213,9 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def clear_instrument_parameters_refinement(self, save_gpx=True):
+    def clear_instrument_parameters_refinement(self, save_gpx=DEFAULT):
         """Disable CW profile, zero-shift and axial-divergence refinement flags."""
+        save_gpx = resolve_default(save_gpx, "clear_instrument_parameters_refinement_save_gpx")
 
         self.gpx.set_refinement(
             {
@@ -1193,10 +1242,15 @@ class RefinementMixin:
     ###############################################################################################
     @refinement_transaction
     def set_LeBail(
-        self, to=True, phase_ind="all", refine=True, plot=False,
-        min_gof_improvement=None,
+        self, to=DEFAULT, phase_ind=DEFAULT, refine=DEFAULT, plot=DEFAULT,
+        min_gof_improvement=DEFAULT,
     ):
         """Set LeBail mode; when refining, require the minimum percent GoF decrease."""
+        to = resolve_default(to, "set_LeBail_to")
+        min_gof_improvement = resolve_default(min_gof_improvement, "set_LeBail_min_gof_improvement")
+        phase_ind = resolve_default(phase_ind, "set_LeBail_phase_ind")
+        refine = resolve_default(refine, "set_LeBail_refine")
+        plot = resolve_default(plot, "set_LeBail_plot")
 
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         if (phase_ind == "all") or (phase_ind == None):
@@ -1366,12 +1420,12 @@ class RefinementMixin:
     @refinement_transaction
     def refine_cell_parameters(
         self,
-        phase_ind="all",
-        set_to_false_after_refinement=True,
-        plot=False,
-        report=False,
-        min_gof_improvement=0.1,
-        scale_trials=None,
+        phase_ind=DEFAULT,
+        set_to_false_after_refinement=DEFAULT,
+        plot=DEFAULT,
+        report=DEFAULT,
+        min_gof_improvement=DEFAULT,
+        scale_trials=DEFAULT,
     ):
         """Refine unit cells, optionally trying several initial lattice scales.
 
@@ -1389,6 +1443,12 @@ class RefinementMixin:
         ds.rwp_attempted_history with their scale in refinement_label. Omitting
         scale_trials preserves the usual single-refinement behavior.
         """
+        scale_trials = resolve_default(scale_trials, "refine_cell_parameters_scale_trials")
+        phase_ind = resolve_default(phase_ind, "refine_cell_parameters_phase_ind")
+        set_to_false_after_refinement = resolve_default(set_to_false_after_refinement, "refine_cell_parameters_set_to_false_after_refinement")
+        plot = resolve_default(plot, "refine_cell_parameters_plot")
+        report = resolve_default(report, "refine_cell_parameters_report")
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_cell_parameters_min_gof_improvement")
 
         if scale_trials is not None:
             try:
@@ -1523,9 +1583,12 @@ class RefinementMixin:
         self.gpx_saver()
 
     def set_cell_parameters_refinement(
-        self, set_refine_to=True, phase_ind="all", save_gpx=True
+        self, set_refine_to=DEFAULT, phase_ind=DEFAULT, save_gpx=DEFAULT
     ):
         """Set cell-refinement flags for a phase index or all phases; do not run a fit."""
+        set_refine_to = resolve_default(set_refine_to, "set_cell_parameters_refinement_set_refine_to")
+        phase_ind = resolve_default(phase_ind, "set_cell_parameters_refinement_phase_ind")
+        save_gpx = resolve_default(save_gpx, "set_cell_parameters_refinement_save_gpx")
 
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement({"set": {"Cell": set_refine_to}})
@@ -1535,8 +1598,9 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def clear_cell_parameters_refinement(self, save_gpx=True):
+    def clear_cell_parameters_refinement(self, save_gpx=DEFAULT):
         """Disable cell refinement for all phases and optionally save."""
+        save_gpx = resolve_default(save_gpx, "clear_cell_parameters_refinement_save_gpx")
 
         self.gpx.set_refinement({"set": {"Cell": False}})
 
@@ -1549,15 +1613,21 @@ class RefinementMixin:
     @refinement_transaction
     def refine_strain_broadening(
         self,
-        phase_ind="all",
-        model_type="isotropic",
-        set_to_false_after_refinement=True,
-        plot=False,
-        report=False,
-        min_gof_improvement=1.0,
+        phase_ind=DEFAULT,
+        model_type=DEFAULT,
+        set_to_false_after_refinement=DEFAULT,
+        plot=DEFAULT,
+        report=DEFAULT,
+        min_gof_improvement=DEFAULT,
         type=None,
     ):
         """Refine strain broadening, requiring the specified percent GoF decrease."""
+        phase_ind = resolve_default(phase_ind, "refine_strain_broadening_phase_ind")
+        model_type = resolve_default(model_type, "refine_strain_broadening_model_type")
+        set_to_false_after_refinement = resolve_default(set_to_false_after_refinement, "refine_strain_broadening_set_to_false_after_refinement")
+        plot = resolve_default(plot, "refine_strain_broadening_plot")
+        report = resolve_default(report, "refine_strain_broadening_report")
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_strain_broadening_min_gof_improvement")
 
         actual_type = type if type is not None else model_type
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
@@ -1667,9 +1737,14 @@ class RefinementMixin:
         self.gpx_saver()
 
     def set_strain_broadening_refinement(
-        self, set_refine_to=True, phase_ind="all", model_type="isotropic", save_gpx=True, type=None
+        self, set_refine_to=DEFAULT, phase_ind=DEFAULT, model_type=DEFAULT, save_gpx=DEFAULT, type=None
     ):
         """Select a microstrain model and flag for one or all phases; do not run a fit."""
+        set_refine_to = resolve_default(set_refine_to, "set_strain_broadening_refinement_set_refine_to")
+        phase_ind = resolve_default(phase_ind, "set_strain_broadening_refinement_phase_ind")
+        model_type = resolve_default(model_type, "set_strain_broadening_refinement_model_type")
+        save_gpx = resolve_default(save_gpx, "set_strain_broadening_refinement_save_gpx")
+
         actual_type = type if type is not None else model_type
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement(
@@ -1684,8 +1759,9 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def clear_strain_broadening_refinement(self, save_gpx=True):
+    def clear_strain_broadening_refinement(self, save_gpx=DEFAULT):
         """Disable microstrain refinement for all phases and optionally save."""
+        save_gpx = resolve_default(save_gpx, "clear_strain_broadening_refinement_save_gpx")
 
         self.gpx.set_refinement({"set": {"Mustrain": {"refine": False}}})
 
@@ -1698,15 +1774,21 @@ class RefinementMixin:
     @refinement_transaction
     def refine_size_broadening(
         self,
-        phase_ind="all",
-        model_type="isotropic",
-        set_to_false_after_refinement=True,
-        plot=False,
-        report=False,
-        min_gof_improvement=1.0,
+        phase_ind=DEFAULT,
+        model_type=DEFAULT,
+        set_to_false_after_refinement=DEFAULT,
+        plot=DEFAULT,
+        report=DEFAULT,
+        min_gof_improvement=DEFAULT,
         type=None,
     ):
         """Refine size broadening, requiring the specified percent GoF decrease."""
+        phase_ind = resolve_default(phase_ind, "refine_size_broadening_phase_ind")
+        model_type = resolve_default(model_type, "refine_size_broadening_model_type")
+        set_to_false_after_refinement = resolve_default(set_to_false_after_refinement, "refine_size_broadening_set_to_false_after_refinement")
+        plot = resolve_default(plot, "refine_size_broadening_plot")
+        report = resolve_default(report, "refine_size_broadening_report")
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_size_broadening_min_gof_improvement")
 
         actual_type = type if type is not None else model_type
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
@@ -1816,9 +1898,14 @@ class RefinementMixin:
         self.gpx_saver()
 
     def set_size_broadening_refinement(
-        self, set_refine_to=True, phase_ind="all", model_type="isotropic", save_gpx=True, type=None
+        self, set_refine_to=DEFAULT, phase_ind=DEFAULT, model_type=DEFAULT, save_gpx=DEFAULT, type=None
     ):
         """Select a crystallite-size model and flag for one or all phases; do not run a fit."""
+        set_refine_to = resolve_default(set_refine_to, "set_size_broadening_refinement_set_refine_to")
+        phase_ind = resolve_default(phase_ind, "set_size_broadening_refinement_phase_ind")
+        model_type = resolve_default(model_type, "set_size_broadening_refinement_model_type")
+        save_gpx = resolve_default(save_gpx, "set_size_broadening_refinement_save_gpx")
+
         actual_type = type if type is not None else model_type
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement(
@@ -1833,8 +1920,9 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def clear_size_broadening_refinement(self, save_gpx=True):
+    def clear_size_broadening_refinement(self, save_gpx=DEFAULT):
         """Disable crystallite-size refinement for all phases and optionally save."""
+        save_gpx = resolve_default(save_gpx, "clear_size_broadening_refinement_save_gpx")
 
         self.gpx.set_refinement({"set": {"Size": {"refine": False}}})
 
@@ -1846,10 +1934,13 @@ class RefinementMixin:
     ###############################################################################################
     @refinement_transaction
     def refine_phase_fractions(
-        self, set_to_false_after_refinement=True, plot=False,
-        min_gof_improvement=0.1,
+        self, set_to_false_after_refinement=DEFAULT, plot=DEFAULT,
+        min_gof_improvement=DEFAULT,
     ):
         """Refine phase fractions, requiring the specified percent GoF decrease."""
+        set_to_false_after_refinement = resolve_default(set_to_false_after_refinement, "refine_phase_fractions_set_to_false_after_refinement")
+        plot = resolve_default(plot, "refine_phase_fractions_plot")
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_phase_fractions_min_gof_improvement")
 
         if self._phase_mode() != "Rietveld":
             raise ValueError("Quantitative phase fractions require LeBail=False for all phases")
@@ -1895,8 +1986,10 @@ class RefinementMixin:
                 title_str=title_str.replace("✨", "").replace("❗", ""),
             )
 
-    def set_phase_fractions_refinement(self, set_refine_to=True, save_gpx=True):
+    def set_phase_fractions_refinement(self, set_refine_to=DEFAULT, save_gpx=DEFAULT):
         """Toggle phase scales against the histogram scale; use Rietveld mode for fractions."""
+        set_refine_to = resolve_default(set_refine_to, "set_phase_fractions_refinement_set_refine_to")
+        save_gpx = resolve_default(save_gpx, "set_phase_fractions_refinement_save_gpx")
 
         if set_refine_to:
             if self._phase_mode() != "Rietveld":
@@ -1911,8 +2004,10 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def clear_phase_fractions_refinement(self, save_gpx=True):
+    def clear_phase_fractions_refinement(self, save_gpx=DEFAULT):
         """Disable phase scales and enable the histogram scale; optionally save."""
+        save_gpx = resolve_default(save_gpx, "clear_phase_fractions_refinement_save_gpx")
+
         self.gpx[self._histogram_name]["Sample Parameters"]["Scale"][1] = True
         for e, p in enumerate(self.phases):
             self.gpx["Phases"][p]["Histograms"][self._histogram_name]["Scale"][1] = False
@@ -1925,14 +2020,14 @@ class RefinementMixin:
     @refinement_transaction
     def refine_preferred_orientation(
         self,
-        phase_ind="all",
-        harmonics_order=4,
-        set_to_false_after_refinement=True,
-        plot=False,
-        min_gof_improvement=1.0,
-        model="SH",
-        md_axis=(0, 0, 1),
-        md_ratio=1.0,
+        phase_ind=DEFAULT,
+        harmonics_order=DEFAULT,
+        set_to_false_after_refinement=DEFAULT,
+        plot=DEFAULT,
+        min_gof_improvement=DEFAULT,
+        model=DEFAULT,
+        md_axis=DEFAULT,
+        md_ratio=DEFAULT,
     ):
         """Refine preferred orientation with a minimum percent GoF decrease.
 
@@ -1957,6 +2052,15 @@ class RefinementMixin:
         md_ratio : float, optional
             Initial March-Dollase ratio r when model='MD' (default 1.0).
         """
+        phase_ind = resolve_default(phase_ind, "refine_preferred_orientation_phase_ind")
+        harmonics_order = resolve_default(harmonics_order, "refine_preferred_orientation_harmonics_order")
+        set_to_false_after_refinement = resolve_default(set_to_false_after_refinement, "refine_preferred_orientation_set_to_false_after_refinement")
+        plot = resolve_default(plot, "refine_preferred_orientation_plot")
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_preferred_orientation_min_gof_improvement")
+        model = resolve_default(model, "refine_preferred_orientation_model")
+        md_axis = resolve_default(md_axis, "refine_preferred_orientation_md_axis")
+        md_ratio = resolve_default(md_ratio, "refine_preferred_orientation_md_ratio")
+
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self._set_po(
             phase_ind,
@@ -2012,15 +2116,23 @@ class RefinementMixin:
 
     def set_preferred_orientation_refinement(
         self,
-        set_refine_to=True,
-        phase_ind=0,
-        harmonics_order_to=4,
-        model="SH",
-        md_axis=(0, 0, 1),
-        md_ratio=1.0,
-        save_gpx=True,
+        set_refine_to=DEFAULT,
+        phase_ind=DEFAULT,
+        harmonics_order_to=DEFAULT,
+        model=DEFAULT,
+        md_axis=DEFAULT,
+        md_ratio=DEFAULT,
+        save_gpx=DEFAULT,
     ):
         """Configure preferred orientation (Spherical Harmonics or March-Dollase) and set refinement flag."""
+        set_refine_to = resolve_default(set_refine_to, "set_preferred_orientation_refinement_set_refine_to")
+        phase_ind = resolve_default(phase_ind, "set_preferred_orientation_refinement_phase_ind")
+        harmonics_order_to = resolve_default(harmonics_order_to, "set_preferred_orientation_refinement_harmonics_order_to")
+        model = resolve_default(model, "set_preferred_orientation_refinement_model")
+        md_axis = resolve_default(md_axis, "set_preferred_orientation_refinement_md_axis")
+        md_ratio = resolve_default(md_ratio, "set_preferred_orientation_refinement_md_ratio")
+        save_gpx = resolve_default(save_gpx, "set_preferred_orientation_refinement_save_gpx")
+
         self._set_po(
             phase_ind,
             harmonics_order_to,
@@ -2033,8 +2145,11 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def clear_preferred_orientation_refinement(self, phase_ind="all", save_gpx=True):
+    def clear_preferred_orientation_refinement(self, phase_ind=DEFAULT, save_gpx=DEFAULT):
         """Disable preferred-orientation refinement for selected or all phases and optionally save."""
+        phase_ind = resolve_default(phase_ind, "clear_preferred_orientation_refinement_phase_ind")
+        save_gpx = resolve_default(save_gpx, "clear_preferred_orientation_refinement_save_gpx")
+
         phases = self.gpx.phases()
         selected = (
             range(len(phases))
@@ -2059,12 +2174,12 @@ class RefinementMixin:
     @refinement_transaction
     def refine_site_property(
         self,
-        phase_ind=0,
-        site_ind=0,
-        refinement_flags="",
-        set_to_false_after_refinement=True,
-        plot=False,
-        min_gof_improvement=0.1,
+        phase_ind=DEFAULT,
+        site_ind=DEFAULT,
+        refinement_flags=DEFAULT,
+        set_to_false_after_refinement=DEFAULT,
+        plot=DEFAULT,
+        min_gof_improvement=DEFAULT,
     ):
         """Refine a site, accepting only a sufficient percentage decrease in GoF.
 
@@ -2073,6 +2188,12 @@ class RefinementMixin:
         in GoF. Set min_gof_improvement=None to disable
         the improvement check, or 0 to accept any strictly positive decrease.
         """
+        phase_ind = resolve_default(phase_ind, "refine_site_property_phase_ind")
+        site_ind = resolve_default(site_ind, "refine_site_property_site_ind")
+        refinement_flags = resolve_default(refinement_flags, "refine_site_property_refinement_flags")
+        set_to_false_after_refinement = resolve_default(set_to_false_after_refinement, "refine_site_property_set_to_false_after_refinement")
+        plot = resolve_default(plot, "refine_site_property_plot")
+        min_gof_improvement = resolve_default(min_gof_improvement, "refine_site_property_min_gof_improvement")
 
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         site_label = self.gpx.phases()[phase_ind]["Atoms"][site_ind][0]
@@ -2121,9 +2242,13 @@ class RefinementMixin:
             )
 
     def set_site_property_refinement(
-        self, phase_ind=0, site_ind=0, refinement_flags="", save_gpx=True
+        self, phase_ind=DEFAULT, site_ind=DEFAULT, refinement_flags=DEFAULT, save_gpx=DEFAULT
     ):
         """Set native GSAS-II atom refinement flags for one site; do not run a fit."""
+        phase_ind = resolve_default(phase_ind, "set_site_property_refinement_phase_ind")
+        site_ind = resolve_default(site_ind, "set_site_property_refinement_site_ind")
+        refinement_flags = resolve_default(refinement_flags, "set_site_property_refinement_refinement_flags")
+        save_gpx = resolve_default(save_gpx, "set_site_property_refinement_save_gpx")
 
         site_label = self.gpx.phases()[phase_ind]["Atoms"][site_ind][0]
         self.gpx.phases()[phase_ind].atom(
@@ -2132,8 +2257,11 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
-    def clear_site_property_refinement(self, phase_ind=0, site_ind=0, save_gpx=True):
+    def clear_site_property_refinement(self, phase_ind=DEFAULT, site_ind=DEFAULT, save_gpx=DEFAULT):
         """Clear all refinement flags for one atom and optionally save the project."""
+        phase_ind = resolve_default(phase_ind, "clear_site_property_refinement_phase_ind")
+        site_ind = resolve_default(site_ind, "clear_site_property_refinement_site_ind")
+        save_gpx = resolve_default(save_gpx, "clear_site_property_refinement_save_gpx")
 
         site_label = self.gpx.phases()[phase_ind]["Atoms"][site_ind][0]
         self.gpx.phases()[phase_ind].atom(site_label).refinement_flags = ""
@@ -2142,8 +2270,10 @@ class RefinementMixin:
             self.gpx_saver()
 
     @refinement_transaction
-    def fine_tune_gpx(self, min_gof_improvement=1.0):
+    def fine_tune_gpx(self, min_gof_improvement=DEFAULT):
         """Open the installed GSAS-II GUI, then synchronize the accepted result."""
+        min_gof_improvement = resolve_default(min_gof_improvement, "fine_tune_gpx_min_gof_improvement")
+
         self._validate_gof_improvement(min_gof_improvement)
         filename = f"{self.gsasii_run_directory}/gsas.gpx"
         self.gpx_saver()
@@ -2151,8 +2281,10 @@ class RefinementMixin:
         return self._replace_project(filename, min_gof_improvement, "fine_tune_gpx")
 
     @refinement_transaction
-    def replace_gpx_with(self, newgpx_to_replace, min_gof_improvement=1.0):
+    def replace_gpx_with(self, newgpx_to_replace, min_gof_improvement=DEFAULT):
         """Replace a compatible single-histogram project and synchronize results."""
+        min_gof_improvement = resolve_default(min_gof_improvement, "replace_gpx_with_min_gof_improvement")
+
         return self._replace_project(newgpx_to_replace, min_gof_improvement, "replace_gpx_with")
 
     def _replace_project(self, source, minimum, label):
@@ -2201,16 +2333,22 @@ class RefinementMixin:
     ###############################################################################################
     def plot_refinement_history(
         self,
-        figsize=(8, 6),
-        dpi=128,
-        min_step_detail=4,
+        figsize=DEFAULT,
+        dpi=DEFAULT,
+        min_step_detail=DEFAULT,
         export_fig_as=None,
-        show=False,
-        return_fig=False,
+        show=DEFAULT,
+        return_fig=DEFAULT,
     ):
         """
         Plot comprehensive refinement convergence history showing accepted values and rollbacks.
         """
+        figsize = resolve_default(figsize, "plot_figsize")
+        dpi = resolve_default(dpi, "plot_refinement_history_dpi")
+        min_step_detail = resolve_default(min_step_detail, "plot_refinement_history_min_step_detail")
+        show = resolve_default(show, "plot_refinement_history_show")
+        return_fig = resolve_default(return_fig, "plot_refinement_history_return_fig")
+
         ds = getattr(self, "ds", None)
         return refinement_plotter(
             ds,

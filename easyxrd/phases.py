@@ -1,3 +1,5 @@
+from . import DEFAULT, resolve_default
+
 from .results import clear_fit_results
 import os
 import math
@@ -13,8 +15,10 @@ from .utils import load_gsas_module
 
 class PhasesMixin:
     def load_phases(self, from_phases_dict=None, from_gpx=None, from_nc=None,
-                    from_ds=None, mp_rester_api_key=None, plot=True):
+                    from_ds=None, mp_rester_api_key=None, plot=DEFAULT):
         """Load one phase source atomically, clearing superseded phase metadata."""
+        plot = resolve_default(plot, "load_phases_plot")
+
         if sum(x is not None for x in (from_phases_dict, from_gpx, from_nc, from_ds)) != 1:
             raise ValueError("Provide exactly one phase source")
         if not hasattr(self, "ds"):

@@ -1,3 +1,5 @@
+from . import DEFAULT, resolve_default
+
 import logging
 import warnings
 import json
@@ -14,14 +16,20 @@ def i1d_plotter(
     ds,
     ax,
     ds_previous=None,
-    i1d_ylogscale=True,
-    xlabel=True,
-    return_da=False,
-    title_str="",
-    ncol=1,
-    show_Ybkg_old=False,
+    i1d_ylogscale=DEFAULT,
+    xlabel=DEFAULT,
+    return_da=DEFAULT,
+    title_str=DEFAULT,
+    ncol=DEFAULT,
+    show_Ybkg_old=DEFAULT,
 ):
     """Plot 1D XRD intensity profile (observed, calculated, and background)."""
+    i1d_ylogscale = resolve_default(i1d_ylogscale, "plot_i1d_ylogscale")
+    xlabel = resolve_default(xlabel, "i1d_plotter_xlabel")
+    return_da = resolve_default(return_da, "i1d_plotter_return_da")
+    title_str = resolve_default(title_str, "i1d_plotter_title_str")
+    ncol = resolve_default(ncol, "i1d_plotter_ncol")
+    show_Ybkg_old = resolve_default(show_Ybkg_old, "i1d_plotter_show_Ybkg_old")
 
     da_Y_calc = da_Y_bkg = None
     if "i1d_baseline" in ds.keys():
@@ -117,15 +125,22 @@ def i1d_plotter(
 def i2d_plotter(
     ds,
     ax,
-    i2d_robust=True,
-    i2d_logscale=True,
-    xlabel=False,
-    cbar=True,
-    cmap="Greys",
-    title_str="",
-    annotate=False,
+    i2d_robust=DEFAULT,
+    i2d_logscale=DEFAULT,
+    xlabel=DEFAULT,
+    cbar=DEFAULT,
+    cmap=DEFAULT,
+    title_str=DEFAULT,
+    annotate=DEFAULT,
 ):
     """Plot 2D caked XRD pattern (azimuthal vs radial)."""
+    i2d_robust = resolve_default(i2d_robust, "plot_i2d_robust")
+    i2d_logscale = resolve_default(i2d_logscale, "plot_i2d_logscale")
+    xlabel = resolve_default(xlabel, "i2d_plotter_xlabel")
+    cbar = resolve_default(cbar, "i2d_plotter_cbar")
+    cmap = resolve_default(cmap, "i2d_plotter_cmap")
+    title_str = resolve_default(title_str, "i2d_plotter_title_str")
+    annotate = resolve_default(annotate, "i2d_plotter_annotate")
 
     if ("i2d_baseline" in ds.keys()) and ("roi_azimuthal_range" in ds.i2d.attrs):
         da_i2d = ds.i2d
@@ -225,12 +240,16 @@ def phases_plotter(
     ax_main,
     phases=None,
     line_axes=None,
-    phase_label_x=0.9,
-    phase_label_y=0.75,
-    phase_label_yshift=-0.2,
-    show_hkls = True,
+    phase_label_x=DEFAULT,
+    phase_label_y=DEFAULT,
+    phase_label_yshift=DEFAULT,
+    show_hkls = DEFAULT,
 ):
     """Plot Bragg reflection lines and phase labels."""
+    phase_label_x = resolve_default(phase_label_x, "phases_plotter_phase_label_x")
+    phase_label_y = resolve_default(phase_label_y, "phases_plotter_phase_label_y")
+    phase_label_yshift = resolve_default(phase_label_yshift, "phases_plotter_phase_label_yshift")
+    show_hkls = resolve_default(show_hkls, "phases_plotter_show_hkls")
 
     wavelength = ds.i1d.attrs["wavelength_in_angst"]
     xrdc = XRDCalculator(wavelength=wavelength)
@@ -314,10 +333,10 @@ def exrd_plotter(
     ds,
     ds_previous=None,
     phases=None,
-    figsize=(8, 6),
-    i2d_robust=True,
-    i2d_logscale=True,
-    i1d_ylogscale=True,
+    figsize=DEFAULT,
+    i2d_robust=DEFAULT,
+    i2d_logscale=DEFAULT,
+    i1d_ylogscale=DEFAULT,
     plot_hint="1st_loaded_data",
     title_str=None,
     export_fig_as=None,
@@ -325,11 +344,20 @@ def exrd_plotter(
     i1d_plot_bottom=None,
     i1d_plot_top=None,
     title=None,
-    site_str_x=0.4,
-    site_str_y=0.8,
-    show_wt_fractions=False,
+    site_str_x=DEFAULT,
+    site_str_y=DEFAULT,
+    show_wt_fractions=DEFAULT,
+    dpi=DEFAULT,
 ):
     """Main plotting coordinator for easyXRD workflow stages."""
+    figsize = resolve_default(figsize, "plot_figsize")
+    i2d_robust = resolve_default(i2d_robust, "plot_i2d_robust")
+    i2d_logscale = resolve_default(i2d_logscale, "plot_i2d_logscale")
+    i1d_ylogscale = resolve_default(i1d_ylogscale, "plot_i1d_ylogscale")
+    site_str_x = resolve_default(site_str_x, "plot_site_str_x")
+    site_str_y = resolve_default(site_str_y, "plot_site_str_y")
+    show_wt_fractions = resolve_default(show_wt_fractions, "plot_show_wt_fractions")
+    dpi = resolve_default(dpi, "plot_dpi")
 
     if plot_hint in ("refinement_history", "plot_refinement_history", "refinement", "plot_refinement"):
         return refinement_plotter(ds, figsize=figsize, export_fig_as=export_fig_as)
@@ -340,7 +368,7 @@ def exrd_plotter(
     has_i2d = "i2d" in ds.keys()
 
     if plot_hint == "load_xrd_data":
-        fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
+        fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=dpi)
         if has_i2d:
             mosaic = """
                         B
@@ -379,7 +407,7 @@ def exrd_plotter(
             )
 
     elif plot_hint == "get_baseline":
-        fig = plt.figure(figsize=figsize, dpi=128)
+        fig = plt.figure(figsize=figsize, dpi=dpi)
         if has_i2d:
             mosaic = """
                         AA222
@@ -435,7 +463,7 @@ def exrd_plotter(
 
     elif plot_hint == "load_phases":
         if has_i2d:
-            fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=128)
+            fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=dpi)
             mosaic = """
                         2
                         2
@@ -473,7 +501,7 @@ def exrd_plotter(
             )
             ax_dict["2"].set_title(title)
         else:
-            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
+            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=dpi)
             mosaic = """
                         1
                         1
@@ -509,7 +537,7 @@ def exrd_plotter(
         )
 
     elif plot_hint is None:
-        fig = plt.figure(figsize=figsize, dpi=128)
+        fig = plt.figure(figsize=figsize, dpi=dpi)
         if has_i2d:
             mosaic = """
                         2
@@ -687,7 +715,7 @@ def exrd_plotter(
         show_Ybkg_old = (plot_hint == "refine_background")
 
         if has_i2d:
-            fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=128)
+            fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=dpi)
             mosaic = """
                         2
                         1
@@ -722,7 +750,7 @@ def exrd_plotter(
                 line_axes=[ax_dict["2"], ax_dict["1"], ax_dict["P"]],
             )
         else:
-            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=128)
+            fig = plt.figure(figsize=(figsize[0], figsize[1] / 1.5), dpi=dpi)
             mosaic = """
                         1
                         1
@@ -750,22 +778,28 @@ def exrd_plotter(
             )
 
     if export_fig_as is not None:
-        fig.savefig(export_fig_as, dpi=128)
+        fig.savefig(export_fig_as, dpi=dpi)
 
 
 def refinement_plotter(
     ds,
-    figsize=(8, 6),
-    dpi=150,
-    min_step_detail=4,
+    figsize=DEFAULT,
+    dpi=DEFAULT,
+    min_step_detail=DEFAULT,
     export_fig_as=None,
-    show=False,
-    return_fig=False,
+    show=DEFAULT,
+    return_fig=DEFAULT,
 ):
     """
     Plot comprehensive refinement convergence history showing full progression
     and zoomed-in micro-refinements with accepted vs. rejected attempts.
     """
+    figsize = resolve_default(figsize, "plot_figsize")
+    dpi = resolve_default(dpi, "refinement_plotter_dpi")
+    min_step_detail = resolve_default(min_step_detail, "refinement_plotter_min_step_detail")
+    show = resolve_default(show, "refinement_plotter_show")
+    return_fig = resolve_default(return_fig, "refinement_plotter_return_fig")
+
     if ds is None or "rwp_history" not in ds or ds.sizes.get("refinement_step", 0) == 0:
         raise ValueError(
             "No refinement history found in dataset. Run a refinement step first."

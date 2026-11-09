@@ -1,3 +1,5 @@
+from . import DEFAULT, resolve_default
+
 import warnings
 import matplotlib.pyplot as plt
 
@@ -18,12 +20,18 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
 
     def __init__(
         self,
-        verbose=False,
-        figsize=(8, 6),
-        i2d_robust=True,
-        i1d_ylogscale=True,
-        i2d_logscale=True,
+        verbose=DEFAULT,
+        figsize=DEFAULT,
+        i2d_robust=DEFAULT,
+        i1d_ylogscale=DEFAULT,
+        i2d_logscale=DEFAULT,
     ):
+        verbose = resolve_default(verbose, "verbose")
+        figsize = resolve_default(figsize, "plot_figsize")
+        i2d_robust = resolve_default(i2d_robust, "plot_i2d_robust")
+        i1d_ylogscale = resolve_default(i1d_ylogscale, "plot_i1d_ylogscale")
+        i2d_logscale = resolve_default(i2d_logscale, "plot_i2d_logscale")
+
         self.verbose = verbose
         self.figsize = figsize
         self.i2d_robust = i2d_robust
@@ -42,12 +50,18 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         i1d_plot_bottom=None,
         i1d_plot_top=None,
         title=None,
-        site_str_x=0.4,
-        site_str_y=0.8,
-        close=False,
-        show_wt_fractions=False,
+        site_str_x=DEFAULT,
+        site_str_y=DEFAULT,
+        close=DEFAULT,
+        show_wt_fractions=DEFAULT,
+        dpi=DEFAULT,
     ):
         """Plot XRD data, baselines, phases, and refinement results."""
+        dpi = resolve_default(dpi, "plot_dpi")
+        site_str_x = resolve_default(site_str_x, "plot_site_str_x")
+        site_str_y = resolve_default(site_str_y, "plot_site_str_y")
+        close = resolve_default(close, "plot_close")
+        show_wt_fractions = resolve_default(show_wt_fractions, "plot_show_wt_fractions")
 
         if figsize is None:
             figsize = self.figsize
@@ -81,6 +95,7 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
             site_str_x=site_str_x,
             site_str_y=site_str_y,
             show_wt_fractions=show_wt_fractions,
+            dpi=dpi,
         )
 
         if close:

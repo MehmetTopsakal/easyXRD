@@ -1,3 +1,5 @@
+from . import DEFAULT, resolve_default
+
 import os
 import warnings
 import logging
@@ -98,19 +100,19 @@ class DataLoaderMixin:
     """Load XRD observations and preserve their measurement variance."""
 
     def load_xrd_data(
-        self, integrate2d=True, from_img_array=None, from_tiff_file=None,
+        self, integrate2d=DEFAULT, from_img_array=None, from_tiff_file=None,
         ai=None, poni_file=None, mask=None, mask_file=None,
-        median_filter_kernel_size=None, median_filter_on_i2d=True,
+        median_filter_kernel_size=DEFAULT, median_filter_on_i2d=DEFAULT,
         from_da_i2d=None, from_i1d_array=None,
-        i1d_array_wavelength_in_angstrom=0.1814, i1d_array_radial_unit="q",
+        i1d_array_wavelength_in_angstrom=DEFAULT, i1d_array_radial_unit=DEFAULT,
         from_da_i1d=None, from_nc_file=None, from_txt_file=None,
-        txt_file_wavelength_in_angstrom=0.1814, txt_file_comments="#",
-        txt_file_skiprows=0, txt_file_usecols=(0, 1), txt_file_radial_unit="tth",
-        radial_range=(0.1, 11.1), radial_npts=1000, delta_q=0.0010,
-        npt_azimuthal=91, plot=True, ds_attrs=None,
-        method=("bbox", "csr", "cython"), variance=None, error_model=None,
-        i1d_variance=None, polarization_factor=None, dark=None, flat=None,
-        normalization_factor=1.0,
+        txt_file_wavelength_in_angstrom=DEFAULT, txt_file_comments=DEFAULT,
+        txt_file_skiprows=DEFAULT, txt_file_usecols=DEFAULT, txt_file_radial_unit=DEFAULT,
+        radial_range=DEFAULT, radial_npts=DEFAULT, delta_q=DEFAULT,
+        npt_azimuthal=DEFAULT, plot=DEFAULT, ds_attrs=None,
+        method=DEFAULT, variance=None, error_model=DEFAULT,
+        i1d_variance=None, polarization_factor=DEFAULT, dark=None, flat=None,
+        normalization_factor=DEFAULT,
     ):
         """Load exactly one source, committing state only after validation.
 
@@ -123,6 +125,26 @@ class DataLoaderMixin:
         Disabled polarization is recorded as the string "None" in NetCDF-safe
         metadata; pyFAI still receives None to disable the correction.
         """
+        median_filter_kernel_size = resolve_default(median_filter_kernel_size, "load_xrd_data_median_filter_kernel_size")
+        error_model = resolve_default(error_model, "load_xrd_data_error_model")
+        polarization_factor = resolve_default(polarization_factor, "load_xrd_data_polarization_factor")
+        integrate2d = resolve_default(integrate2d, "load_xrd_data_integrate2d")
+        median_filter_on_i2d = resolve_default(median_filter_on_i2d, "load_xrd_data_median_filter_on_i2d")
+        i1d_array_wavelength_in_angstrom = resolve_default(i1d_array_wavelength_in_angstrom, "load_xrd_data_i1d_array_wavelength_in_angstrom")
+        i1d_array_radial_unit = resolve_default(i1d_array_radial_unit, "load_xrd_data_i1d_array_radial_unit")
+        txt_file_wavelength_in_angstrom = resolve_default(txt_file_wavelength_in_angstrom, "load_xrd_data_txt_file_wavelength_in_angstrom")
+        txt_file_comments = resolve_default(txt_file_comments, "load_xrd_data_txt_file_comments")
+        txt_file_skiprows = resolve_default(txt_file_skiprows, "load_xrd_data_txt_file_skiprows")
+        txt_file_usecols = resolve_default(txt_file_usecols, "load_xrd_data_txt_file_usecols")
+        txt_file_radial_unit = resolve_default(txt_file_radial_unit, "load_xrd_data_txt_file_radial_unit")
+        radial_range = resolve_default(radial_range, "load_xrd_data_radial_range")
+        radial_npts = resolve_default(radial_npts, "load_xrd_data_radial_npts")
+        delta_q = resolve_default(delta_q, "load_xrd_data_delta_q")
+        npt_azimuthal = resolve_default(npt_azimuthal, "load_xrd_data_npt_azimuthal")
+        plot = resolve_default(plot, "load_xrd_data_plot")
+        method = resolve_default(method, "load_xrd_data_method")
+        normalization_factor = resolve_default(normalization_factor, "load_xrd_data_normalization_factor")
+
         sources = [from_img_array, from_tiff_file, from_da_i2d, from_i1d_array,
                    from_da_i1d, from_nc_file, from_txt_file]
         if sum(source is not None for source in sources) != 1:
@@ -290,9 +312,13 @@ class DataLoaderMixin:
         ds_out.to_netcdf(path, engine="h5netcdf", encoding=encoding)
 
     def export_i1d_to(
-        self, to="data.dat", mode="xy", subtract_baseline=False, fmt="%.4e %.4e", header=False,
+        self, to="data.dat", mode=DEFAULT, subtract_baseline=DEFAULT, fmt=DEFAULT, header=DEFAULT,
     ):
         """Export integrated 1D XRD data to file."""
+        mode = resolve_default(mode, "export_i1d_to_mode")
+        subtract_baseline = resolve_default(subtract_baseline, "export_i1d_to_subtract_baseline")
+        fmt = resolve_default(fmt, "export_i1d_to_fmt")
+        header = resolve_default(header, "export_i1d_to_header")
 
         if subtract_baseline and ("i1d_baseline" in self.ds.keys()):
             data_y = self.ds.i1d.values - self.ds.i1d_baseline.values
