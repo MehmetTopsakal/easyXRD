@@ -340,3 +340,267 @@ def test_phase_reload_cleans_metadata_without_temp_files(tmp_path,monkeypatch):
     assert list(tmp_path.glob('*.cif'))==[path]
     with pytest.raises(ValueError,match='exactly one'):
         s.load_phases(plot=False)
+
+
+def test_march_dollase_configuration_and_refinement(tmp_path, monkeypatch):
+    s = configurable_sample(tmp_path)
+    s.set_preferred_orientation_refinement(
+        True, phase_ind=0, model="MD", md_axis=[0, 0, 1], md_ratio=1.25, save_gpx=False
+    )
+    po = s.gpx.phases()[0].data["Histograms"][s._histogram_name]["Pref.Ori."]
+    assert po[0] == "MD"
+    assert po[1] == 1.25
+    assert po[2] is True
+    assert po[3] == [0, 0, 1]
+
+    s.clear_preferred_orientation_refinement(save_gpx=False)
+    assert s.gpx.phases()[0].data["Histograms"][s._histogram_name]["Pref.Ori."][2] is False
+
+    # Test invalid inputs
+    with pytest.raises(ValueError, match="Preferred orientation model must be"):
+        s.set_preferred_orientation_refinement(model="INVALID", save_gpx=False)
+    with pytest.raises(ValueError, match="March-Dollase axis"):
+        s.set_preferred_orientation_refinement(model="MD", md_axis=[0, 0, 0], save_gpx=False)
+    with pytest.raises(ValueError, match="March-Dollase axis"):
+        s.set_preferred_orientation_refinement(model="MD", md_axis=[0, 1], save_gpx=False)
+    with pytest.raises(ValueError, match="March-Dollase ratio"):
+        s.set_preferred_orientation_refinement(model="MD", md_ratio=-0.5, save_gpx=False)
+
+    # Test refinement wrapper with MD
+    calls = []
+    def accepted(**kwargs):
+        calls.append(kwargs)
+        s.last_refinement_accepted = True
+        return "accepted"
+    monkeypatch.setattr(s, "refine", accepted)
+    s.refine_preferred_orientation(model="MD", md_axis=[1, 1, 0], min_gof_improvement=0.1)
+    assert len(calls) == 1
+    assert calls[0]["min_gof_improvement"] == 0.1
+    po = s.gpx.phases()[0].data["Histograms"][s._histogram_name]["Pref.Ori."]
+    assert po[0] == "MD"
+    assert po[3] == [1, 1, 0]
+
+
+def test_q_to_two_theta_boundary_tolerance():
+    from easyxrd.data_loader import q_to_two_theta
+    wavelength = 1.5406
+    max_q = 4 * np.pi / wavelength
+    tth = q_to_two_theta([0.0, max_q], wavelength)
+    assert np.allclose(tth, [0.0, 180.0])
+
+    # Slight floating point overshoot within tolerance should be clipped cleanly
+    tth_jitter = q_to_two_theta([max_q * (1.0 + 1e-8)], wavelength)
+    assert np.allclose(tth_jitter, [180.0])
+
+    # True out-of-bounds coordinate should raise ValueError
+    with pytest.raises(ValueError, match=r"satisfy 0 <= q\*wavelength"):
+        q_to_two_theta([max_q * 1.05], wavelength)
+
+
+def test_lebail_phase_fractions_refinement_guard(tmp_path):
+    s = real_sample(tmp_path)
+    s.setup_gsas2_refiner(plot=False)
+    s.set_LeBail(True, plot=False)
+    with pytest.raises(ValueError, match="Quantitative phase fractions require LeBail=False"):
+        s.set_phase_fractions_refinement(True, save_gpx=False)
+    # Disabling phase fraction refinement in Le Bail mode is safe and permitted
+    s.set_phase_fractions_refinement(False, save_gpx=False)
+
+    # Switching back to Rietveld allows enabling phase fractions refinement
+    s.set_LeBail(False, plot=False)
+    s.set_phase_fractions_refinement(True, save_gpx=False)
+    assert s.gpx["Phases"]["Ni"]["Histograms"][s._histogram_name]["Scale"][1] is True
+
+
+def test_lebail_plot_annotation(tmp_path, monkeypatch):
+    s = real_sample(tmp_path)
+    s.setup_gsas2_refiner(plot=False)
+    s.set_LeBail(True, plot=False)
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+    try:
+        # Refine background to populate ds attributes
+        s.refine_background(num_coeffs=3, min_gof_improvement=None, plot=False)
+        assert s.ds.attrs.get("refinement_mode") == "LeBail"
+        assert s.ds.attrs.get("PhaseInd_0_use_lebail") is True
+        from easyxrd.plotters import exrd_plotter
+        exrd_plotter(ds=s.ds, ds_previous=None, plot_hint=None)
+        # Check annotations in plot
+        axes = plt.gcf().axes
+        found_lebail = False
+        for ax in axes:
+            for child in ax.get_children():
+                if hasattr(child, "get_text") and "[Le Bail]" in child.get_text():
+                    found_lebail = True
+                    break
+        assert found_lebail, "Expected '[Le Bail]' in plot phase annotations"
+    finally:
+        plt.close("all")
+
+
+def test_instrument_parameter_correlation_warning(tmp_path):
+    s = real_sample(tmp_path)
+    s.setup_gsas2_refiner(plot=False)
+    s.set_size_broadening_refinement(True, save_gpx=False)
+    with pytest.warns(UserWarning, match="parameter correlation"):
+        s.refine_instrument_parameters(min_gof_improvement=None, plot=False)
+
+    s.set_size_broadening_refinement(False, save_gpx=False)
+    s.set_strain_broadening_refinement(True, save_gpx=False)
+    with pytest.warns(UserWarning, match="parameter correlation"):
+        s.refine_instrument_parameters(min_gof_improvement=None, plot=False)
+
+
+def test_setup_gsas2_refiner_presets_and_instprm_file(tmp_path):
+    s = real_sample(tmp_path)
+
+    # Test CuKa_lab preset
+    s.setup_gsas2_refiner(instprm_preset="CuKa_lab", plot=False)
+    provenance = json.loads(s.ds.attrs["refinement_provenance"])
+    assert provenance["instrument_source"] == {"preset": "CuKa_lab"}
+    inst = provenance["instrument_parameters"]
+    assert inst["U"] == 22.75
+    assert inst["V"] == -17.6
+    assert inst["W"] == 10.6
+    assert inst["X"] == 1.58
+    assert inst["Y"] == 5.78
+    assert inst["SH/L"] == 0.002
+    assert inst["Polariz."] == 0.0
+
+    # Test synchrotron preset
+    s.setup_gsas2_refiner(instprm_preset="synchrotron", plot=False)
+    provenance = json.loads(s.ds.attrs["refinement_provenance"])
+    assert provenance["instrument_source"] == {"preset": "synchrotron"}
+    inst = provenance["instrument_parameters"]
+    assert inst["U"] == 1.0
+    assert inst["V"] == -0.5
+    assert inst["Polariz."] == 0.99
+
+    # Test invalid preset
+    with pytest.raises(ValueError, match="Unknown instprm_preset"):
+        s.setup_gsas2_refiner(instprm_preset="invalid_preset", plot=False)
+
+    # Test explicit .instprm file
+    inst_file = tmp_path / "custom.instprm"
+    inst_file.write_text(
+        "# GSAS-II custom instprm\n"
+        "Type:PXC\n"
+        "Bank:1.0\n"
+        "Lam:1.5406\n"
+        "U:35.5\n"
+        "V:-12.3\n"
+        "W:8.7\n"
+        "X:1.2\n"
+        "Y:3.4\n"
+        "SH/L:0.0015\n"
+        "Polariz.:0.5\n"
+    )
+    s.setup_gsas2_refiner(instprm_file=str(inst_file), plot=False)
+    provenance = json.loads(s.ds.attrs["refinement_provenance"])
+    assert provenance["instrument_source"]["path"] == str(inst_file)
+    inst = provenance["instrument_parameters"]
+    assert inst["U"] == 35.5
+    assert inst["V"] == -12.3
+    assert inst["W"] == 8.7
+    assert inst["X"] == 1.2
+    assert inst["Y"] == 3.4
+    assert inst["SH/L"] == 0.0015
+    assert inst["Polariz."] == 0.5
+
+    # Test conflicting source and preset
+    with pytest.raises(ValueError, match="Specify only one"):
+        s.setup_gsas2_refiner(instprm_file=str(inst_file), instprm_preset="CuKa_lab", plot=False)
+
+    # Test missing file raises FileNotFoundError
+    with pytest.raises(FileNotFoundError):
+        s.setup_gsas2_refiner(instprm_file=str(tmp_path / "missing.instprm"), plot=False)
+
+
+def test_load_xrd_data_polarization_and_poisson_variance():
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
+    from pyFAI.detectors import Detector
+    ai = AzimuthalIntegrator(
+        dist=0.1, poni1=0.003, poni2=0.004,
+        detector=Detector(pixel1=1e-4, pixel2=1e-4), wavelength=1e-10,
+    )
+    y, x = np.indices((100, 100))
+    img = (100 + 2 * x + y).astype(float)
+    s = exrd()
+    s.load_xrd_data(
+        from_img_array=img,
+        ai=ai,
+        radial_range=(0.05, 0.35),
+        delta_q=0.01,
+        plot=False,
+        error_model="poisson",
+        polarization_factor=0.99,
+    )
+    assert "i1d_variance" in s.ds
+    assert np.all(s.ds.i1d_variance > 0)
+    assert s.ds.i1d.attrs["polarization_factor"] == 0.99
+    assert s.ds.i1d.attrs["error_model"] == "poisson"
+
+
+def test_same_grid_tolerance_and_mismatch():
+    from easyxrd.baseline import _same_grid
+    q = np.linspace(1.0, 5.0, 100)
+    da1 = xr.DataArray(np.ones(100), dims="radial", coords={"radial": q}, attrs={"radial_unit": "q_A^-1"})
+    # Within floating point tolerance
+    da2 = xr.DataArray(np.ones(100), dims="radial", coords={"radial": q + 1e-8}, attrs={"radial_unit": "q_A^-1"})
+    _same_grid(da1, da2)
+
+    # Beyond tolerance
+    da3 = xr.DataArray(np.ones(100), dims="radial", coords={"radial": q + 0.1}, attrs={"radial_unit": "q_A^-1"})
+    with pytest.raises(ValueError, match="grids must match exactly"):
+        _same_grid(da1, da3)
+
+    # Mismatched radial unit
+    da4 = xr.DataArray(np.ones(100), dims="radial", coords={"radial": q}, attrs={"radial_unit": "two_theta"})
+    with pytest.raises(ValueError, match="radial units differ"):
+        _same_grid(da1, da4)
+
+
+def test_export_phases_robustness(tmp_path):
+    s = real_sample(tmp_path)
+    export_dir = tmp_path / "nested" / "cifs"
+    # Export all phases
+    s.export_phases(export_to=str(export_dir))
+    assert (export_dir / "Ni_exported.cif").is_file()
+
+    # Export by index
+    export_dir_idx = tmp_path / "by_index"
+    s.export_phases(phase_ind=0, export_to=str(export_dir_idx))
+    assert (export_dir_idx / "Ni_exported.cif").is_file()
+
+    # Export by name
+    export_dir_name = tmp_path / "by_name"
+    s.export_phases(phase_ind="Ni", export_to=str(export_dir_name))
+    assert (export_dir_name / "Ni_exported.cif").is_file()
+
+    # Out of range index
+    with pytest.raises(IndexError, match="out of range"):
+        s.export_phases(phase_ind=5, export_to=str(tmp_path / "err"))
+
+    # Unknown phase name
+    with pytest.raises(ValueError, match="not found in loaded phases"):
+        s.export_phases(phase_ind="UnknownPhase", export_to=str(tmp_path / "err"))
+
+
+def test_size_and_strain_model_type_signature(tmp_path):
+    s = real_sample(tmp_path)
+    s.setup_gsas2_refiner(plot=False)
+    # Test setting model_type with new non-shadowing argument name
+    s.set_size_broadening_refinement(True, model_type="isotropic", save_gpx=False)
+    p = s.gpx.phases()[0]
+    hist_name = s._histogram_name
+    assert p.data["Histograms"][hist_name]["Size"][2][0] is True
+
+    s.set_strain_broadening_refinement(True, model_type="isotropic", save_gpx=False)
+    assert p.data["Histograms"][hist_name]["Mustrain"][2][0] is True
+
+    # Test backward compatibility with legacy type keyword
+    s.set_size_broadening_refinement(False, type="isotropic", save_gpx=False)
+    assert p.data["Histograms"][hist_name]["Size"][2][0] is False
+
+
+

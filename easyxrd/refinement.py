@@ -27,6 +27,34 @@ from .plotters import exrd_plotter, refinement_plotter
 logger = logging.getLogger(__name__)
 
 
+INSTPRM_PRESETS = {
+    "CuKa_lab": {
+        "U": 22.75,
+        "V": -17.6,
+        "W": 10.6,
+        "X": 1.58,
+        "Y": 5.78,
+        "SH/L": 0.002,
+        "Zero": 0.0,
+        "Polariz.": 0.0,
+        "Azimuth": 0.0,
+        "Z": 0.0,
+    },
+    "synchrotron": {
+        "U": 1.0,
+        "V": -0.5,
+        "W": 0.1,
+        "X": 0.5,
+        "Y": 0.1,
+        "SH/L": 0.0001,
+        "Zero": 0.0,
+        "Polariz.": 0.99,
+        "Azimuth": 0.0,
+        "Z": 0.0,
+    },
+}
+
+
 class RefinementMixin:
     """
     Mixin class providing GSAS-II refinement setup, execution, and parameter controls.
@@ -39,6 +67,7 @@ class RefinementMixin:
     discard the entire result. Individual profile coefficients may be
     negative; zero width components are allowed.
     """
+    instprm_presets = INSTPRM_PRESETS
     @staticmethod
     def _normalization_peak(values):
         peak = np.nanmax(values)
@@ -58,21 +87,64 @@ class RefinementMixin:
                  for p in self.gpx.phases()]
         return "LeBail" if any(modes) else "Rietveld"
 
-    def _set_po(self, phase_ind, order, enabled):
-        if not isinstance(order, (int, np.integer)) or order < 0 or order % 2:
-            raise ValueError("Spherical harmonic order must be a nonnegative even integer")
-        lattice = load_gsas_module("GSASIIlattice")
+    def _set_po(
+        self,
+        phase_ind,
+        order,
+        enabled,
+        model="SH",
+        md_axis=(0, 0, 1),
+        md_ratio=1.0,
+    ):
+        model_clean = str(model).upper().strip()
+        if model_clean not in ("SH", "MD"):
+            raise ValueError(
+                f"Preferred orientation model must be 'SH' (Spherical Harmonics) or 'MD' (March-Dollase), got {model!r}"
+            )
         phases = self.gpx.phases()
-        selected = range(len(phases)) if phase_ind in ("all", None) else [phase_ind]
-        for index in selected:
-            phase = phases[index]
-            symmetry = phase.data["General"]["SGData"]["SGLaue"]
-            hap = phase.data["Histograms"][self._histogram_name]
-            previous = hap.get("Pref.Ori.", [None] * 6)
-            old = previous[5] if previous[0] == "SH" else {}
-            names = lattice.GenSHCoeffT(symmetry, '0', order, False)
-            coefficients = {name: old.get(name, 0.) for name in names}
-            hap["Pref.Ori."] = ["SH", 1., enabled, [0, 0, 1], order, coefficients, [""], .1]
+        if phase_ind in ("all", None):
+            selected = list(range(len(phases)))
+        elif isinstance(phase_ind, (int, np.integer)):
+            selected = [int(phase_ind)]
+        else:
+            selected = [i for i, p in enumerate(phases) if p.name == phase_ind]
+            if not selected:
+                raise ValueError(f"Phase {phase_ind!r} not found in project phases")
+
+        if model_clean == "MD":
+            try:
+                axis = [int(x) for x in md_axis]
+            except (TypeError, ValueError) as exc:
+                raise ValueError("March-Dollase axis must be a sequence of 3 integers") from exc
+            if len(axis) != 3 or all(x == 0 for x in axis):
+                raise ValueError("March-Dollase axis must be a sequence of 3 integers with at least one nonzero component")
+            for index in selected:
+                phase = phases[index]
+                hap = phase.data["Histograms"][self._histogram_name]
+                previous = hap.get("Pref.Ori.", [None] * 4)
+                if md_ratio is not None:
+                    try:
+                        ratio = float(md_ratio)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError("March-Dollase ratio must be a finite positive number") from exc
+                    if not np.isfinite(ratio) or ratio <= 0:
+                        raise ValueError("March-Dollase ratio must be a finite positive number")
+                else:
+                    ratio = float(previous[1]) if (previous and previous[0] == "MD" and np.isfinite(previous[1])) else 1.0
+                hap["Pref.Ori."] = ["MD", ratio, bool(enabled), list(axis), 0, {}, [""], 0.1]
+        else:
+            if not isinstance(order, (int, np.integer)) or order < 0 or order % 2:
+                raise ValueError("Spherical harmonic order must be a nonnegative even integer")
+            lattice = load_gsas_module("GSASIIlattice")
+            for index in selected:
+                phase = phases[index]
+                symmetry = phase.data["General"]["SGData"]["SGLaue"]
+                hap = phase.data["Histograms"][self._histogram_name]
+                previous = hap.get("Pref.Ori.", [None] * 6)
+                old = previous[5] if previous[0] == "SH" else {}
+                names = lattice.GenSHCoeffT(symmetry, '0', order, False)
+                coefficients = {name: old.get(name, 0.) for name in names}
+                hap["Pref.Ori."] = ["SH", 1., bool(enabled), [0, 0, 1], order, coefficients, [""], 0.1]
 
     def _reset_rwp_history(self):
         """Start an empty dataset history for a new GSAS-II engine session."""
@@ -520,10 +592,19 @@ class RefinementMixin:
             for name, value in zip(("a", "b", "c", "alpha", "beta", "gamma"), general["Cell"][1:7]):
                 attrs[f"{prefix}cell_{name}{suffix}"] = value
             hap = phase.data["Histograms"][hist_name]
+            attrs[f"{prefix}use_lebail{suffix}"] = bool(hap.get("LeBail", False))
             for key, kind, field in (("Size", "size", "size"), ("Mustrain", "strain", "mustrain")):
                 attrs[f"{prefix}{kind}_broadening_type{suffix}"] = hap[key][0]
                 for component, value in enumerate(hap[key][1][:3]):
                     attrs[f"{prefix}{field}_{component}{suffix}"] = value
+            po = hap.get("Pref.Ori.")
+            if po and len(po) >= 4:
+                attrs[f"{prefix}pref_ori_model{suffix}"] = po[0]
+                if po[0] == "MD":
+                    attrs[f"{prefix}pref_ori_ratio{suffix}"] = float(po[1])
+                    attrs[f"{prefix}pref_ori_axis{suffix}"] = tuple(po[3])
+                elif po[0] == "SH" and len(po) >= 5:
+                    attrs[f"{prefix}pref_ori_order{suffix}"] = int(po[4])
         return attrs
 
     def _store_fit_results(self, ds):
@@ -547,6 +628,8 @@ class RefinementMixin:
         gsasii_lib_path=None,
         instprm_from_gpx=None,
         instprm_from_nc=None,
+        instprm_file=None,
+        instprm_preset=None,
         instprm_Polariz=0,
         instprm_Azimuth=0,
         instprm_Zero=0,
@@ -571,16 +654,29 @@ class RefinementMixin:
         Starts a new ds.rwp_history on the refinement_step dimension. Setup's
         initial optimizer passes are logged too; do_1st_refinement=False leaves
         an empty history until the first refinement attempt.
+        Instrument parameters can be loaded from a .gpx project (instprm_from_gpx),
+        a NetCDF file (instprm_from_nc), a GSAS-II .instprm file (instprm_file),
+        or a standard preset such as 'CuKa_lab' or 'synchrotron' (instprm_preset).
         """
         self._validate_gof_improvement(min_gof_improvement)
         validate_profile(self.ds.i1d)
         q_to_two_theta(self.ds.i1d.radial.values, self.ds.i1d.attrs["wavelength_in_angst"])
         if not getattr(self, "phases", None):
             raise ValueError("Load at least one phase before setting up refinement")
+        file_sources = [s for s in (instprm_from_gpx, instprm_from_nc, instprm_file) if s is not None]
+        if len(file_sources) > 1 or (len(file_sources) == 1 and instprm_preset is not None):
+            raise ValueError("Specify only one instrument parameter source or preset")
         if instprm_from_gpx is not None and not os.path.isfile(instprm_from_gpx):
             raise FileNotFoundError(instprm_from_gpx)
-        if instprm_from_gpx is not None and instprm_from_nc is not None:
-            raise ValueError("Specify only one instrument parameter source")
+        if instprm_from_nc is not None and not os.path.isfile(instprm_from_nc):
+            raise FileNotFoundError(instprm_from_nc)
+        if instprm_file is not None and not os.path.isfile(instprm_file):
+            raise FileNotFoundError(instprm_file)
+        if instprm_preset is not None and instprm_preset not in INSTPRM_PRESETS:
+            raise ValueError(
+                f"Unknown instprm_preset '{instprm_preset}'. "
+                f"Available presets: {list(INSTPRM_PRESETS.keys())}"
+            )
         self.ds = clear_fit_results(self.ds)
         for attr in ("normalized_to", "normalization_multiplier"):
             self.ds.i1d.attrs.pop(attr, None)
@@ -700,7 +796,23 @@ class RefinementMixin:
             ("Polariz.", "Azimuth", "Zero", "U", "V", "W", "X", "Y", "Z", "SH/L"),
             (instprm_Polariz, instprm_Azimuth, instprm_Zero, instprm_U, instprm_V,
              instprm_W, instprm_X, instprm_Y, instprm_Z, instprm_SHL)))
-        if instprm_from_gpx is not None:
+        if instprm_preset is not None:
+            instrument.update(INSTPRM_PRESETS[instprm_preset])
+        elif instprm_file is not None:
+            with open(instprm_file, "r") as stream:
+                for line in stream:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if ":" in line:
+                        k, v = line.split(":", 1)
+                        k, v = k.strip(), v.strip()
+                        if k in instrument:
+                            try:
+                                instrument[k] = float(v)
+                            except ValueError:
+                                instrument[k] = v
+        elif instprm_from_gpx is not None:
             project = G2sc.G2Project(gpxfile=str(instprm_from_gpx))
             histograms = project.histograms()
             if not histograms:
@@ -710,10 +822,16 @@ class RefinementMixin:
         elif instprm_from_nc is not None:
             with xr.open_dataset(instprm_from_nc) as source:
                 instrument.update({key: source.attrs["gsasii_inst_prm_" + key] for key in instrument})
-        instrument_source = instprm_from_gpx if instprm_from_gpx is not None else instprm_from_nc
+        instrument_source = instprm_from_gpx if instprm_from_gpx is not None else (
+            instprm_from_nc if instprm_from_nc is not None else instprm_file
+        )
         self.ds.attrs["refinement_provenance"] = provenance_json({
             "schema": 1, "software": software_versions("easyxrd", "GSAS-II"),
-            "instrument_source": file_record(instrument_source),
+            "instrument_source": (
+                {"preset": instprm_preset}
+                if instprm_preset is not None
+                else file_record(instrument_source)
+            ),
             "instrument_parameters": instrument,
             "wavelength_angstrom": self.ds.i1d.attrs["wavelength_in_angst"],
             "weighting": "measurement_variance" if "i1d_variance" in self.ds else "unit_weights",
@@ -940,6 +1058,44 @@ class RefinementMixin:
         Refine instrument parameters with a minimum percent GoF decrease.
         inst_pars_to_refine=['U', 'V', 'W',   'X', 'Y', 'Z', 'Zero', 'SH/L']
         """
+        sample_broadening_active = False
+        if hasattr(self, "gpx") and self.gpx is not None:
+            hist_name = getattr(self, "_histogram_name", "PWDR data.xy")
+            try:
+                phases = self.gpx.phases() if hasattr(self.gpx, "phases") else []
+                for p in phases:
+                    hap = getattr(p, "data", {}).get("Histograms", {}).get(hist_name, {})
+                    size_data = hap.get("Size")
+                    mustrain_data = hap.get("Mustrain")
+                    size_active = bool(
+                        size_data
+                        and (
+                            (len(size_data) > 2 and any(size_data[2]) if isinstance(size_data[2], (list, tuple)) else bool(size_data[2]))
+                            or (len(size_data) > 5 and any(size_data[5]) if isinstance(size_data[5], (list, tuple)) else bool(size_data[5]))
+                        )
+                    )
+                    mustrain_active = bool(
+                        mustrain_data
+                        and (
+                            (len(mustrain_data) > 2 and any(mustrain_data[2]) if isinstance(mustrain_data[2], (list, tuple)) else bool(mustrain_data[2]))
+                            or (len(mustrain_data) > 5 and any(mustrain_data[5]) if isinstance(mustrain_data[5], (list, tuple)) else bool(mustrain_data[5]))
+                        )
+                    )
+                    if size_active or mustrain_active:
+                        sample_broadening_active = True
+                        break
+            except Exception:
+                pass
+
+        if sample_broadening_active:
+            warnings.warn(
+                "Refining instrument parameters simultaneously with sample size or strain broadening "
+                "causes severe parameter correlation and singular covariance. "
+                "Instrument parameters should be calibrated using a standard reference material "
+                "(SRM, e.g. NIST 660 LaB6) with sample broadening fixed.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement({"set": {"Instrument Parameters": inst_pars_to_refine}})
@@ -1391,17 +1547,19 @@ class RefinementMixin:
     def refine_strain_broadening(
         self,
         phase_ind="all",
-        type="isotropic",
+        model_type="isotropic",
         set_to_false_after_refinement=True,
         plot=False,
         report=False,
         min_gof_improvement=1.0,
+        type=None,
     ):
         """Refine strain broadening, requiring the specified percent GoF decrease."""
 
+        actual_type = type if type is not None else model_type
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement(
-            {"set": {"Mustrain": {"refine": True, "type": type}}}, phase=phase_ind
+            {"set": {"Mustrain": {"refine": True, "type": actual_type}}}, phase=phase_ind
         )
 
         ref_str = self.refine(
@@ -1506,16 +1664,17 @@ class RefinementMixin:
         self.gpx_saver()
 
     def set_strain_broadening_refinement(
-        self, set_refine_to=True, phase_ind="all", type="isotropic", save_gpx=True
+        self, set_refine_to=True, phase_ind="all", model_type="isotropic", save_gpx=True, type=None
     ):
         """Select a microstrain model and flag for one or all phases; do not run a fit."""
+        actual_type = type if type is not None else model_type
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement(
-                {"set": {"Mustrain": {"refine": set_refine_to, "type": type}}}
+                {"set": {"Mustrain": {"refine": set_refine_to, "type": actual_type}}}
             )
         else:
             self.gpx.set_refinement(
-                {"set": {"Mustrain": {"refine": set_refine_to, "type": type}}},
+                {"set": {"Mustrain": {"refine": set_refine_to, "type": actual_type}}},
                 phase=phase_ind,
             )
 
@@ -1537,17 +1696,19 @@ class RefinementMixin:
     def refine_size_broadening(
         self,
         phase_ind="all",
-        type="isotropic",
+        model_type="isotropic",
         set_to_false_after_refinement=True,
         plot=False,
         report=False,
         min_gof_improvement=1.0,
+        type=None,
     ):
         """Refine size broadening, requiring the specified percent GoF decrease."""
 
+        actual_type = type if type is not None else model_type
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
         self.gpx.set_refinement(
-            {"set": {"Size": {"refine": True, "type": type}}}, phase=phase_ind
+            {"set": {"Size": {"refine": True, "type": actual_type}}}, phase=phase_ind
         )
 
         ref_str = self.refine(
@@ -1652,16 +1813,17 @@ class RefinementMixin:
         self.gpx_saver()
 
     def set_size_broadening_refinement(
-        self, set_refine_to=True, phase_ind="all", type="isotropic", save_gpx=True
+        self, set_refine_to=True, phase_ind="all", model_type="isotropic", save_gpx=True, type=None
     ):
         """Select a crystallite-size model and flag for one or all phases; do not run a fit."""
+        actual_type = type if type is not None else model_type
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement(
-                {"set": {"Size": {"refine": set_refine_to, "type": type}}}
+                {"set": {"Size": {"refine": set_refine_to, "type": actual_type}}}
             )
         else:
             self.gpx.set_refinement(
-                {"set": {"Size": {"refine": set_refine_to, "type": type}}},
+                {"set": {"Size": {"refine": set_refine_to, "type": actual_type}}},
                 phase=phase_ind,
             )
 
@@ -1734,6 +1896,8 @@ class RefinementMixin:
         """Toggle phase scales against the histogram scale; use Rietveld mode for fractions."""
 
         if set_refine_to:
+            if self._phase_mode() != "Rietveld":
+                raise ValueError("Quantitative phase fractions require LeBail=False for all phases")
             self.gpx[self._histogram_name]["Sample Parameters"]["Scale"][1] = False
             for e, p in enumerate(self.phases):
                 self.gpx["Phases"][p]["Histograms"][self._histogram_name]["Scale"][1] = True
@@ -1763,10 +1927,42 @@ class RefinementMixin:
         set_to_false_after_refinement=True,
         plot=False,
         min_gof_improvement=1.0,
+        model="SH",
+        md_axis=(0, 0, 1),
+        md_ratio=1.0,
     ):
-        """Refine preferred orientation with a minimum percent GoF decrease."""
+        """Refine preferred orientation with a minimum percent GoF decrease.
+
+        Parameters
+        ----------
+        phase_ind : int, str, or None, optional
+            Index or name of the phase to refine, or 'all'/None for all phases (default 'all').
+        harmonics_order : int, optional
+            Even integer spherical harmonic order when model='SH' (default 4).
+        set_to_false_after_refinement : bool, optional
+            Whether to disable refinement flag after refinement (default True).
+        plot : bool, optional
+            Whether to plot result after refinement (default False).
+        min_gof_improvement : float, optional
+            Minimum percent GoF improvement required to accept result (default 1.0).
+        model : {'SH', 'MD'}, optional
+            Preferred orientation model: 'SH' for Spherical Harmonics, 'MD' for
+            March-Dollase (default 'SH').
+        md_axis : sequence of 3 ints, optional
+            Crystallographic preferred orientation axis [h, k, l] when model='MD'
+            (default (0, 0, 1)).
+        md_ratio : float, optional
+            Initial March-Dollase ratio r when model='MD' (default 1.0).
+        """
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
-        self._set_po(phase_ind, harmonics_order, True)
+        self._set_po(
+            phase_ind,
+            harmonics_order,
+            True,
+            model=model,
+            md_axis=md_axis,
+            md_ratio=md_ratio,
+        )
 
         ref_str = self.refine(update_ds=True, update_ds_phases=False, update_phases=False,
                               min_gof_improvement=min_gof_improvement,
@@ -1774,20 +1970,28 @@ class RefinementMixin:
         if not self.last_refinement_accepted:
             return self._restore_rejected_refinement(gpx_before_refinement, ref_str, plot=plot,
                                                      plot_hint="refine_preferred_orientation")
-        title_str = self._report_refinement("Preferred orientation refined. " + ref_str, ref_str)
+        desc = (
+            f"March-Dollase preferred orientation (axis={list(md_axis)})"
+            if str(model).upper().strip() == "MD"
+            else f"Spherical harmonics preferred orientation (order={harmonics_order})"
+        )
+        title_str = self._report_refinement(f"{desc} refined. {ref_str}", ref_str)
 
         if set_to_false_after_refinement:
-            # self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
-            for e, st in enumerate(self.phases):
-                if (phase_ind == "all") or (phase_ind == None):
-                    self.gpx["Phases"][st]["Histograms"][self._histogram_name]["Pref.Ori."][
-                        2
-                    ] = False
-                else:
-                    if e == phase_ind:
-                        self.gpx["Phases"][st]["Histograms"][self._histogram_name][
-                            "Pref.Ori."
-                        ][2] = False
+            phases = self.gpx.phases()
+            selected = (
+                range(len(phases))
+                if phase_ind in ("all", None)
+                else (
+                    [phase_ind]
+                    if isinstance(phase_ind, (int, np.integer))
+                    else [i for i, p in enumerate(phases) if p.name == phase_ind]
+                )
+            )
+            for index in selected:
+                po = phases[index].data["Histograms"][self._histogram_name].get("Pref.Ori.")
+                if po and len(po) > 2:
+                    po[2] = False
 
         self.gpx_saver()
 
@@ -1804,20 +2008,44 @@ class RefinementMixin:
             )
 
     def set_preferred_orientation_refinement(
-        self, set_refine_to=True, phase_ind=0, harmonics_order_to=4, save_gpx=True
+        self,
+        set_refine_to=True,
+        phase_ind=0,
+        harmonics_order_to=4,
+        model="SH",
+        md_axis=(0, 0, 1),
+        md_ratio=1.0,
+        save_gpx=True,
     ):
-
-        """Configure complete spherical harmonics of an even order and set their refinement flag."""
-        self._set_po(phase_ind, harmonics_order_to, set_refine_to)
+        """Configure preferred orientation (Spherical Harmonics or March-Dollase) and set refinement flag."""
+        self._set_po(
+            phase_ind,
+            harmonics_order_to,
+            set_refine_to,
+            model=model,
+            md_axis=md_axis,
+            md_ratio=md_ratio,
+        )
 
         if save_gpx:
             self.gpx_saver()
 
-    def clear_preferred_orientation_refinement(self, save_gpx=True):
-
-        """Disable preferred-orientation refinement for every phase and optionally save."""
-        for st in self.phases:
-            self.gpx["Phases"][st]["Histograms"][self._histogram_name]["Pref.Ori."][2] = False
+    def clear_preferred_orientation_refinement(self, phase_ind="all", save_gpx=True):
+        """Disable preferred-orientation refinement for selected or all phases and optionally save."""
+        phases = self.gpx.phases()
+        selected = (
+            range(len(phases))
+            if phase_ind in ("all", None)
+            else (
+                [phase_ind]
+                if isinstance(phase_ind, (int, np.integer))
+                else [i for i, p in enumerate(phases) if p.name == phase_ind]
+            )
+        )
+        for index in selected:
+            po = phases[index].data["Histograms"][self._histogram_name].get("Pref.Ori.")
+            if po and len(po) > 2:
+                po[2] = False
 
         if save_gpx:
             self.gpx_saver()

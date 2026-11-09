@@ -3,6 +3,7 @@ import os
 import math
 import tempfile
 from pathlib import Path
+import numpy as np
 import xarray as xr
 from pymatgen.core import Structure, Lattice
 from pymatgen.io.cif import CifWriter
@@ -82,29 +83,27 @@ class PhasesMixin:
         export_to=".",
         export_extension="_exported.cif",
     ):
+        """Export loaded phase CIFs to files."""
+        Path(export_to).mkdir(parents=True, exist_ok=True)
+        num_phases = self.ds.attrs.get("num_phases", 0)
         if (phase_ind is None) or (phase_ind == "all"):
-            for p in range(self.ds.attrs["num_phases"]):
-                with open(
-                    "%s/%s%s"
-                    % (
-                        export_to,
-                        self.ds.attrs["PhaseInd_%d_label" % p],
-                        export_extension,
-                    ),
-                    "w",
-                ) as ciffile:
-                    ciffile.write("%s" % self.ds.attrs["PhaseInd_%d_cif" % p])
+            indices = list(range(num_phases))
+        elif isinstance(phase_ind, (int, np.integer)):
+            if phase_ind < 0 or phase_ind >= num_phases:
+                raise IndexError(f"Phase index {phase_ind} out of range (0 to {num_phases - 1})")
+            indices = [phase_ind]
+        elif isinstance(phase_ind, str):
+            indices = [
+                p for p in range(num_phases)
+                if self.ds.attrs.get(f"PhaseInd_{p}_label") == phase_ind
+            ]
+            if not indices:
+                raise ValueError(f"Phase '{phase_ind}' not found in loaded phases")
         else:
-            for p in range(self.ds.attrs["num_phases"]):
-                if p == phase_ind:
-                    with open(
-                        "%s/%s%s"
-                        % (
-                            export_to,
-                            self.ds.attrs["PhaseInd_%d_label" % p],
-                            export_extension,
-                        ),
-                        "w",
-                    ) as ciffile:
-                        ciffile.write("%s" % self.ds.attrs["PhaseInd_%d_cif" % p])
+            indices = [p for p in range(num_phases) if p == phase_ind]
+
+        for p in indices:
+            label = self.ds.attrs[f"PhaseInd_{p}_label"]
+            out_path = Path(export_to) / f"{label}{export_extension}"
+            out_path.write_text(str(self.ds.attrs[f"PhaseInd_{p}_cif"]))
 

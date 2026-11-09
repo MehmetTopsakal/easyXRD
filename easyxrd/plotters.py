@@ -627,12 +627,20 @@ def exrd_plotter(
             else:
                 str_fraction = "| wt%%=%.2f" % site_wt_fraction
 
+            is_lebail = (
+                ds.attrs.get("refinement_mode") == "LeBail"
+                or ds.attrs.get("PhaseInd_%d_use_lebail" % site_ind, False)
+                or not ds.attrs.get("weight_fractions_valid", True)
+            )
+            mode_tag = " [Le Bail]" if is_lebail else ""
+
             site_str = (
-                "\n%s %s phase (%s)  %s %s %s \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n"
+                "\n%s %s phase (%s)%s  %s %s %s \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n"
                 % (
                     site_SpGrp.replace(" ", ""),
                     site_SGSys,
                     site_label,
+                    mode_tag,
                     str_fraction,
                     size_str,
                     strain_str,

@@ -47,9 +47,9 @@ def _compute_i2d_baseline(da_2d, iarpls_lam=1e5, max_workers=None):
     return da_2d.copy(data=result)
 
 
-def _same_grid(a, b):
+def _same_grid(a, b, rtol=1e-5, atol=1e-7):
     if a.dims != b.dims or a.shape != b.shape or any(
-        not np.array_equal(a.coords[d], b.coords[d]) for d in a.dims
+        not np.allclose(a.coords[d].values, b.coords[d].values, rtol=rtol, atol=atol) for d in a.dims
     ):
         raise ValueError("Sample and background grids must match exactly; explicitly interpolate the background first")
     if a.attrs.get("radial_unit", "q_A^-1") != b.attrs.get("radial_unit", "q_A^-1"):
@@ -102,7 +102,7 @@ class BaselineMixin:
             other = input_bkg.ds
             if "i2d" in ds and "i2d" in other:
                 _same_grid(ds.i2d, other.i2d)
-                bkg2d = other.i2d
+                bkg2d = other.i2d.assign_coords({d: ds.i2d.coords[d] for d in ds.i2d.dims})
             if roi_azimuthal_range is not None and "i2d" in other:
                 bkg, external_var = cake_profile(other, roi_azimuthal_range)
             else:
@@ -113,11 +113,14 @@ class BaselineMixin:
                 if external_var is not None:
                     external_var = external_var.sel(radial=slice(*roi_radial_range))
             _same_grid(obs, bkg)
+            bkg = bkg.assign_coords(radial=obs.radial)
+            if external_var is not None:
+                external_var = external_var.assign_coords(radial=obs.radial)
             if get_i2d_baseline and "i2d" not in other:
                 full = other.i1d.rename({"radial": "radial_i2d"})
-                if not np.array_equal(full.radial_i2d, ds.radial_i2d):
+                if not np.allclose(full.radial_i2d.values, ds.radial_i2d.values, rtol=1e-5, atol=1e-7):
                     raise ValueError("Background radial grid must match the entire cake")
-                bkg2d = full.broadcast_like(ds.i2d)
+                bkg2d = full.assign_coords(radial_i2d=ds.radial_i2d).broadcast_like(ds.i2d)
             scale = _optimize_bkg_scale(obs.values, bkg.values)
         baseline = scale * bkg
         if use_iarpls:

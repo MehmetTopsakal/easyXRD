@@ -43,9 +43,9 @@ def q_to_two_theta(q, wavelength):
     if not np.isfinite(wavelength) or wavelength <= 0:
         raise ValueError("wavelength must be finite and positive in Angstrom")
     argument = q * wavelength / (4 * np.pi)
-    if not np.all(np.isfinite(argument)) or np.any(argument < 0) or np.any(argument > 1):
+    if not np.all(np.isfinite(argument)) or np.any(argument < 0) or np.any(argument > 1.0 + 1e-7):
         raise ValueError("q must be finite and satisfy 0 <= q*wavelength/(4*pi) <= 1")
-    return np.rad2deg(2 * np.arcsin(argument))
+    return np.rad2deg(2 * np.arcsin(np.clip(argument, 0.0, 1.0)))
 
 
 def validate_profile(da):
@@ -198,7 +198,8 @@ class DataLoaderMixin:
             ds["i1d"] = xr.DataArray(result.intensity, dims="radial", coords={"radial": result.radial}, attrs=attrs)
             if result.sigma is not None:
                 ds["i1d_variance"] = ("radial", np.asarray(result.sigma)**2)
-            ds = ds.dropna("radial", subset=["i1d"])
+            subset = ["i1d", "i1d_variance"] if "i1d_variance" in ds else ["i1d"]
+            ds = ds.dropna("radial", subset=subset)
             if cake is not None:
                 dims = ("azimuthal_i2d", "radial_i2d")
                 coords = dict(azimuthal_i2d=cake.azimuthal, radial_i2d=cake.radial)
