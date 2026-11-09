@@ -395,6 +395,7 @@ class RefinementMixin:
             "Refinement discarded because of " + reason
             + ". \n      Previous project restored; profile data and phases unchanged."
         )
+        print(" ❌--" + message)
         logger.warning("%s", message)
         return message
 
@@ -402,6 +403,7 @@ class RefinementMixin:
         """Keep helper messages and plot titles consistent with acceptance."""
         if not self.last_refinement_accepted:
             return ref_str
+        print(" ✅--" + title_str)
         logger.info("%s", title_str)
         return title_str
 
@@ -1357,6 +1359,7 @@ class RefinementMixin:
                         )
             self.gpx_saver()
         if best is None:
+            print(" ❌--" + best_message)
             logger.warning("%s", best_message)
         return best_message
 
