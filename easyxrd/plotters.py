@@ -1,4 +1,7 @@
+import logging
 import warnings
+import json
+from collections import OrderedDict
 import numpy as np
 import matplotlib.patches
 import matplotlib.pyplot as plt
@@ -20,6 +23,7 @@ def i1d_plotter(
 ):
     """Plot 1D XRD intensity profile (observed, calculated, and background)."""
 
+    da_Y_calc = da_Y_bkg = None
     if "i1d_baseline" in ds.keys():
         da_Y_obs = ds.i1d - ds.i1d_baseline
         if "i1d_refined" in ds.keys():
@@ -35,12 +39,12 @@ def i1d_plotter(
 
     if i1d_ylogscale:
         if "i1d_refined" in ds.keys():
-            min_obs = min(da_Y_obs.values)
-            min_calc = min(da_Y_calc.values)
-            min_bkg = min(da_Y_bkg.values)
+            min_obs = np.nanmin(da_Y_obs.values)
+            min_calc = np.nanmin(da_Y_calc.values)
+            min_bkg = np.nanmin(da_Y_bkg.values)
             min_all = min([min_obs, min_calc, min_bkg])
         else:
-            min_all = min(da_Y_obs.values)
+            min_all = np.nanmin(da_Y_obs.values)
 
         if min_all < 1:
             extra_yshift = 1 - min_all
@@ -60,7 +64,7 @@ def i1d_plotter(
         da_Y_calc.plot(ax=ax, alpha=0.9, linewidth=1, color="y", label="Y$_{calc.}$")
         da_Y_bkg.plot(ax=ax, alpha=0.9, linewidth=1, color="r", label="Y$_{bkg.}$")
 
-    if ds_previous is not None:
+    if ds_previous is not None and "i1d_refined" in ds_previous:
         if "i1d_baseline" in ds_previous.keys():
             if "i1d_refined" in ds_previous.keys():
                 da_Y_calc_previous = ds_previous.i1d_refined - ds_previous.i1d_baseline
@@ -70,7 +74,7 @@ def i1d_plotter(
                 da_Y_calc_previous = ds_previous.i1d_refined
                 da_Y_bkg_previous = ds_previous.i1d_gsas_background
 
-        if "i1d_refined" in ds.keys():
+        if "i1d_refined" in ds_previous.keys():
             da_Y_calc_previous = da_Y_calc_previous + extra_yshift
             da_Y_bkg_previous = da_Y_bkg_previous + extra_yshift
 
@@ -137,8 +141,8 @@ def i2d_plotter(
         i2d_str = "i2d"
 
     if i2d_logscale:
-        da_i2d = np.log(da_i2d.where(da_i2d > 0))
-        vmin = 1
+        da_i2d = np.log10(da_i2d.where(da_i2d > 0))
+        vmin = None
         i2d_str = "Log$_{10}$(%s)" % (i2d_str)
 
     if cbar:
@@ -190,7 +194,8 @@ def i2d_plotter(
     ax.set_title(title_str, fontsize=8, color="r")
 
 
-_PATTERN_CACHE = {}
+_PATTERN_CACHE = OrderedDict()
+_PATTERN_CACHE_MAXSIZE = 128
 
 
 def _calc_reflection_pattern(xrdc, st, wavelength, radial_min, radial_max):
@@ -202,44 +207,24 @@ def _calc_reflection_pattern(xrdc, st, wavelength, radial_min, radial_max):
     tth1 = float(np.rad2deg(2 * np.arcsin(arg1)))
     two_theta_range = (min(tth0, tth1), max(tth0, tth1))
 
-    try:
-        lat_tuple = tuple(np.round(st.lattice.matrix.flat, 4))
-        comp_str = st.composition.reduced_formula
-    except Exception:
-        lat_tuple = ()
-        comp_str = str(getattr(st, "formula", ""))
-
-    cache_key = (
-        comp_str,
-        lat_tuple,
-        round(float(wavelength), 6),
-        round(two_theta_range[0], 4),
-        round(two_theta_range[1], 4),
-    )
-
-    if cache_key in _PATTERN_CACHE:
-        return _PATTERN_CACHE[cache_key]
-
-    try:
+    cache_key = (json.dumps(st.as_dict(), sort_keys=True),
+                 repr(sorted(xrdc.__dict__.items())), float(wavelength), two_theta_range)
+    if cache_key not in _PATTERN_CACHE:
         ps = xrdc.get_pattern(st, scaled=True, two_theta_range=two_theta_range)
-        if len(ps.x) > 0:
-            refl_X = ((4 * np.pi) / wavelength) * np.sin(np.deg2rad(ps.x) / 2)
-            refl_Y = ps.y
-            refl_HKLs = ps.hkls
-        else:
-            refl_X, refl_Y, refl_HKLs = np.array([]), np.array([]), np.array([])
-    except Exception:
-        refl_X, refl_Y, refl_HKLs = np.array([]), np.array([]), np.array([])
-
-    _PATTERN_CACHE[cache_key] = (refl_X, refl_Y, refl_HKLs)
-    return refl_X, refl_Y, refl_HKLs
+        refl_x = 4 * np.pi / wavelength * np.sin(np.deg2rad(ps.x) / 2)
+        _PATTERN_CACHE[cache_key] = (refl_x, ps.y, ps.hkls)
+        if len(_PATTERN_CACHE) > _PATTERN_CACHE_MAXSIZE:
+            _PATTERN_CACHE.popitem(last=False)
+    _PATTERN_CACHE.move_to_end(cache_key)
+    import copy
+    return copy.deepcopy(_PATTERN_CACHE[cache_key])
 
 
 def phases_plotter(
     ds,
     ax_main,
     phases=None,
-    line_axes=[],
+    line_axes=None,
     phase_label_x=0.9,
     phase_label_y=0.75,
     phase_label_yshift=-0.2,
@@ -250,6 +235,7 @@ def phases_plotter(
     wavelength = ds.i1d.attrs["wavelength_in_angst"]
     xrdc = XRDCalculator(wavelength=wavelength)
 
+    line_axes = [] if line_axes is None else line_axes
     if phases is None:
         ds_phases = {}
         num_phases = ds.attrs.get("num_phases", 0)
@@ -262,7 +248,7 @@ def phases_plotter(
                     label = ds.attrs.get(label_key, "Phase_%d" % aa)
                     ds_phases[label] = st
                 except Exception as exc:
-                    print(f"Warning: could not parse CIF for phase {aa}: {exc}")
+                    logging.getLogger(__name__).warning("Could not parse CIF for phase %s: %s", aa, exc)
         phases = ds_phases
 
     radial_min = ds.i1d.radial.values[0]
@@ -345,6 +331,12 @@ def exrd_plotter(
 ):
     """Main plotting coordinator for easyXRD workflow stages."""
 
+    if plot_hint in ("refinement_history", "plot_refinement_history", "refinement", "plot_refinement"):
+        return refinement_plotter(ds, figsize=figsize, export_fig_as=export_fig_as)
+    if ds is None or "i1d" not in ds or not ds.i1d.size:
+        raise ValueError("Load a nonempty diffraction profile before plotting")
+    if plot_hint is None and "i1d_refined" not in ds:
+        plot_hint = "load_phases" if ds.attrs.get("num_phases", 0) else "load_xrd_data"
     has_i2d = "i2d" in ds.keys()
 
     if plot_hint == "load_xrd_data":
@@ -630,7 +622,7 @@ def exrd_plotter(
                 )
 
             site_wt_fraction = ds.attrs["PhaseInd_%d_wt_fraction" % site_ind]
-            if site_wt_fraction == 100.0 or not show_wt_fractions:
+            if not np.isfinite(site_wt_fraction) or site_wt_fraction == 100.0 or not show_wt_fractions:
                 str_fraction = ""
             else:
                 str_fraction = "| wt%%=%.2f" % site_wt_fraction
@@ -750,7 +742,7 @@ def exrd_plotter(
             )
 
     if export_fig_as is not None:
-        plt.savefig(export_fig_as, dpi=128)
+        fig.savefig(export_fig_as, dpi=128)
 
 
 def refinement_plotter(
@@ -797,7 +789,7 @@ def refinement_plotter(
     step_labels = [format_label(l) for l in labels]
 
     # Detect boundary where Le Bail was switched off
-    lebail_off_indices = [i for i, l in enumerate(labels) if l == "set_LeBail"]
+    lebail_off_indices = [i for i, l in enumerate(labels) if l == "set_LeBail:False" and status[i] == "accepted"]
     has_stage_split = len(lebail_off_indices) > 0
     if has_stage_split:
         split_idx = lebail_off_indices[0]
@@ -808,6 +800,16 @@ def refinement_plotter(
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=figsize, dpi=dpi, gridspec_kw={"height_ratios": [1, 1.35]}
     )
+
+    if not np.any(np.isfinite(rwp)):
+        for ax in (ax1, ax2):
+            ax.text(.5, .5, "No finite retained Rwp; inspect refinement_status and refinement_reason",
+                    ha="center", va="center", transform=ax.transAxes, wrap=True)
+        if export_fig_as is not None:
+            fig.savefig(export_fig_as, dpi=dpi)
+        if show:
+            plt.show()
+        return (fig, (ax1, ax2)) if return_fig else None
 
     # --- Panel 1: Full Refinement Overview ---
     y_min_val = max(0, float(np.nanmin(rwp)) - 1)
@@ -957,8 +959,10 @@ def refinement_plotter(
     )
     ax2.set_xlim(effective_min_step - 0.5, len(steps) + 0.5)
 
-    detail_min = min(float(np.nanmin(s_rwp)), float(np.nanmin(s_att)))
-    detail_max = max(float(np.nanmax(s_rwp)), float(np.nanmax(s_att)))
+    detail_values = np.concatenate((s_rwp, s_att))
+    detail_values = detail_values[np.isfinite(detail_values)]
+    detail_min = float(detail_values.min()) if detail_values.size else 0.
+    detail_max = float(detail_values.max()) if detail_values.size else 1.
     ax2.set_ylim(max(0, detail_min - 0.25), detail_max + 0.35)
     ax2.grid(True, linestyle="--", alpha=0.4, color="#cbd5e1")
 
@@ -994,7 +998,7 @@ def refinement_plotter(
         fig.tight_layout()
 
     if export_fig_as is not None:
-        plt.savefig(export_fig_as, dpi=dpi)
+        fig.savefig(export_fig_as, dpi=dpi)
 
     if show:
         plt.show()

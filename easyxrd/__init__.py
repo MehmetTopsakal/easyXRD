@@ -3,20 +3,31 @@ import sys
 import logging
 from pathlib import Path
 
-# Preload Pixi environment's libfontconfig to prevent symbol collision (FcConfigSetDefaultSubstitute)
-# between PyQt6 (which loads the system fontconfig) and wxPython/Pango (which requires Pixi's fontconfig).
-if sys.platform.startswith("linux"):
-    try:
-        import ctypes
-        fc_lib = Path(sys.executable).resolve().parents[1] / "lib" / "libfontconfig.so.1"
-        if fc_lib.is_file():
-            ctypes.CDLL(str(fc_lib), mode=ctypes.RTLD_GLOBAL)
-    except Exception:
-        pass
-
 from .utils import HiddenPrints, install_gsas2, read_tiff_as_DataArray
 
 logger = logging.getLogger("easyxrd")
+logger.addHandler(logging.NullHandler())
+
+
+def configure_logging(level=logging.INFO, stream=None):
+    """Enable easyXRD progress messages without configuring the root logger.
+
+    Repeated calls replace only the handler installed by this function.
+    Use level="WARNING" for rejections only or "ERROR" for quiet batch runs.
+    Third-party GSAS-II stdout remains controlled by sample.verbose.
+    """
+    handler = logging.StreamHandler(stream)
+    handler.setLevel(level)
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    handler._easyxrd_owned = True
+    logger.setLevel(level)
+    for existing in list(logger.handlers):
+        if getattr(existing, "_easyxrd_owned", False):
+            logger.removeHandler(existing)
+            existing.close()
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
 
 
 
@@ -29,41 +40,13 @@ user_home = os.path.expanduser("~")
 scratch_dir = os.environ.get(
     "EASYXRD_SCRATCH", os.path.join(user_home, ".easyxrd_scratch")
 )
-os.makedirs(scratch_dir, exist_ok=True)
 easyxrd_defaults["easyxrd_scratch_path"] = scratch_dir
 
-try:
-    import sys
-    sys.modules.pop("wx", None)
-    sys.modules.pop("wx.__version__", None)
-except:
-    pass
-# Check GSAS-II library path
-try:
-    with HiddenPrints():
-        import GSASII.GSASIIscriptable as G2sc
-        gsas_path = str(Path(G2sc.__file__).resolve().parent)
-    easyxrd_defaults["gsasii_lib_path"] = gsas_path
-except Exception:
-    easyxrd_defaults["gsasii_lib_path"] = "not found"
+# GSAS-II is imported on first refinement use, not during package import.
+easyxrd_defaults["gsasii_lib_path"] = os.environ.get("GSASII_PATH", "not found")
 
 # Check Materials Project API key from env or scratch folder
 mp_api_key = os.environ.get("MP_API_KEY")
-if not mp_api_key:
-    key_file = os.path.join(scratch_dir, "mp_api_key.dat")
-    if os.path.isfile(key_file):
-        try:
-            with open(key_file, "r") as api_key_file:
-                api_key_file_content = api_key_file.read().strip().split()[-1]
-                if len(api_key_file_content) == 32:
-                    mp_api_key = api_key_file_content
-                else:
-                    mp_api_key = "invalid"
-        except Exception:
-            mp_api_key = "invalid"
-    else:
-        mp_api_key = "not found"
-
 easyxrd_defaults["mp_api_key"] = mp_api_key or "not found"
 
 
@@ -79,7 +62,7 @@ def print_defaults():
         if key != "mp_api_key":
             print("%s : %s" % (key, val))
         else:
-            masked = "%s.........." % val[:9] if val and len(val) >= 9 else val
+            masked = "......" if val not in (None, "", "not found", "invalid") else val
             print("%s : %s" % (key, masked))
 
 
@@ -94,7 +77,7 @@ def show_config():
         "executable": sys.executable,
     }
     for package in [
-        "easyxrd", "pyFAI", "fabio", "numpy", "scipy", "pandas",
+        "easyxrd", "pyFAI", "fabio", "numpy", "scipy",
         "pymatgen", "GSAS-II",
     ]:
         try:
@@ -116,8 +99,7 @@ def show_config():
         print(f"{key:<20}: {value}")
     for key, value in easyxrd_defaults.items():
         if key == "mp_api_key" and value not in (None, "", "not found", "invalid"):
-            value = str(value)
-            value = value[:5] + "......" if len(value) > 5 else "......"
+            value = "......"
         print(f"{key:<20}: {value}")
     print("-" * 40)
     print()
@@ -133,6 +115,7 @@ __all__ = [
     "set_defaults",
     "print_defaults",
     "show_config",
+    "configure_logging",
     "HiddenPrints",
     "read_tiff_as_DataArray",
 ]

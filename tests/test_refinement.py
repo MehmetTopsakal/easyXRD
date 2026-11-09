@@ -12,6 +12,16 @@ import xarray as xr
 from easyxrd import exrd
 
 
+@pytest.fixture(autouse=True)
+def stub_lattice_for_wrapper_unit_tests(monkeypatch):
+    original = __import__("easyxrd.refinement", fromlist=["load_gsas_module"]).load_gsas_module
+    def module(name, *args):
+        if name == "GSASIIlattice":
+            return SimpleNamespace(GenSHCoeffT=lambda symmetry, sample, order, flag: ["C(2,0)"])
+        return original(name, *args)
+    monkeypatch.setattr("easyxrd.refinement.load_gsas_module", module)
+
+
 def phase(name="Ni", uiso=0.01, *, ct=1, cia=9, mode="I"):
     atom = [0] * (cia + 2)
     atom[ct - 1] = "Ni1"
@@ -102,7 +112,7 @@ def sample(tmp_path, phases, outcomes):
 
 @pytest.mark.parametrize("verbose", [False, True])
 @pytest.mark.parametrize("update_previous", [False, True])
-def test_negative_uiso_rolls_back_entire_result(tmp_path, capsys, verbose, update_previous):
+def test_negative_uiso_rolls_back_entire_result(tmp_path, caplog, verbose, update_previous):
     other = phase("other", ct=3, cia=11)
     # The negative site is the second atom of the second phase, using shifted
     # offsets; the first atom and all atoms in the first phase are valid.
@@ -129,7 +139,7 @@ def test_negative_uiso_rolls_back_entire_result(tmp_path, capsys, verbose, updat
     assert s.ds.refinement_status.item() == "rejected"
     assert s.phases == old_phases
     assert (s.ds_previous, s.gpx_previous, s.phases_previous) == old_histories
-    assert "discarded" in capsys.readouterr().out
+    assert "discarded" in caplog.text
 
 
 @pytest.mark.parametrize("uiso", [0., 0.02, -1.e-15])
@@ -197,8 +207,8 @@ def test_direct_entry_points_restore_original_project(tmp_path, monkeypatch, met
     s.gsasii_lib_path = str(tmp_path)
     before = s.gpx.filename.read_text()
     candidate = Project(s.gpx.filename, [phase(uiso=0.03)], [[-0.01]])
-    monkeypatch.setitem(__import__("sys").modules, "GSASIIscriptable",
-                        SimpleNamespace(G2Project=lambda **kw: candidate))
+    monkeypatch.setattr("easyxrd.refinement.load_gsas_module",
+                        lambda *a: SimpleNamespace(G2Project=lambda **kw: candidate))
     monkeypatch.setattr("easyxrd.refinement.subprocess.check_call", lambda *a: None)
     if method == "fine_tune_gpx":
         s.fine_tune_gpx()
@@ -331,7 +341,7 @@ def configurable_sample(tmp_path):
 @pytest.mark.parametrize("method", REFINEMENT_METHODS)
 @pytest.mark.parametrize("minimum,gof", [(1., 1.99), (2., 1.97)])
 @pytest.mark.parametrize("plot", [False, True])
-def test_all_wrappers_restore_full_state(tmp_path, monkeypatch, capsys, method, minimum, gof, plot):
+def test_all_wrappers_restore_full_state(tmp_path, monkeypatch, caplog, method, minimum, gof, plot):
     s = configurable_sample(tmp_path)
     s.gpx.outcome_gof = gof
     before_file = s.gpx.filename.read_bytes()
@@ -344,7 +354,7 @@ def test_all_wrappers_restore_full_state(tmp_path, monkeypatch, capsys, method, 
     result = getattr(s, method)(plot=plot, min_gof_improvement=minimum)
     assert result is None  # No second copy for Jupyter's result display hook.
     assert not s.last_refinement_accepted
-    printed = capsys.readouterr().out
+    printed = caplog.text
     assert printed.count("Refinement discarded") == 1
     assert "insufficient GoF improvement" in printed
     assert s.gpx.filename.read_bytes() == before_file
@@ -353,7 +363,7 @@ def test_all_wrappers_restore_full_state(tmp_path, monkeypatch, capsys, method, 
     assert s.phases == before_phases
     assert all(a is b for a, b in zip(history,
         (s.gpx_previous, s.ds_previous, s.phases_previous)))
-    assert s.ds.refinement_label.item() == method
+    assert s.ds.refinement_label.item() == ("set_LeBail:True" if method == "set_LeBail" else method)
     assert plotted == []
     assert s.last_refinement_rejection_reason == "insufficient_gof_improvement"
 
@@ -417,8 +427,8 @@ def test_direct_entry_points_reject_insufficient_improvement(tmp_path, monkeypat
     before = s.gpx.filename.read_bytes()
     candidate = Project(s.gpx.filename, [phase(uiso=0.03)], [[0.04]])
     candidate.outcome_gof = 1.99
-    monkeypatch.setitem(__import__("sys").modules, "GSASIIscriptable",
-                        SimpleNamespace(G2Project=lambda **kw: candidate))
+    monkeypatch.setattr("easyxrd.refinement.load_gsas_module",
+                        lambda *a: SimpleNamespace(G2Project=lambda **kw: candidate))
     monkeypatch.setattr("easyxrd.refinement.subprocess.check_call", lambda *a: None)
     if method == "fine_tune_gpx":
         s.fine_tune_gpx(min_gof_improvement=1.)
@@ -428,7 +438,7 @@ def test_direct_entry_points_reject_insufficient_improvement(tmp_path, monkeypat
         s.replace_gpx_with(source, min_gof_improvement=1.)
     assert not s.last_refinement_accepted
     assert s.gpx.filename.read_bytes() == before
-    assert s.ds.refinement_label.item() == method
+    assert s.ds.refinement_label.item() == ("set_LeBail:True" if method == "set_LeBail" else method)
 
 
 def refine_without_updates(s, **kwargs):
@@ -701,8 +711,8 @@ def test_direct_entry_points_reject_invalid_peak_width(tmp_path, monkeypatch, me
     old_ds = s.ds.copy(deep=True)
     candidate = Project(s.gpx.filename, [phase(uiso=0.03)], [[0.04]])
     candidate.instrument_outcomes = [{"W": -10.}]
-    monkeypatch.setitem(__import__("sys").modules, "GSASIIscriptable",
-                        SimpleNamespace(G2Project=lambda **kw: candidate))
+    monkeypatch.setattr("easyxrd.refinement.load_gsas_module",
+                        lambda *a: SimpleNamespace(G2Project=lambda **kw: candidate))
     monkeypatch.setattr("easyxrd.refinement.subprocess.check_call", lambda *a: None)
     if method == "fine_tune_gpx":
         s.fine_tune_gpx(min_gof_improvement=None)

@@ -12,7 +12,10 @@ license = {file = "LICENSE"}
 authors = [{name = "Mehmet Topsakal"}]
 dependencies = [
     "numpy", "scipy", "xarray", "matplotlib", "ipython",
-    "pymatgen", "pyFAI", "fabio", "pybaselines", "h5netcdf", "h5py", "mp-api"
+    "pymatgen", "pyFAI", "fabio", "pybaselines", "h5netcdf", "h5py", "mp-api",
+    # mp-api's unconstrained transitive dependency can select legacy boto3/six
+    # releases whose import hooks are incompatible with modern Python.
+    "boto3>=1.34", "six>=1.17"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -37,7 +40,7 @@ pythonpath = ["."]
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
-platforms = ["linux-64", "win-64"]
+platforms = ["linux-64", "win-64", "osx-64", "osx-arm64"]
 
 [tool.pixi.pypi-dependencies]
 easyxrd = { path = ".", editable = true }
@@ -55,3 +58,11 @@ fortran-compiler = "*"
 c-compiler = "*"
 
 
+
+[tool.pixi.target.osx-64.dependencies]
+fortran-compiler = "*"
+c-compiler = "*"
+
+[tool.pixi.target.osx-arm64.dependencies]
+fortran-compiler = "*"
+c-compiler = "*"

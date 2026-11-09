@@ -35,7 +35,7 @@ def test_install_current_interpreter_and_defaults(installer):
         assert call.kwargs["check"] is True
     assert "meson-python" in build.args[0]
     assert "--no-build-isolation" in package.args[0]
-    assert "GSAS-II[gui,useful] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git" in package.args[0]
+    assert "GSAS-II[useful] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git" in package.args[0]
     assert "--upgrade" not in package.args[0]
     assert package.kwargs["env"]["PKG_CONFIG_PATH"] == str(pkgconfig) + os.pathsep + "existing"
     assert os.environ["PKG_CONFIG_PATH"] == "existing"

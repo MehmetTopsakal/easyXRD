@@ -7,21 +7,31 @@ import string
 import fnmatch
 import time
 import copy
+import warnings
+import logging
+from pathlib import Path
+from contextlib import nullcontext
 from datetime import datetime, timezone
 import numpy as np
 import xarray as xr
 from pymatgen.core.structure import Structure
 
-from .utils import HiddenPrints
+from .utils import HiddenPrints, load_gsas_module, refinement_transaction
+from .data_loader import q_to_two_theta, validate_profile
+from .results import clear_fit_results, fit_result_dataset
+from .provenance import file_record, software_versions, provenance_json
 from . import easyxrd_defaults
 from .plotters import exrd_plotter, refinement_plotter
+
+
+logger = logging.getLogger(__name__)
 
 
 class RefinementMixin:
     """
     Mixin class providing GSAS-II refinement setup, execution, and parameter controls.
 
-    Refinement methods require at least a 1% GoF decrease by default. Pass
+    Refinement helpers use configurable minimum GoF improvement percentages. Pass
     min_gof_improvement to override the percentage, 0 to accept any strictly
     positive decrease, or None to disable the improvement check. Setup creates
     the initial fit and defaults to no improvement check. Negative Uiso
@@ -29,6 +39,41 @@ class RefinementMixin:
     discard the entire result. Individual profile coefficients may be
     negative; zero width components are allowed.
     """
+    @staticmethod
+    def _normalization_peak(values):
+        peak = np.nanmax(values)
+        if not np.isfinite(peak) or peak <= 0:
+            raise ValueError("Normalization requires a finite positive intensity maximum")
+        return peak
+
+    @property
+    def _histogram_name(self):
+        histograms = self.gpx.histograms()
+        if len(histograms) != 1:
+            raise ValueError("easyXRD requires exactly one powder histogram per analysis")
+        return histograms[0].name
+
+    def _phase_mode(self):
+        modes = [p.data.get("Histograms", {}).get(self._histogram_name, {}).get("LeBail", False)
+                 for p in self.gpx.phases()]
+        return "LeBail" if any(modes) else "Rietveld"
+
+    def _set_po(self, phase_ind, order, enabled):
+        if not isinstance(order, (int, np.integer)) or order < 0 or order % 2:
+            raise ValueError("Spherical harmonic order must be a nonnegative even integer")
+        lattice = load_gsas_module("GSASIIlattice")
+        phases = self.gpx.phases()
+        selected = range(len(phases)) if phase_ind in ("all", None) else [phase_ind]
+        for index in selected:
+            phase = phases[index]
+            symmetry = phase.data["General"]["SGData"]["SGLaue"]
+            hap = phase.data["Histograms"][self._histogram_name]
+            previous = hap.get("Pref.Ori.", [None] * 6)
+            old = previous[5] if previous[0] == "SH" else {}
+            names = lattice.GenSHCoeffT(symmetry, '0', order, False)
+            coefficients = {name: old.get(name, 0.) for name in names}
+            hap["Pref.Ori."] = ["SH", 1., enabled, [0, 0, 1], order, coefficients, [""], .1]
+
     def _reset_rwp_history(self):
         """Start an empty dataset history for a new GSAS-II engine session."""
         if "refinement_step" in self.ds.dims:
@@ -104,7 +149,16 @@ class RefinementMixin:
     def _prepare_refinement(self, min_gof_improvement):
         """Validate before changing any flags and preserve the accepted GPX."""
         self._validate_gof_improvement(min_gof_improvement)
+        original, checkpoint = getattr(self, "_transaction_checkpoint", (None, None))
+        if getattr(self, "_transaction_checkpoint_available", False) and self.gpx is original:
+            self._transaction_checkpoint_available = False
+            return checkpoint
         return copy.deepcopy(self.gpx)
+
+    def _restore_project_checkpoint(self, previous):
+        """Keep the transaction's exception recovery copy isolated on rejection."""
+        checkpoint = getattr(self, "_transaction_checkpoint", (None, None))[1]
+        self.gpx = copy.deepcopy(previous) if previous is checkpoint else previous
 
     @staticmethod
     def _invalid_instrument_peak_widths(project):
@@ -162,7 +216,7 @@ class RefinementMixin:
     def _restore_rejected_refinement(self, gpx_previous, message, plot=False,
                                      plot_hint="refine"):
         """Restore wrapper changes as well as the optimizer's rejected result."""
-        self.gpx = gpx_previous
+        self._restore_project_checkpoint(gpx_previous)
         self.gpx_saver()
         if plot and self.last_refinement_rejection_reason != "insufficient_gof_improvement":
             exrd_plotter(
@@ -175,10 +229,11 @@ class RefinementMixin:
                 plot_hint=plot_hint,
                 title_str=message,
             )
-        # High-level helpers report via stdout; returning the diagnostic here
+        # High-level helpers report via logging; returning the diagnostic here
         # would make Jupyter echo it again as the cell result.
         return None
 
+    @refinement_transaction
     def _refine_gpx(self, gpx_previous, verbose=False, min_gof_improvement=None,
                     log_label="refine"):
         """Run GSAS-II and restore invalid or insufficiently improved results.
@@ -197,12 +252,13 @@ class RefinementMixin:
         ]
         try:
             if self.verbose or verbose:
-                print("\n\n\n\n\n")
                 self.gpx.refine()
             else:
                 with HiddenPrints():
                     self.gpx.refine()
-        except Exception as exc:
+        except (Exception, KeyboardInterrupt) as exc:
+            self.last_refinement_accepted = False
+            self.last_refinement_rejection_reason = "error"
             self._record_rwp(np.nan, "error", log_label,
                              f"{type(exc).__name__}: {exc}")
             raise
@@ -215,7 +271,7 @@ class RefinementMixin:
             # an unused Uiso slot, which must not determine acceptance.
             _, ct, _, cia = phase.data["General"]["AtomPtrs"]
             for atom in phase.data["Atoms"]:
-                if atom[cia] == "I" and atom[cia + 1] < 0:
+                if atom[cia] == "I" and (not np.isfinite(atom[cia + 1]) or atom[cia + 1] < 0):
                     negative_sites.append(
                         f"{phase.name}/{atom[ct - 1]}: Uiso={atom[cia + 1]:.6g}"
                     )
@@ -233,6 +289,12 @@ class RefinementMixin:
                 "negative or nonfinite instrument peak widths ("
                 + "; ".join(invalid_peak_widths) + ")"
             )
+        elif min_gof_improvement is None and (
+            not np.isfinite(attempted_rwp) or attempted_rwp < 0
+            or not np.isfinite(self.gpx["Covariance"]["data"]["Rvals"].get("GOF", np.nan))
+        ):
+            self.last_refinement_rejection_reason = "invalid_fit_statistics"
+            reason = "nonfinite or invalid fit statistics"
         elif min_gof_improvement is not None:
             old_gof = gpx_previous["Covariance"]["data"]["Rvals"]["GOF"]
             new_gof = self.gpx["Covariance"]["data"]["Rvals"]["GOF"]
@@ -249,7 +311,7 @@ class RefinementMixin:
             self._record_rwp(attempted_rwp, "accepted", log_label)
             return None
 
-        self.gpx = gpx_previous
+        self._restore_project_checkpoint(gpx_previous)
         for dataset, attrs in dataset_attrs_previous:
             dataset.attrs = attrs
         # G2Project.refine() writes its result before returning. Replace that
@@ -261,16 +323,17 @@ class RefinementMixin:
             "Refinement discarded because of " + reason
             + ". \n      Previous project restored; profile data and phases unchanged."
         )
-        print(" ❌--" + message)
+        logger.warning("%s", message)
         return message
 
     def _report_refinement(self, title_str, ref_str):
         """Keep helper messages and plot titles consistent with acceptance."""
         if not self.last_refinement_accepted:
             return ref_str
-        print(" ✅--" + title_str)
+        logger.info("%s", title_str)
         return title_str
 
+    @refinement_transaction
     def refine(
         self,
         update_ds=True,
@@ -294,7 +357,7 @@ class RefinementMixin:
         This check also applies with the GoF improvement check disabled.
         Zero Uiso and zero width components are accepted. When min_gof_improvement is
         set, also require a positive GoF decrease of at least that percentage
-        (default 1%). Pass None to disable the improvement check.
+        (disabled by default). Pass None to disable the improvement check.
         Results discarded for insufficient GoF improvement never plot, even
         when plot=True.
 
@@ -325,7 +388,7 @@ class RefinementMixin:
         else:
             phases_previous = None
 
-        rejection = self._refine_gpx(
+        rejection = None if getattr(self, "_sync_only", False) else self._refine_gpx(
             gpx_previous, verbose=verbose, min_gof_improvement=min_gof_improvement,
             log_label=log_label,
         )
@@ -342,218 +405,35 @@ class RefinementMixin:
 
         if update_ds:
             histogram = self.gpx.histograms()[0]
+            multiplier = self.ds.i1d.attrs.get("normalization_multiplier", 1.)
+            offset = (self.yshift_multiplier * self.ds.i1d.attrs["normalized_to"]
+                      if "i1d_baseline" in self.ds and "normalized_to" in self.ds.i1d.attrs else 0.)
+            calculated = (histogram.getdata("ycalc") - offset) / multiplier
+            background = (histogram.getdata("background") - offset) / multiplier
+            self.ds["i1d_refined"] = self.ds.i1d.copy(data=calculated)
+            if "i1d_baseline" in self.ds:
+                self.ds["i1d_refined"] += self.ds.i1d_baseline
+            self.ds["i1d_gsas_background"] = self.ds.i1d.copy(data=background)
+            self.ds.attrs.update(copy.deepcopy(self.gpx["Covariance"]["data"]["Rvals"]))
+            self.ds.attrs["refinement_mode"] = self._phase_mode()
 
-            if "i1d_baseline" in self.ds.keys():
-                if "normalized_to" in self.ds.i1d.attrs:
-                    Ycalc = (
-                        histogram.getdata("ycalc").astype("float32")
-                        - self.yshift_multiplier * self.ds.i1d.attrs["normalized_to"]
-                    )  # this includes gsas background
-                    Ybkg = (
-                        histogram.getdata("Background").astype("float32")
-                        - self.yshift_multiplier * self.ds.i1d.attrs["normalized_to"]
-                    )
-                    self.ds["i1d_refined"] = xr.DataArray(
-                        data=(
-                            self.ds.i1d_baseline.values
-                            + Ycalc / self.ds.i1d.attrs["normalization_multiplier"]
-                        ),
-                        dims=["radial"],
-                        coords={"radial": self.ds.i1d.radial},
-                    )
-                    self.ds["i1d_gsas_background"] = xr.DataArray(
-                        data=Ybkg / self.ds.i1d.attrs["normalization_multiplier"],
-                        dims=["radial"],
-                        coords={"radial": self.ds.i1d.radial},
-                    )
-                    self.ds.attrs = (
-                        self.ds.attrs | self.gpx["Covariance"]["data"]["Rvals"]
-                    )
-                    try:
-                        self.ds.attrs["converged"] = str(self.ds.attrs["converged"])
-                        self.ds.attrs["Aborted"] = str(self.ds.attrs["Aborted"])
-                    except:
-                        pass
-                else:
-                    Ycalc = histogram.getdata("ycalc").astype("float32")
-                    Ybkg = histogram.getdata("Background").astype("float32")
-                    self.ds["i1d_refined"] = xr.DataArray(
-                        data=(self.ds.i1d_baseline.values + Ycalc),
-                        dims=["radial"],
-                        coords={"radial": self.ds.i1d.radial},
-                    )
-                    self.ds["i1d_gsas_background"] = xr.DataArray(
-                        data=Ybkg,
-                        dims=["radial"],
-                        coords={"radial": self.ds.i1d.radial},
-                    )
-                    self.ds.attrs = (
-                        self.ds.attrs | self.gpx["Covariance"]["data"]["Rvals"]
-                    )
-                    try:
-                        self.ds.attrs["converged"] = str(self.ds.attrs["converged"])
-                        self.ds.attrs["Aborted"] = str(self.ds.attrs["Aborted"])
-                    except:
-                        pass
-            else:
-                if "normalized_to" in self.ds.i1d.attrs:
-                    Ycalc = histogram.getdata("ycalc").astype("float32")
-                    Ybkg = histogram.getdata("Background").astype("float32")
-                    self.ds["i1d_refined"] = xr.DataArray(
-                        data=(Ycalc / self.ds.i1d.attrs["normalization_multiplier"]),
-                        dims=["radial"],
-                        coords={"radial": self.ds.i1d.radial},
-                    )
-                    self.ds["i1d_gsas_background"] = xr.DataArray(
-                        data=Ybkg / self.ds.i1d.attrs["normalization_multiplier"],
-                        dims=["radial"],
-                        coords={"radial": self.ds.i1d.radial},
-                    )
-                    self.ds.attrs = (
-                        self.ds.attrs | self.gpx["Covariance"]["data"]["Rvals"]
-                    )
-                    try:
-                        self.ds.attrs["converged"] = str(self.ds.attrs["converged"])
-                        self.ds.attrs["Aborted"] = str(self.ds.attrs["Aborted"])
-                    except:
-                        pass
-                else:
-                    Ycalc = histogram.getdata("ycalc").astype("float32")
-                    Ybkg = histogram.getdata("Background").astype("float32")
-                    self.ds["i1d_refined"] = xr.DataArray(
-                        data=(Ycalc),
-                        dims=["radial"],
-                        coords={"radial": self.ds.i1d.radial},
-                    )
-                    self.ds["i1d_gsas_background"] = xr.DataArray(
-                        data=Ybkg,
-                        dims=["radial"],
-                        coords={"radial": self.ds.i1d.radial},
-                    )
-                    self.ds.attrs = (
-                        self.ds.attrs | self.gpx["Covariance"]["data"]["Rvals"]
-                    )
-                    try:
-                        self.ds.attrs["converged"] = str(self.ds.attrs["converged"])
-                        self.ds.attrs["Aborted"] = str(self.ds.attrs["Aborted"])
-                    except:
-                        pass
+            self.ds = self._store_fit_results(self.ds)
+            self.ds.attrs.update(self._phase_result_attrs(self.gpx))
 
-            for e, p in enumerate(self.gpx.phases()):
-                self.ds.attrs["PhaseInd_%d_SGSys" % (e)] = self.gpx["Phases"][p.name][
-                    "General"
-                ]["SGData"]["SGSys"]
-                self.ds.attrs["PhaseInd_%d_SpGrp" % (e)] = self.gpx["Phases"][p.name][
-                    "General"
-                ]["SGData"]["SpGrp"]
+            masses = np.array([
+                p.data["General"]["Mass"] * p.data["Histograms"][self._histogram_name]["Scale"][0]
+                for p in self.gpx.phases()
+            ], dtype=float)
+            valid_fractions = (self._phase_mode() == "Rietveld" and np.all(np.isfinite(masses))
+                               and np.all(masses >= 0) and masses.sum() > 0)
+            self.ds.attrs["weight_fractions_valid"] = bool(valid_fractions)
+            for index, mass in enumerate(masses):
+                self.ds.attrs[f"PhaseInd_{index}_wt_fraction"] = (100 * mass / masses.sum()
+                                                                 if valid_fractions else np.nan)
 
-                self.ds.attrs["PhaseInd_%d_cell_a" % (e)] = self.gpx["Phases"][p.name][
-                    "General"
-                ]["Cell"][1]
-                self.ds.attrs["PhaseInd_%d_cell_b" % (e)] = self.gpx["Phases"][p.name][
-                    "General"
-                ]["Cell"][2]
-                self.ds.attrs["PhaseInd_%d_cell_c" % (e)] = self.gpx["Phases"][p.name][
-                    "General"
-                ]["Cell"][3]
-                self.ds.attrs["PhaseInd_%d_cell_alpha" % (e)] = self.gpx["Phases"][
-                    p.name
-                ]["General"]["Cell"][4]
-                self.ds.attrs["PhaseInd_%d_cell_beta" % (e)] = self.gpx["Phases"][
-                    p.name
-                ]["General"]["Cell"][5]
-                self.ds.attrs["PhaseInd_%d_cell_gamma" % (e)] = self.gpx["Phases"][
-                    p.name
-                ]["General"]["Cell"][6]
+            self.ds.attrs.update(self._phase_result_attrs(gpx_previous, suffix="_previous"))
 
-                self.ds.attrs["PhaseInd_%d_size_broadening_type" % (e)] = self.gpx[
-                    "Phases"
-                ][p.name]["Histograms"]["PWDR data.xy"]["Size"][0]
-                self.ds.attrs["PhaseInd_%d_size_0" % (e)] = self.gpx["Phases"][p.name][
-                    "Histograms"
-                ]["PWDR data.xy"]["Size"][1][0]
-                self.ds.attrs["PhaseInd_%d_size_1" % (e)] = self.gpx["Phases"][p.name][
-                    "Histograms"
-                ]["PWDR data.xy"]["Size"][1][1]
-                self.ds.attrs["PhaseInd_%d_size_2" % (e)] = self.gpx["Phases"][p.name][
-                    "Histograms"
-                ]["PWDR data.xy"]["Size"][1][2]
-                self.ds.attrs["PhaseInd_%d_strain_broadening_type" % (e)] = self.gpx[
-                    "Phases"
-                ][p.name]["Histograms"]["PWDR data.xy"]["Mustrain"][0]
-                self.ds.attrs["PhaseInd_%d_mustrain_0" % (e)] = self.gpx["Phases"][
-                    p.name
-                ]["Histograms"]["PWDR data.xy"]["Mustrain"][1][0]
-                self.ds.attrs["PhaseInd_%d_mustrain_1" % (e)] = self.gpx["Phases"][
-                    p.name
-                ]["Histograms"]["PWDR data.xy"]["Mustrain"][1][1]
-                self.ds.attrs["PhaseInd_%d_mustrain_2" % (e)] = self.gpx["Phases"][
-                    p.name
-                ]["Histograms"]["PWDR data.xy"]["Mustrain"][1][2]
-
-            wtSum = 0.0
-            for e, p in enumerate(self.phases):
-                mass = self.gpx["Phases"][p]["General"]["Mass"]
-                phFr = self.gpx["Phases"][p]["Histograms"]["PWDR data.xy"]["Scale"][0]
-                wtSum += mass * phFr
-            for e, p in enumerate(self.phases):
-                weightFr = (
-                    self.gpx["Phases"][p]["Histograms"]["PWDR data.xy"]["Scale"][0]
-                    * self.gpx["Phases"][p]["General"]["Mass"]
-                    / wtSum
-                )
-                self.ds.attrs["PhaseInd_%d_wt_fraction" % (e)] = 100 * weightFr
-
-            for e, p in enumerate(gpx_previous.phases()):
-                self.ds.attrs["PhaseInd_%d_cell_a_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["General"]["Cell"][1]
-                self.ds.attrs["PhaseInd_%d_cell_b_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["General"]["Cell"][2]
-                self.ds.attrs["PhaseInd_%d_cell_c_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["General"]["Cell"][3]
-                self.ds.attrs["PhaseInd_%d_cell_alpha_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["General"]["Cell"][4]
-                self.ds.attrs["PhaseInd_%d_cell_beta_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["General"]["Cell"][5]
-                self.ds.attrs["PhaseInd_%d_cell_gamma_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["General"]["Cell"][6]
-
-                self.ds.attrs["PhaseInd_%d_size_broadening_type_previous" % (e)] = (
-                    gpx_previous["Phases"][p.name]["Histograms"]["PWDR data.xy"][
-                        "Size"
-                    ][0]
-                )
-                self.ds.attrs["PhaseInd_%d_size_0_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["Histograms"]["PWDR data.xy"]["Size"][1][0]
-                self.ds.attrs["PhaseInd_%d_size_1_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["Histograms"]["PWDR data.xy"]["Size"][1][1]
-                self.ds.attrs["PhaseInd_%d_size_2_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["Histograms"]["PWDR data.xy"]["Size"][1][2]
-                self.ds.attrs["PhaseInd_%d_strain_broadening_type_previous" % (e)] = (
-                    gpx_previous["Phases"][p.name]["Histograms"]["PWDR data.xy"][
-                        "Mustrain"
-                    ][0]
-                )
-                self.ds.attrs["PhaseInd_%d_mustrain_0_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["Histograms"]["PWDR data.xy"]["Mustrain"][1][0]
-                self.ds.attrs["PhaseInd_%d_mustrain_1_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["Histograms"]["PWDR data.xy"]["Mustrain"][1][1]
-                self.ds.attrs["PhaseInd_%d_mustrain_2_previous" % (e)] = gpx_previous[
-                    "Phases"
-                ][p.name]["Histograms"]["PWDR data.xy"]["Mustrain"][1][2]
-
-            inst_prm_dict = self.gpx["PWDR data.xy"]["Instrument Parameters"][0]
+            inst_prm_dict = self.gpx[self._histogram_name]["Instrument Parameters"][0]
             inst_prm_dict_clean = {}
             for i in inst_prm_dict:
                 inst_prm_dict_clean["gsasii_inst_prm_" + i] = inst_prm_dict[i][1]
@@ -608,7 +488,7 @@ class RefinementMixin:
                 gof_change,
                 gof_symbol,
             )
-        except:
+        except Exception:
             refinement_str = "Rwp/GoF is %.3f/%.3f" % (
                 self.gpx["Covariance"]["data"]["Rvals"]["Rwp"],
                 self.gpx["Covariance"]["data"]["Rvals"]["GOF"],
@@ -626,6 +506,34 @@ class RefinementMixin:
 
         return refinement_str
 
+    @staticmethod
+    def _phase_result_attrs(project, suffix=""):
+        """Extract cell/profile attributes consistently for current/previous fits."""
+        hist_name = project.histograms()[0].name
+        attrs = {}
+        for index, phase in enumerate(project.phases()):
+            general = phase.data["General"]
+            prefix = f"PhaseInd_{index}_"
+            if not suffix:
+                for key in ("SGSys", "SpGrp"):
+                    attrs[prefix + key] = general["SGData"][key]
+            for name, value in zip(("a", "b", "c", "alpha", "beta", "gamma"), general["Cell"][1:7]):
+                attrs[f"{prefix}cell_{name}{suffix}"] = value
+            hap = phase.data["Histograms"][hist_name]
+            for key, kind, field in (("Size", "size", "size"), ("Mustrain", "strain", "mustrain")):
+                attrs[f"{prefix}{kind}_broadening_type{suffix}"] = hap[key][0]
+                for component, value in enumerate(hap[key][1][:3]):
+                    attrs[f"{prefix}{field}_{component}{suffix}"] = value
+        return attrs
+
+    def _store_fit_results(self, ds):
+        result = fit_result_dataset(self.gpx["Covariance"]["data"])
+        result.attrs["gsas_result_step"] = ds.sizes.get("refinement_step", 0)
+        clean = clear_fit_results(ds)
+        merged = xr.merge([clean, result], join="exact")
+        merged.attrs.update(result.attrs)
+        return merged
+
     def gpx_saver(self):
         if self.verbose:
             self.gpx.save()
@@ -633,6 +541,7 @@ class RefinementMixin:
             with HiddenPrints():
                 self.gpx.save()
 
+    @refinement_transaction
     def setup_gsas2_refiner(
         self,
         gsasii_lib_path=None,
@@ -664,6 +573,17 @@ class RefinementMixin:
         an empty history until the first refinement attempt.
         """
         self._validate_gof_improvement(min_gof_improvement)
+        validate_profile(self.ds.i1d)
+        q_to_two_theta(self.ds.i1d.radial.values, self.ds.i1d.attrs["wavelength_in_angst"])
+        if not getattr(self, "phases", None):
+            raise ValueError("Load at least one phase before setting up refinement")
+        if instprm_from_gpx is not None and not os.path.isfile(instprm_from_gpx):
+            raise FileNotFoundError(instprm_from_gpx)
+        if instprm_from_gpx is not None and instprm_from_nc is not None:
+            raise ValueError("Specify only one instrument parameter source")
+        self.ds = clear_fit_results(self.ds)
+        for attr in ("normalized_to", "normalization_multiplier"):
+            self.ds.i1d.attrs.pop(attr, None)
 
         for k in ["i1d_refined", "i1d_gsas_background"]:
             if k in self.ds.keys():
@@ -708,41 +628,8 @@ class RefinementMixin:
             os.path.join(os.path.expanduser("~"), ".easyxrd_scratch","G2")
         )
 
-        G2sc = None
-        for p in candidate_paths:
-            if os.path.isdir(p) and p not in sys.path:
-                sys.path.insert(0, p)
-            try:
-                import GSASII.GSASIIscriptable as G2sc
-                import GSASII.GSASIIlattice as G2lat
-
-                self.gsasii_lib_path = p
-                break
-            except ImportError:
-                try:
-                    import GSASIIscriptable as G2sc
-                    import GSASIIlattice as G2lat
-
-                    self.gsasii_lib_path = p
-                    break
-                except ImportError:
-                    continue
-
-        if G2sc is None:
-            try:
-                import GSASII.GSASIIscriptable as G2sc
-                import GSASII.GSASIIlattice as G2lat
-
-                self.gsasii_lib_path = "system"
-            except ImportError:
-                raise ImportError(
-                    "Unable to import GSASIIscriptable. Please ensure GSAS-II is installed and accessible. \n"
-                    "You can specify the GSAS-II directory via `setup_gsas2_refiner(gsasii_lib_path=...)` \n"
-                    "or by setting the GSASII_PATH environment variable. \n"
-                    "Installation notes: https://advancedphotonsource.github.io/GSAS-II-tutorials/install.html \n"
-                    "\nNEW! \n"
-                    "    You can also try easyxrd.install_gsas2() and rerun from scratch \n"
-                )
+        G2sc = load_gsas_module("GSASIIscriptable", candidate_paths)
+        self.gsasii_lib_path = str(Path(G2sc.__file__).resolve().parent)
 
         self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
 
@@ -757,26 +644,22 @@ class RefinementMixin:
         os.makedirs(self.gsasii_run_directory, exist_ok=True)
 
         if normalize:
+            if not np.isfinite(normalize_to) or normalize_to <= 0:
+                raise ValueError("normalize_to must be finite and positive")
             # find normalization scale from i1d
             if "i1d_baseline" in self.ds.keys():
                 da_baseline_sub = self.ds.i1d - self.ds.i1d_baseline
                 normalization_multiplier = normalize_to * (
-                    1 / max(da_baseline_sub.values)
+                    1 / self._normalization_peak(da_baseline_sub.values)
                 )
             else:
                 da = self.ds.i1d
-                normalization_multiplier = normalize_to * (1 / max(da.values))
+                normalization_multiplier = normalize_to * (1 / self._normalization_peak(da.values))
 
             self.ds.i1d.attrs["normalization_multiplier"] = normalization_multiplier
             self.ds.i1d.attrs["normalized_to"] = normalize_to
 
-        data_x = np.rad2deg(
-            2
-            * np.arcsin(
-                self.ds.i1d.radial.values
-                * ((self.ds.i1d.attrs["wavelength_in_angst"]) / (4 * np.pi))
-            )
-        )
+        data_x = q_to_two_theta(self.ds.i1d.radial.values, self.ds.i1d.attrs["wavelength_in_angst"])
         if "i1d_baseline" in self.ds.keys():
             if "normalized_to" in self.ds.i1d.attrs:
                 data_y = (
@@ -795,139 +678,67 @@ class RefinementMixin:
             else:
                 data_y = self.ds.i1d.values
 
-        np.savetxt(
-            "%s/data.xy" % self.gsasii_run_directory,
-            fmt="%.7e",
-            X=np.column_stack((data_x, data_y)),
-        )
+        if not np.all(np.isfinite(data_y)):
+            raise ValueError("Refinement intensities must be finite")
+        if "i1d_variance" in self.ds:
+            measurement_variance = self.ds.i1d_variance.values.copy()
+        else:
+            warnings.warn("No measurement variance supplied: using unit weights; GoF and uncertainties lack a counting-statistics interpretation", UserWarning)
+            measurement_variance = np.ones_like(data_y)
+        if "i1d_baseline_variance" in self.ds:
+            measurement_variance += self.ds.i1d_baseline_variance.values
+        if not np.all(np.isfinite(measurement_variance)) or np.any(measurement_variance <= 0):
+            raise ValueError("Refinement variance must be finite and positive")
+        multiplier = self.ds.i1d.attrs.get("normalization_multiplier", 1.)
+        data_variance = measurement_variance * multiplier**2
+        # The GSAS-II text reader clips nonpositive y even with a sigma column.
+        # Restore the original signed observations and explicit weights below.
+        np.savetxt(f"{self.gsasii_run_directory}/data.xy",
+                   np.column_stack((data_x, data_y, np.sqrt(data_variance))), fmt="%.12e")
 
+        instrument = dict(zip(
+            ("Polariz.", "Azimuth", "Zero", "U", "V", "W", "X", "Y", "Z", "SH/L"),
+            (instprm_Polariz, instprm_Azimuth, instprm_Zero, instprm_U, instprm_V,
+             instprm_W, instprm_X, instprm_Y, instprm_Z, instprm_SHL)))
         if instprm_from_gpx is not None:
-            if os.path.isfile(instprm_from_gpx):
-                gpx_instprm = G2sc.G2Project(gpxfile=instprm_from_gpx)
-                for n in gpx_instprm.names:
-                    l = n
-                    pattern = "PWDR *"
-                    matching = fnmatch.filter(l, pattern)
-                    if matching != []:
-                        pwdr_name = matching[0]
-                instprm_dict = gpx_instprm[pwdr_name]["Instrument Parameters"][0]
-
-                with open("%s/gsas.instprm" % self.gsasii_run_directory, "w") as f:
-                    f.write(
-                        "#GSAS-II instrument parameter file; do not add/delete items!\n"
-                    )
-                    f.write("Type:PXC\n")
-                    f.write("Bank:1.0\n")
-                    f.write("Lam:%s\n" % (self.ds.i1d.attrs["wavelength_in_angst"]))
-                    f.write("Polariz.:%s\n" % (instprm_dict["Polariz."][1]))
-                    f.write("Azimuth:%s\n" % (instprm_dict["Azimuth"][1]))
-                    f.write("Zero:%s\n" % (instprm_dict["Zero"][1]))
-                    f.write("U:%s\n" % (instprm_dict["U"][1]))
-                    f.write("V:%s\n" % (instprm_dict["V"][1]))
-                    f.write("W:%s\n" % (instprm_dict["W"][1]))
-                    f.write("X:%s\n" % (instprm_dict["X"][1]))
-                    f.write("Y:%s\n" % (instprm_dict["Y"][1]))
-                    f.write("Z:%s\n" % (instprm_dict["Z"][1]))
-                    f.write("SH/L:%s\n" % (instprm_dict["SH/L"][1]))
-            else:
-                print(
-                    "gpx file for reading instrument parameters do net exist. Please check the path"
-                )
-                # return
-
+            project = G2sc.G2Project(gpxfile=str(instprm_from_gpx))
+            histograms = project.histograms()
+            if not histograms:
+                raise ValueError("Instrument source has no powder histograms")
+            source = histograms[0].data["Instrument Parameters"][0]
+            instrument.update({key: source[key][1] for key in instrument})
         elif instprm_from_nc is not None:
-            with xr.open_dataset(instprm_from_nc) as ds_inst_prm:
-                with open("%s/gsas.instprm" % self.gsasii_run_directory, "w") as f:
-                    f.write(
-                        "#GSAS-II instrument parameter file; do not add/delete items!\n"
-                    )
-                    f.write("Type:PXC\n")
-                    f.write("Bank:1.0\n")
-                    f.write("Lam:%s\n" % (self.ds.i1d.attrs["wavelength_in_angst"]))
-                    f.write(
-                        "Polariz.:%s\n"
-                        % (ds_inst_prm.attrs["gsasii_inst_prm_Polariz."])
-                    )
-                    f.write(
-                        "Azimuth:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_Azimuth"])
-                    )
-                    f.write("Zero:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_Zero"]))
-                    f.write("U:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_U"]))
-                    f.write("V:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_V"]))
-                    f.write("W:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_W"]))
-                    f.write("X:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_X"]))
-                    f.write("Y:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_Y"]))
-                    f.write("Z:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_Z"]))
-                    f.write("SH/L:%s\n" % (ds_inst_prm.attrs["gsasii_inst_prm_SH/L"]))
+            with xr.open_dataset(instprm_from_nc) as source:
+                instrument.update({key: source.attrs["gsasii_inst_prm_" + key] for key in instrument})
+        instrument_source = instprm_from_gpx if instprm_from_gpx is not None else instprm_from_nc
+        self.ds.attrs["refinement_provenance"] = provenance_json({
+            "schema": 1, "software": software_versions("easyxrd", "GSAS-II"),
+            "instrument_source": file_record(instrument_source),
+            "instrument_parameters": instrument,
+            "wavelength_angstrom": self.ds.i1d.attrs["wavelength_in_angst"],
+            "weighting": "measurement_variance" if "i1d_variance" in self.ds else "unit_weights",
+            "measured_background_variance": "i1d_baseline_variance" in self.ds,
+            "normalization_multiplier": multiplier,
+            "uncertainty_limitations": "Fixed baseline/scale; pixel-splitting covariance omitted",
+        })
+        with open(f"{self.gsasii_run_directory}/gsas.instprm", "w") as stream:
+            stream.write("#GSAS-II instrument parameter file; do not add/delete items!\nType:PXC\nBank:1.0\n")
+            stream.write(f"Lam:{self.ds.i1d.attrs['wavelength_in_angst']}\n")
+            for key, value in instrument.items():
+                stream.write(f"{key}:{value}\n")
 
-        else:
-            with open("%s/gsas.instprm" % self.gsasii_run_directory, "w") as f:
-                f.write(
-                    "#GSAS-II instrument parameter file; do not add/delete items!\n"
-                )
-                f.write("Type:PXC\n")
-                f.write("Bank:1.0\n")
-                f.write("Lam:%s\n" % (self.ds.i1d.attrs["wavelength_in_angst"]))
-                f.write("Polariz.:%s\n" % (instprm_Polariz))
-                f.write("Azimuth:%s\n" % (instprm_Azimuth))
-                f.write("Zero:%s\n" % (instprm_Zero))
-                f.write("U:%s\n" % (instprm_U))
-                f.write("V:%s\n" % (instprm_V))
-                f.write("W:%s\n" % (instprm_W))
-                f.write("X:%s\n" % (instprm_X))
-                f.write("Y:%s\n" % (instprm_Y))
-                f.write("Z:%s\n" % (instprm_Z))
-                f.write("SH/L:%s\n" % (instprm_SHL))
-
-        if self.verbose:
-
-            self.gpx = G2sc.G2Project(newgpx="%s/gsas.gpx" % self.gsasii_run_directory)
+        with nullcontext() if self.verbose else HiddenPrints():
+            self.gpx = G2sc.G2Project(newgpx=f"{self.gsasii_run_directory}/gsas.gpx")
             self.gpx.data["Controls"]["data"]["max cyc"] = 100
-            self.gpx.add_powder_histogram(
-                "%s/data.xy" % self.gsasii_run_directory,
-                "%s/gsas.instprm" % self.gsasii_run_directory,
-            )
-            self.export_phases(
-                export_to=self.gsasii_run_directory, export_extension=".cif"
-            )
-            hist = self.gpx.histograms()[0]
-            for p in self.phases:
-                self.gpx.add_phase(
-                    "%s/%s.cif" % (self.gsasii_run_directory, p),
-                    phasename=p,
-                    histograms=[hist],
-                    fmthint="CIF",
-                )
-
-        else:
-            with HiddenPrints():
-                self.gpx = G2sc.G2Project(
-                    newgpx="%s/gsas.gpx" % self.gsasii_run_directory
-                )
-                self.gpx.data["Controls"]["data"]["max cyc"] = 100
-                self.gpx.add_powder_histogram(
-                    "%s/data.xy" % self.gsasii_run_directory,
-                    "%s/gsas.instprm" % self.gsasii_run_directory,
-                )
-                self.export_phases(
-                    export_to=self.gsasii_run_directory, export_extension=".cif"
-                )
-                hist = self.gpx.histograms()[0]
-                for p in self.phases:
-                    self.gpx.add_phase(
-                        "%s/%s.cif" % (self.gsasii_run_directory, p),
-                        phasename=p,
-                        histograms=[hist],
-                        fmthint="CIF",
-                    )
-
-        for n in self.gpx.names:
-            l = n
-            pattern = "PWDR *"
-            matching = fnmatch.filter(l, pattern)
-            if matching != []:
-                pwdr_name = matching[0]
-
+            hist = self.gpx.add_powder_histogram(f"{self.gsasii_run_directory}/data.xy",
+                                               f"{self.gsasii_run_directory}/gsas.instprm")
+            hist.data["data"][1][1][:] = data_y
+            hist.data["data"][1][2][:] = 1 / data_variance
+            self.export_phases(export_to=self.gsasii_run_directory, export_extension=".cif")
+            for phase in self.phases:
+                self.gpx.add_phase(f"{self.gsasii_run_directory}/{phase}.cif", phasename=phase,
+                                   histograms=[hist], fmthint="CIF")
+        pwdr_name = self._histogram_name
         if "i1d_baseline" in self.ds.keys():
             if "normalized_to" in self.ds.i1d.attrs:
                 self.gpx[pwdr_name]["Background"][0] = [
@@ -945,14 +756,14 @@ class RefinementMixin:
                     False,
                     1,
                     self.ds.i1d.attrs["normalization_multiplier"]
-                    * min(self.ds.i1d.values),
+                    * np.nanmin(self.ds.i1d.values),
                 ]
             else:
                 self.gpx[pwdr_name]["Background"][0] = [
                     "chebyschev-1",
                     False,
                     1,
-                    min(self.ds.i1d.values),
+                    np.nanmin(self.ds.i1d.values),
                 ]
 
         self._reset_rwp_history()
@@ -991,7 +802,7 @@ class RefinementMixin:
                 update_previous_gpx=False,
                 update_previous_phases=False,
                 verbose=False,
-                min_gof_improvement=None,
+                min_gof_improvement=min_gof_improvement,
                 log_label="setup_LeBail",
             )
 
@@ -1016,6 +827,7 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    @refinement_transaction
     def refine_background(
         self,
         num_coeffs=10,
@@ -1080,7 +892,7 @@ class RefinementMixin:
         set_refine_to=True,
         save_gpx=True,
     ):
-        """ """
+        """Configure the background model and refinement flag; optionally save without fitting."""
 
         self.gpx.set_refinement(
             {
@@ -1098,7 +910,7 @@ class RefinementMixin:
             self.gpx_saver()
 
     def clear_background_refinement(self, save_gpx=True):
-        """ """
+        """Disable background refinement and optionally save the project."""
 
         self.gpx.set_refinement(
             {
@@ -1116,9 +928,10 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    @refinement_transaction
     def refine_instrument_parameters(
         self,
-        inst_pars_to_refine=["U", "V", "W"],
+        inst_pars_to_refine=("U", "V", "W"),
         set_to_false_after_refinement=True,
         plot=False,
         min_gof_improvement=1.0,
@@ -1183,19 +996,19 @@ class RefinementMixin:
             )
 
     def set_instrument_parameters_refinement(
-        self, set_inst_pars_to_refine=["U", "V", "W"], set_refine_to=True, save_gpx=True
+        self, set_inst_pars_to_refine=("U", "V", "W"), set_refine_to=True, save_gpx=True
     ):
-        """ """
+        """Enable or disable the named instrument parameters; optionally save without fitting."""
 
         self.gpx.set_refinement(
-            {"set": {"Instrument Parameters": set_inst_pars_to_refine}}
+            {"set" if set_refine_to else "clear": {"Instrument Parameters": set_inst_pars_to_refine}}
         )
 
         if save_gpx:
             self.gpx_saver()
 
     def clear_instrument_parameters_refinement(self, save_gpx=True):
-        """ """
+        """Disable CW profile, zero-shift and axial-divergence refinement flags."""
 
         self.gpx.set_refinement(
             {
@@ -1220,6 +1033,7 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    @refinement_transaction
     def set_LeBail(
         self, to=True, phase_ind="all", refine=True, plot=False,
         min_gof_improvement=None,
@@ -1241,7 +1055,7 @@ class RefinementMixin:
                 update_previous_gpx=True,
                 update_previous_phases=False,
                 min_gof_improvement=min_gof_improvement,
-                log_label="set_LeBail",
+                log_label="set_LeBail:True" if to else "set_LeBail:False",
             )
             if not self.last_refinement_accepted:
                 return self._restore_rejected_refinement(
@@ -1364,7 +1178,7 @@ class RefinementMixin:
                 )
                 results.append({"scale": float(scale), "rwp": rwp,
                                 "status": status, "reason": reason})
-                print(f"   Lattice scale {scale:g}: Rwp={rwp:.6g} ({status})")
+                logger.info("Lattice scale %g: Rwp=%.6g (%s)", scale, rwp, status)
         finally:
             # The saved GPX, profile, CIF structures and comparison snapshots
             # must all describe the same winner, including after a failed trial.
@@ -1387,9 +1201,10 @@ class RefinementMixin:
                         )
             self.gpx_saver()
         if best is None:
-            print(" ❌--" + best_message)
+            logger.warning("%s", best_message)
         return best_message
 
+    @refinement_transaction
     def refine_cell_parameters(
         self,
         phase_ind="all",
@@ -1542,7 +1357,7 @@ class RefinementMixin:
                     )
                 )
 
-                print(report_str + "\n")
+                logger.info("%s", report_str)
 
         if set_to_false_after_refinement:
             self.gpx.set_refinement({"set": {"Cell": False}}, phase=phase_ind)
@@ -1551,7 +1366,7 @@ class RefinementMixin:
     def set_cell_parameters_refinement(
         self, set_refine_to=True, phase_ind="all", save_gpx=True
     ):
-        """ """
+        """Set cell-refinement flags for a phase index or all phases; do not run a fit."""
 
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement({"set": {"Cell": set_refine_to}})
@@ -1562,7 +1377,7 @@ class RefinementMixin:
             self.gpx_saver()
 
     def clear_cell_parameters_refinement(self, save_gpx=True):
-        """ """
+        """Disable cell refinement for all phases and optionally save."""
 
         self.gpx.set_refinement({"set": {"Cell": False}})
 
@@ -1572,6 +1387,7 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    @refinement_transaction
     def refine_strain_broadening(
         self,
         phase_ind="all",
@@ -1681,7 +1497,7 @@ class RefinementMixin:
                     )
                 )
 
-                print(report_str + "\n")
+                logger.info("%s", report_str)
 
         if set_to_false_after_refinement:
             self.gpx.set_refinement(
@@ -1692,7 +1508,7 @@ class RefinementMixin:
     def set_strain_broadening_refinement(
         self, set_refine_to=True, phase_ind="all", type="isotropic", save_gpx=True
     ):
-        """ """
+        """Select a microstrain model and flag for one or all phases; do not run a fit."""
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement(
                 {"set": {"Mustrain": {"refine": set_refine_to, "type": type}}}
@@ -1707,7 +1523,7 @@ class RefinementMixin:
             self.gpx_saver()
 
     def clear_strain_broadening_refinement(self, save_gpx=True):
-        """ """
+        """Disable microstrain refinement for all phases and optionally save."""
 
         self.gpx.set_refinement({"set": {"Mustrain": {"refine": False}}})
 
@@ -1717,6 +1533,7 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    @refinement_transaction
     def refine_size_broadening(
         self,
         phase_ind="all",
@@ -1826,7 +1643,7 @@ class RefinementMixin:
                     )
                 )
 
-                print(report_str + "\n")
+                logger.info("%s", report_str)
 
         if set_to_false_after_refinement:
             self.gpx.set_refinement(
@@ -1837,7 +1654,7 @@ class RefinementMixin:
     def set_size_broadening_refinement(
         self, set_refine_to=True, phase_ind="all", type="isotropic", save_gpx=True
     ):
-        """ """
+        """Select a crystallite-size model and flag for one or all phases; do not run a fit."""
         if (phase_ind == "all") or (phase_ind == None):
             self.gpx.set_refinement(
                 {"set": {"Size": {"refine": set_refine_to, "type": type}}}
@@ -1852,7 +1669,7 @@ class RefinementMixin:
             self.gpx_saver()
 
     def clear_size_broadening_refinement(self, save_gpx=True):
-        """ """
+        """Disable crystallite-size refinement for all phases and optionally save."""
 
         self.gpx.set_refinement({"set": {"Size": {"refine": False}}})
 
@@ -1862,16 +1679,19 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    @refinement_transaction
     def refine_phase_fractions(
         self, set_to_false_after_refinement=True, plot=False,
         min_gof_improvement=0.1,
     ):
         """Refine phase fractions, requiring the specified percent GoF decrease."""
 
+        if self._phase_mode() != "Rietveld":
+            raise ValueError("Quantitative phase fractions require LeBail=False for all phases")
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
-        self.gpx["PWDR data.xy"]["Sample Parameters"]["Scale"][1] = False
+        self.gpx[self._histogram_name]["Sample Parameters"]["Scale"][1] = False
         for e, p in enumerate(self.phases):
-            self.gpx["Phases"][p]["Histograms"]["PWDR data.xy"]["Scale"][1] = True
+            self.gpx["Phases"][p]["Histograms"][self._histogram_name]["Scale"][1] = True
 
         ref_str = self.refine(
             update_ds=True,
@@ -1892,9 +1712,9 @@ class RefinementMixin:
         title_str = self._report_refinement(title_str, ref_str)
 
         if set_to_false_after_refinement:
-            self.gpx["PWDR data.xy"]["Sample Parameters"]["Scale"][1] = True
+            self.gpx[self._histogram_name]["Sample Parameters"]["Scale"][1] = True
             for e, p in enumerate(self.phases):
-                self.gpx["Phases"][p]["Histograms"]["PWDR data.xy"]["Scale"][1] = False
+                self.gpx["Phases"][p]["Histograms"][self._histogram_name]["Scale"][1] = False
 
         self.gpx_saver()
 
@@ -1911,29 +1731,31 @@ class RefinementMixin:
             )
 
     def set_phase_fractions_refinement(self, set_refine_to=True, save_gpx=True):
-        """ """
+        """Toggle phase scales against the histogram scale; use Rietveld mode for fractions."""
 
         if set_refine_to:
-            self.gpx["PWDR data.xy"]["Sample Parameters"]["Scale"][1] = False
+            self.gpx[self._histogram_name]["Sample Parameters"]["Scale"][1] = False
             for e, p in enumerate(self.phases):
-                self.gpx["Phases"][p]["Histograms"]["PWDR data.xy"]["Scale"][1] = True
+                self.gpx["Phases"][p]["Histograms"][self._histogram_name]["Scale"][1] = True
         else:
-            self.gpx["PWDR data.xy"]["Sample Parameters"]["Scale"][1] = True
+            self.gpx[self._histogram_name]["Sample Parameters"]["Scale"][1] = True
             for e, p in enumerate(self.phases):
-                self.gpx["Phases"][p]["Histograms"]["PWDR data.xy"]["Scale"][1] = False
+                self.gpx["Phases"][p]["Histograms"][self._histogram_name]["Scale"][1] = False
         if save_gpx:
             self.gpx_saver()
 
     def clear_phase_fractions_refinement(self, save_gpx=True):
-        self.gpx["PWDR data.xy"]["Sample Parameters"]["Scale"][1] = True
+        """Disable phase scales and enable the histogram scale; optionally save."""
+        self.gpx[self._histogram_name]["Sample Parameters"]["Scale"][1] = True
         for e, p in enumerate(self.phases):
-            self.gpx["Phases"][p]["Histograms"]["PWDR data.xy"]["Scale"][1] = False
+            self.gpx["Phases"][p]["Histograms"][self._histogram_name]["Scale"][1] = False
         if save_gpx:
             self.gpx_saver()
 
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    @refinement_transaction
     def refine_preferred_orientation(
         self,
         phase_ind="all",
@@ -1944,100 +1766,26 @@ class RefinementMixin:
     ):
         """Refine preferred orientation with a minimum percent GoF decrease."""
         gpx_before_refinement = self._prepare_refinement(min_gof_improvement)
-        try:
-            from GSASII import GSASIIlattice as G2lat
-        except ImportError:
-            import GSASIIlattice as G2lat
+        self._set_po(phase_ind, harmonics_order, True)
 
-        L = harmonics_order
-        for e, st in enumerate(self.phases):
-            if (phase_ind == "all") or (phase_ind == None):
-                coef_dict = {}
-                sytsym = self.gpx["Phases"][st]["General"]["SGData"]["SGLaue"]
-                for l in range(2, L + 1):
-                    coeffs = G2lat.GenShCoeff(sytsym=sytsym, L=l)
-                    try:
-                        cst = coeffs[0][0][:6]
-                        coef_dict[cst] = 0.0
-                    except:
-                        pass
-                self.gpx["Phases"][st]["Histograms"]["PWDR data.xy"]["Pref.Ori."] = [
-                    "SH",
-                    1.0,
-                    True,
-                    [0, 0, 1],
-                    L,
-                    coef_dict,
-                    [""],
-                    0.1,
-                ]
-            else:
-                if e == phase_ind:
-                    coef_dict = {}
-                    sytsym = self.gpx["Phases"][st]["General"]["SGData"]["SGLaue"]
-                    for l in range(2, L + 1):
-                        coeffs = G2lat.GenShCoeff(sytsym=sytsym, L=l)
-                        try:
-                            cst = coeffs[0][0][:6]
-                            coef_dict[cst] = 0.0
-                        except:
-                            pass
-                    self.gpx["Phases"][st]["Histograms"]["PWDR data.xy"][
-                        "Pref.Ori."
-                    ] = ["SH", 1.0, True, [0, 0, 1], L, coef_dict, [""], 0.1]
-
-        if (phase_ind == "all") or (phase_ind == None):
-            ref_str = self.refine(
-                update_ds=True,
-                update_ds_phases=False,
-                update_phases=False,
-                update_previous_ds=True,
-                update_previous_gpx=True,
-                update_previous_phases=True,
-                min_gof_improvement=min_gof_improvement,
-                log_label="refine_preferred_orientation",
-            )
-            if not self.last_refinement_accepted:
-                return self._restore_rejected_refinement(
-                    gpx_before_refinement, ref_str, plot=plot,
-                    plot_hint="refine_preferred_orientation",
-                )
-            title_str = "Preferred orientation for all phases are refined. %s" % (
-                ref_str
-            )
-            title_str = self._report_refinement(title_str, ref_str)
-        else:
-            ref_str = self.refine(
-                update_ds=True,
-                update_ds_phases=False,
-                update_phases=False,
-                update_previous_ds=True,
-                update_previous_gpx=True,
-                update_previous_phases=True,
-                min_gof_improvement=min_gof_improvement,
-                log_label="refine_preferred_orientation",
-            )
-            if not self.last_refinement_accepted:
-                return self._restore_rejected_refinement(
-                    gpx_before_refinement, ref_str, plot=plot,
-                    plot_hint="refine_preferred_orientation",
-                )
-            title_str = "Preferred orientation for %s phase is refined. %s" % (
-                self.gpx.phases()[phase_ind].name,
-                ref_str,
-            )
-            title_str = self._report_refinement(title_str, ref_str)
+        ref_str = self.refine(update_ds=True, update_ds_phases=False, update_phases=False,
+                              min_gof_improvement=min_gof_improvement,
+                              log_label="refine_preferred_orientation")
+        if not self.last_refinement_accepted:
+            return self._restore_rejected_refinement(gpx_before_refinement, ref_str, plot=plot,
+                                                     plot_hint="refine_preferred_orientation")
+        title_str = self._report_refinement("Preferred orientation refined. " + ref_str, ref_str)
 
         if set_to_false_after_refinement:
             # self.gpx['Phases'][st]['Histograms']['PWDR data.xy']['Pref.Ori.'][2] = False
             for e, st in enumerate(self.phases):
                 if (phase_ind == "all") or (phase_ind == None):
-                    self.gpx["Phases"][st]["Histograms"]["PWDR data.xy"]["Pref.Ori."][
+                    self.gpx["Phases"][st]["Histograms"][self._histogram_name]["Pref.Ori."][
                         2
                     ] = False
                 else:
                     if e == phase_ind:
-                        self.gpx["Phases"][st]["Histograms"]["PWDR data.xy"][
+                        self.gpx["Phases"][st]["Histograms"][self._histogram_name][
                             "Pref.Ori."
                         ][2] = False
 
@@ -2059,54 +1807,17 @@ class RefinementMixin:
         self, set_refine_to=True, phase_ind=0, harmonics_order_to=4, save_gpx=True
     ):
 
-        try:
-            from GSASII import GSASIIlattice as G2lat
-        except ImportError:
-            import GSASIIlattice as G2lat
-
-        for e, st in enumerate(self.phases):
-            if (phase_ind == "all") or (phase_ind == None):
-                coef_dict = {}
-                sytsym = self.gpx["Phases"][st]["General"]["SGData"]["SGLaue"]
-                for l in range(2, L + 1):
-                    coeffs = G2lat.GenShCoeff(sytsym=sytsym, L=l)
-                    try:
-                        cst = coeffs[0][0][:6]
-                        coef_dict[cst] = 0.0
-                    except:
-                        pass
-                self.gpx["Phases"][st]["Histograms"]["PWDR data.xy"]["Pref.Ori."] = [
-                    "SH",
-                    1.0,
-                    set_refine_to,
-                    [0, 0, 1],
-                    L,
-                    coef_dict,
-                    [""],
-                    0.1,
-                ]
-            else:
-                if e == phase_ind:
-                    coef_dict = {}
-                    sytsym = self.gpx["Phases"][st]["General"]["SGData"]["SGLaue"]
-                    for l in range(2, L + 1):
-                        coeffs = G2lat.GenShCoeff(sytsym=sytsym, L=l)
-                        try:
-                            cst = coeffs[0][0][:6]
-                            coef_dict[cst] = 0.0
-                        except:
-                            pass
-                    self.gpx["Phases"][st]["Histograms"]["PWDR data.xy"][
-                        "Pref.Ori."
-                    ] = ["SH", 1.0, True, [0, 0, 1], L, coef_dict, [""], 0.1]
+        """Configure complete spherical harmonics of an even order and set their refinement flag."""
+        self._set_po(phase_ind, harmonics_order_to, set_refine_to)
 
         if save_gpx:
             self.gpx_saver()
 
     def clear_preferred_orientation_refinement(self, save_gpx=True):
 
+        """Disable preferred-orientation refinement for every phase and optionally save."""
         for st in self.phases:
-            self.gpx["Phases"][st]["Histograms"]["PWDR data.xy"]["Pref.Ori."][2] = False
+            self.gpx["Phases"][st]["Histograms"][self._histogram_name]["Pref.Ori."][2] = False
 
         if save_gpx:
             self.gpx_saver()
@@ -2114,6 +1825,7 @@ class RefinementMixin:
     ###############################################################################################
     ###############################################################################################
     ###############################################################################################
+    @refinement_transaction
     def refine_site_property(
         self,
         phase_ind=0,
@@ -2126,7 +1838,7 @@ class RefinementMixin:
         """Refine a site, accepting only a sufficient percentage decrease in GoF.
 
         Rejected trials preserve the project, site flags, structures, dataset,
-        and previous-result history. The default requires at least a 1% decrease
+        and previous-result history. The default requires at least a 0.1% decrease
         in GoF. Set min_gof_improvement=None to disable
         the improvement check, or 0 to accept any strictly positive decrease.
         """
@@ -2180,7 +1892,7 @@ class RefinementMixin:
     def set_site_property_refinement(
         self, phase_ind=0, site_ind=0, refinement_flags="", save_gpx=True
     ):
-        """ """
+        """Set native GSAS-II atom refinement flags for one site; do not run a fit."""
 
         site_label = self.gpx.phases()[phase_ind]["Atoms"][site_ind][0]
         self.gpx.phases()[phase_ind].atom(
@@ -2190,7 +1902,7 @@ class RefinementMixin:
             self.gpx_saver()
 
     def clear_site_property_refinement(self, phase_ind=0, site_ind=0, save_gpx=True):
-        """ """
+        """Clear all refinement flags for one atom and optionally save the project."""
 
         site_label = self.gpx.phases()[phase_ind]["Atoms"][site_ind][0]
         self.gpx.phases()[phase_ind].atom(site_label).refinement_flags = ""
@@ -2198,33 +1910,59 @@ class RefinementMixin:
         if save_gpx:
             self.gpx_saver()
 
+    @refinement_transaction
     def fine_tune_gpx(self, min_gof_improvement=1.0):
-        """Edit and refine the GPX, requiring the minimum percent GoF decrease."""
-        gpx_previous = self._prepare_refinement(min_gof_improvement)
-        subprocess.check_call(
-            [
-                "%s/../../RunGSASII.sh" % self.gsasii_lib_path,
-                "%s/gsas.gpx" % self.gsasii_run_directory,
-            ]
-        )
-        import GSASIIscriptable as G2sc
+        """Open the installed GSAS-II GUI, then synchronize the accepted result."""
+        self._validate_gof_improvement(min_gof_improvement)
+        filename = f"{self.gsasii_run_directory}/gsas.gpx"
+        self.gpx_saver()
+        subprocess.check_call([sys.executable, "-m", "GSASII", filename])
+        return self._replace_project(filename, min_gof_improvement, "fine_tune_gpx")
 
-        self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
-        self._refine_gpx(gpx_previous, min_gof_improvement=min_gof_improvement,
-                         log_label="fine_tune_gpx")
-
-    ###############################################################################################
+    @refinement_transaction
     def replace_gpx_with(self, newgpx_to_replace, min_gof_improvement=1.0):
-        """Refine a replacement GPX, accepting it only on sufficient GoF decrease."""
-        gpx_previous = self._prepare_refinement(min_gof_improvement)
-        shutil.copy(newgpx_to_replace, "%s/gsas.gpx" % self.gsasii_run_directory)
-        import GSASIIscriptable as G2sc
+        """Replace a compatible single-histogram project and synchronize results."""
+        return self._replace_project(newgpx_to_replace, min_gof_improvement, "replace_gpx_with")
 
-        self.gpx = G2sc.G2Project(gpxfile="%s/gsas.gpx" % self.gsasii_run_directory)
-        self._refine_gpx(gpx_previous, min_gof_improvement=min_gof_improvement,
-                         log_label="replace_gpx_with")
+    def _replace_project(self, source, minimum, label):
+        previous = self._prepare_refinement(minimum)
+        original_ds, original_phases = self.ds.copy(deep=True), copy.deepcopy(self.phases)
+        target = f"{self.gsasii_run_directory}/gsas.gpx"
+        if os.path.abspath(source) != os.path.abspath(target):
+            shutil.copyfile(source, target)
+        module = load_gsas_module("GSASIIscriptable", [getattr(self, "gsasii_lib_path", "")])
+        self.gpx = module.G2Project(gpxfile=target)
+        rejection = self._refine_gpx(previous, min_gof_improvement=minimum, log_label=label)
+        if rejection:
+            return rejection
+        # Result synchronization must not invoke the optimizer a second time.
+        self._sync_only = True
+        try:
+            histogram = self.gpx.histograms()[0]
+            expected = q_to_two_theta(self.ds.i1d.radial, self.ds.i1d.attrs["wavelength_in_angst"])
+            observed = histogram.getdata("x")
+            if observed.shape != expected.shape or not np.allclose(observed, expected, rtol=1e-7, atol=1e-7):
+                raise ValueError("Replacement histogram must match the loaded profile coordinates")
+            multiplier = self.ds.i1d.attrs.get("normalization_multiplier", 1.)
+            expected_y = self.ds.i1d.values.copy()
+            if "i1d_baseline" in self.ds:
+                expected_y -= self.ds.i1d_baseline.values
+            expected_y *= multiplier
+            if "i1d_baseline" in self.ds and "normalized_to" in self.ds.i1d.attrs:
+                expected_y += self.yshift_multiplier * self.ds.i1d.attrs["normalized_to"]
+            if not np.allclose(histogram.getdata("yobs"), expected_y):
+                raise ValueError("Replacement histogram observations differ from the loaded data")
+            self.phases = {phase.name: None for phase in self.gpx.phases()}
+            self.ds.attrs = {key: value for key, value in self.ds.attrs.items() if not key.startswith("PhaseInd_")}
+            self.ds.attrs["num_phases"] = len(self.phases)
+            for index, name in enumerate(self.phases):
+                self.ds.attrs[f"PhaseInd_{index}_label"] = name
+            result = self.refine()
+        finally:
+            self._sync_only = False
+        self.gpx_previous, self.ds_previous, self.phases_previous = previous, original_ds, original_phases
+        return result
 
-    ###############################################################################################
     def export_gpx_to(self, to="gsas.gpx"):
         """ """
         shutil.copy("%s/gsas.gpx" % self.gsasii_run_directory, to)

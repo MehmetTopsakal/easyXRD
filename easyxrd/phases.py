@@ -1,183 +1,80 @@
+from .results import clear_fit_results
 import os
-import random
-import string
-import copy
-import numpy as np
+import math
+import tempfile
+from pathlib import Path
 import xarray as xr
-from pymatgen.core.structure import Structure
-from pymatgen.core.lattice import Lattice
+from pymatgen.core import Structure, Lattice
 from pymatgen.io.cif import CifWriter
-
 from . import easyxrd_defaults
-from .plotters import exrd_plotter
+from .utils import load_gsas_module
 
 
 class PhasesMixin:
-    """
-    Mixin class providing crystal structure and phase loading/exporting capabilities.
-    """
-    def load_phases(
-        self,
-        from_phases_dict=None,
-        from_gpx=None,
-        from_nc=None,
-        from_ds=None,
-        mp_rester_api_key=None,
-        plot=True,
-    ):
-
-        for k in ["i1d_refined", "i1d_gsas_background"]:
-            if k in self.ds.keys():
-                del self.ds[k]
-
-        if mp_rester_api_key is None:
-            mp_rester_api_key = os.environ.get("MP_API_KEY") or easyxrd_defaults.get(
-                "mp_api_key", "none"
-            )
-
-        self.easyxrd_scratch_directory = easyxrd_defaults["easyxrd_scratch_path"]
-
+    def load_phases(self, from_phases_dict=None, from_gpx=None, from_nc=None,
+                    from_ds=None, mp_rester_api_key=None, plot=True):
+        """Load one phase source atomically, clearing superseded phase metadata."""
+        if sum(x is not None for x in (from_phases_dict, from_gpx, from_nc, from_ds)) != 1:
+            raise ValueError("Provide exactly one phase source")
+        if not hasattr(self, "ds"):
+            raise ValueError("Load diffraction data before phases")
+        entries = []
         if from_phases_dict is not None:
-
-            self.phases = {}
-            for e, p in enumerate(from_phases_dict):
-
-                mp_id = p.get("mp_id", "none")
-
+            for item in from_phases_dict:
+                label = item["label"]
+                if not isinstance(label, str) or not label or Path(label).name != label:
+                    raise ValueError("Phase labels must be nonempty filenames without directory components")
+                mp_id = item.get("mp_id", "none")
                 if mp_id.lower() == "none":
-                    st = Structure.from_file(p["cif"])
-
-                    scale = p.get("scale", 1)
-                    scale_a = p.get("scale_a", 1)
-                    scale_b = p.get("scale_b", 1)
-                    scale_c = p.get("scale_c", 1)
-
-                    st.lattice = Lattice.from_parameters(
-                        a=st.lattice.abc[0] * scale * scale_a,
-                        b=st.lattice.abc[1] * scale * scale_b,
-                        c=st.lattice.abc[2] * scale * scale_c,
-                        alpha=st.lattice.angles[0],
-                        beta=st.lattice.angles[1],
-                        gamma=st.lattice.angles[2],
-                    )
-                    self.phases[p["label"]] = st
-
+                    structure = Structure.from_file(item["cif"])
                 else:
-
-                    if (not mp_rester_api_key) or mp_rester_api_key.lower() in (
-                        "not found",
-                        "invalid",
-                        "none",
-                    ):
-                        raise ValueError(
-                            "A valid Materials Project API key is needed to retrieve crystal structures. "
-                            "Please provide `mp_rester_api_key`, set the MP_API_KEY environment variable, "
-                            "or save your key to ~/.easyxrd_scratch/mp_api_key.dat. "
-                            "API keys can be obtained from: https://profile.materialsproject.org/"
-                        )
-
+                    key = mp_rester_api_key or os.environ.get("MP_API_KEY") or easyxrd_defaults.get("mp_api_key")
+                    if not key or key.lower() in ("invalid", "none", "not found"):
+                        key_file = Path(easyxrd_defaults["easyxrd_scratch_path"]) / "mp_api_key.dat"
+                        if key_file.is_file() and mp_rester_api_key is None:
+                            key = key_file.read_text().strip()
+                    if not key or key.lower() in ("invalid", "none", "not found"):
+                        raise ValueError("A valid Materials Project API key is required")
                     from mp_api.client import MPRester
-
-                    try:
-                        mpr = MPRester(mp_rester_api_key)
-                    except Exception as exc:
-                        raise ValueError(
-                            f"The Materials Project API key is not valid or connection failed: {exc}. "
-                            "Please check your API key from https://profile.materialsproject.org/"
-                        )
-
-                    # st = mpr.get_structure_by_material_id(mp_id, final=False)[0]
-                    st = mpr.get_structure_by_material_id(mp_id, final=True, conventional_unit_cell=True)
-
-                    scale = p.get("scale", 1)
-                    scale_a = p.get("scale_a", 1)
-                    scale_b = p.get("scale_b", 1)
-                    scale_c = p.get("scale_c", 1)
-
-                    st.lattice = Lattice.from_parameters(
-                        a=st.lattice.abc[0] * scale * scale_a,
-                        b=st.lattice.abc[1] * scale * scale_b,
-                        c=st.lattice.abc[2] * scale * scale_c,
-                        alpha=st.lattice.angles[0],
-                        beta=st.lattice.angles[1],
-                        gamma=st.lattice.angles[2],
-                    )
-                    self.phases[p["label"]] = st
-
-                randstr = "".join(
-                    random.choices(string.ascii_uppercase + string.digits, k=7)
-                )
-                CifWriter(st, symprec=0.01).write_file("%s.cif" % randstr)
-                # read cif
-                with open("%s.cif" % randstr, "r") as ciffile:
-                    ciffile_content = ciffile.read()
-                    self.ds.attrs["PhaseInd_%d_cif" % (e)] = ciffile_content
-                self.ds.attrs["PhaseInd_%d_label" % (e)] = p["label"]
-                os.remove("%s.cif" % randstr)
-
-            self.ds.attrs["num_phases"] = len(from_phases_dict)
-
+                    with MPRester(key) as client:
+                        structure = client.get_structure_by_material_id(mp_id, final=True, conventional_unit_cell=True)
+                lengths = [length * item.get("scale", 1) * item.get("scale_" + axis, 1)
+                           for axis, length in zip("abc", structure.lattice.abc)]
+                if any(not math.isfinite(v) or v <= 0 for v in lengths):
+                    raise ValueError("Lattice scale factors must be finite and positive")
+                structure.lattice = Lattice.from_parameters(*lengths, *structure.lattice.angles)
+                entries.append((label, structure, str(CifWriter(structure, symprec=0.01))))
         elif from_gpx is not None:
-            import GSASII.GSASIIscriptable as G2sc
-
-            phases_gpx = G2sc.G2Project(gpxfile=from_gpx)
-            self.phases = {}
-            for e, p in enumerate(phases_gpx.phases()):
-                tmp_cif = "%s/tmp_%d.cif" % (self.easyxrd_scratch_directory, e)
-                p.export_CIF(outputname=tmp_cif)
-                with open(tmp_cif, "r") as ciffile:
-                    ciffile_content = ciffile.read()
-                try:
-                    os.remove(tmp_cif)
-                except OSError:
-                    pass
-                st = Structure.from_str(ciffile_content, fmt="cif")
-                self.phases[p.name] = st
-                self.ds.attrs["PhaseInd_%d_cif" % (e)] = ciffile_content
-                self.ds.attrs["PhaseInd_%d_label" % (e)] = p.name
-            self.ds.attrs["num_phases"] = len(self.phases)
-
-        elif from_nc is not None:
-
-            with xr.open_dataset(from_nc) as ds_nc:
-
-                self.phases = {}
-                num_p = ds_nc.attrs.get("num_phases", 0)
-                for p in range(num_p):
-                    cif_str = ds_nc.attrs["PhaseInd_%d_cif" % p]
-                    label = ds_nc.attrs["PhaseInd_%d_label" % p]
-                    self.phases[label] = Structure.from_str(cif_str, fmt="cif")
-                    self.ds.attrs["PhaseInd_%d_label" % p] = label
-                    self.ds.attrs["PhaseInd_%d_cif" % p] = cif_str
-
-                self.ds.attrs["num_phases"] = num_p
-
-        elif from_ds is not None:
-
-            self.phases = {}
-            num_p = from_ds.attrs.get("num_phases", 0)
-            for p in range(num_p):
-                cif_str = from_ds.attrs["PhaseInd_%d_cif" % p]
-                label = from_ds.attrs["PhaseInd_%d_label" % p]
-                self.phases[label] = Structure.from_str(cif_str, fmt="cif")
-                self.ds.attrs["PhaseInd_%d_label" % p] = label
-                self.ds.attrs["PhaseInd_%d_cif" % p] = cif_str
-
-            self.ds.attrs["num_phases"] = num_p
-
+            g2 = load_gsas_module("GSASIIscriptable")
+            project = g2.G2Project(gpxfile=str(from_gpx))
+            with tempfile.TemporaryDirectory(prefix="easyxrd-phases-") as directory:
+                for index, phase in enumerate(project.phases()):
+                    path = Path(directory) / f"{index}.cif"
+                    phase.export_CIF(outputname=str(path))
+                    cif = path.read_text()
+                    entries.append((phase.name, Structure.from_str(cif, fmt="cif"), cif))
+        else:
+            source = xr.load_dataset(from_nc) if from_nc is not None else from_ds
+            for index in range(source.attrs.get("num_phases", 0)):
+                cif = source.attrs[f"PhaseInd_{index}_cif"]
+                entries.append((source.attrs[f"PhaseInd_{index}_label"], Structure.from_str(cif, fmt="cif"), cif))
+        if len({label for label, _, _ in entries}) != len(entries):
+            raise ValueError("Phase labels must be unique")
+        ds = self.ds.copy(deep=False)
+        ds.attrs = {k: v for k, v in ds.attrs.items() if not k.startswith("PhaseInd_")}
+        ds.attrs["num_phases"] = len(entries)
+        for index, (label, _, cif) in enumerate(entries):
+            ds.attrs[f"PhaseInd_{index}_label"] = label
+            ds.attrs[f"PhaseInd_{index}_cif"] = cif
+        for key in ("i1d_refined", "i1d_gsas_background"):
+            if key in ds:
+                del ds[key]
+        self.ds = clear_fit_results(ds)
+        self.phases = {label: structure for label, structure, _ in entries}
+        if hasattr(self, "gpx"):
+            del self.gpx
         if plot:
-            exrd_plotter(
-                ds=self.ds,
-                ds_previous=None,
-                phases=self.phases,
-                figsize=self.figsize,
-                i2d_robust=self.i2d_robust,
-                i2d_logscale=self.i2d_logscale,
-                i1d_ylogscale=self.i1d_ylogscale,
-                title_str=None,
-                export_fig_as=None,
-                plot_hint="load_phases",
-            )
+            self.plot(plot_hint="load_phases")
 
     def export_phases(
         self,

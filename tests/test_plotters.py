@@ -21,7 +21,7 @@ def test_calc_reflection_pattern():
     structure = Structure(lattice, ["Si", "Si"], [[0, 0, 0], [0.25, 0.25, 0.25]])
     xrdc = XRDCalculator(wavelength=1.5406)
 
-    refl_x, refl_y = _calc_reflection_pattern(xrdc, structure, 1.5406, 1.0, 6.0)
+    refl_x, refl_y, hkls = _calc_reflection_pattern(xrdc, structure, 1.5406, 1.0, 6.0)
     assert len(refl_x) > 0
     assert len(refl_x) == len(refl_y)
     # Check that peaks fall in requested range
@@ -75,7 +75,7 @@ def test_i2d_plotter_nonpositive_intensities(with_baseline, logscale):
                 np.ma.getmaskarray(displayed),
                 [[True, True, True], [False, False, False]],
             )
-            np.testing.assert_allclose(displayed[1], [0.0, 1.0, 2.0], atol=1e-12)
+            np.testing.assert_allclose(displayed[1], np.log10([1.0, np.e, np.e**2]), atol=1e-12)
         else:
             np.testing.assert_array_equal(
                 np.ma.getmaskarray(displayed), np.isnan(intensity)
@@ -120,7 +120,7 @@ def test_plot_refinement_history_execution(tmp_path):
                     "refine_background",
                     "refine_cell_parameters",
                     "refine_size_broadening",
-                    "set_LeBail",
+                    "set_LeBail:False",
                     "refine_background",
                     "refine_strain_broadening",
                 ],

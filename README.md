@@ -60,7 +60,7 @@ del .\.miniconda.exe
 mkdir -p ~/.miniconda3
 curl https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh -o ~/.miniconda3/miniconda.sh
 bash ~/.miniconda3/miniconda.sh -b -u -p ~/.miniconda3
-rm ~/miniconda3/miniconda.sh
+rm ~/.miniconda3/miniconda.sh
 
 source ~/.miniconda3/bin/activate
 conda init --all
@@ -242,3 +242,119 @@ In addition, you need to acknowledge GSAS-II if you use the refinement component
 
 
 Feel free to contact me (metokal@gmail[-remove-this].com) if you have any questions about `easyXRD`
+
+## Quantitative data and review corrections
+
+`load_xrd_data` accepts exactly one input source and validates it before replacing
+an existing dataset. Radial coordinates must increase strictly. Array input may
+contain `(q_or_2theta, intensity, sigma)`; the third column is a **standard
+deviation**, stored as `ds.i1d_variance = sigma**2`. Alternatively pass
+`i1d_variance=`. For text data, select the uncertainty column explicitly with
+`txt_file_usecols=(0, 1, 2)`.
+
+For detector images, pass a calibrated detector `variance=` array or a suitable
+pyFAI `error_model=`. Use `error_model="poisson"` only when that model is justified
+by the detector data. Integration accepts `polarization_factor`, `dark`, `flat`,
+and `normalization_factor`. The quantitative 1D profile always comes from
+`integrate1d`; `integrate2d=True` additionally stores a cake and its normalization
+accumulators. With `delta_q=None`, `radial_npts` controls the bin count.
+
+Refinement uses explicit inverse-variance weights and preserves signed
+background-subtracted observations. Scaling intensities also scales their
+variance. If no variance is supplied, easyXRD warns and uses unit weights; GoF
+and parameter uncertainties then have no counting-statistics interpretation.
+Independent measured-background variance is propagated conditional on the chosen
+scale. Uncertainty in an estimated background, its scale, and covariance between
+pixel-split bins are not estimated.
+
+Background grids must match explicitly. To use a different grid, first resample
+it deliberately and account for the resulting uncertainty/correlation. Invalid
+coordinates or input files raise exceptions without discarding the current data.
+Changing data, phases, or a baseline invalidates an existing refinement engine;
+call `setup_gsas2_refiner` again. Reloading an identical NetCDF dataset preserves
+an attached engine and refinement history.
+
+Median filtering now creates `i2d_filtered` or `image_filtered` diagnostic data.
+Spot selection creates `i2d_spot_mask` and `i1d_spot_corrected`, without changing
+raw intensities or subtracting a selection threshold. Neither diagnostic replaces
+the quantitative observations used for refinement.
+
+Phase weight fractions are unavailable (`NaN`, `weight_fractions_valid=False`)
+during Le Bail extraction. Switch all phases with `set_LeBail(False)` before
+quantitative phase-fraction refinement. All reported fractions are normalized to
+the modeled crystalline phases; they do not establish an amorphous fraction.
+
+Use `sample.plot(close=True, export_fig_as="pattern.png")` in batch processing.
+`install_gsas2()` keeps GUI dependencies optional; use `gui=True` for the GUI.
+`fine_tune_gpx` launches the installed package using the current interpreter.
+Replacement GPX files must contain one powder histogram with compatible
+coordinates and observations; its histogram name may differ.
+
+The combined review, implementation decisions, and remaining scientific
+validation work are recorded in [code_review.md](code_review.md).
+
+### Parameter uncertainties, covariance, and provenance
+
+Accepted refinements with `update_ds=True` store the latest parameter results
+directly in `sample.ds`:
+
+| Variable | Meaning |
+|---|---|
+| `gsas_parameter_value` | Directly varied GSAS-II parameters, indexed by `gsas_parameter` |
+| `gsas_parameter_su` | Reported standard uncertainties in the same order |
+| `gsas_covariance` | Native covariance, with separate named row/column dimensions |
+| `gsas_correlation` | Correlation computed from covariance; undefined entries remain `NaN` |
+| `gsas_fit_statistic` | Named Rwp, GoF, observation/variable counts, chi-square, singularities, and maximum shift/s.u. |
+| `gsas_converged` | `1` converged, `0` not converged, `-1` unavailable |
+
+The parameter names and native units follow the
+[GSAS-II covariance schema](https://gsas-ii-scripting.readthedocs.io/en/latest/objvarorg.html#covariance-tree-item).
+They may represent reciprocal-cell or constrained variables; these are not
+automatically transformed into uncertainties on lattice constants or phase
+fractions. The stored covariance is copied without additional GoF scaling and
+does not include uncertainty from preprocessing. Missing covariance is recorded
+as unavailable, never replaced by a fabricated diagonal matrix. These diagnostics
+do not by themselves certify a physically valid or identifiable model.
+
+```python
+sample.ds.gsas_parameter_su
+sample.ds.gsas_fit_statistic.sel(gsas_statistic="Max shft/sig")
+sample.export_ds_to("refined.nc")
+```
+
+Changing the varied parameter list replaces the previous result dimensions.
+Rejected fits retain the accepted parameter results; `gsas_result_step` identifies
+their attempt number. Changing phases/baseline or setting up a new engine clears
+these results. With `update_ds=False`, results remain those of the last dataset
+update. The attempt history remains a separate record.
+
+`integration_provenance` and `refinement_provenance` dataset attributes are JSON
+strings. Read them with `json.loads(sample.ds.attrs["integration_provenance"])`.
+They record software versions, actual detector geometry, integration settings,
+instrument parameters, normalization, and weighting. PONI, file-based mask, and
+instrument-source files include SHA-256 identifiers. Supplied in-memory masks,
+dark/flat/variance arrays and raw images are not archived or hashed; retain those
+inputs separately. Calibration records describe the supplied geometry, not its
+experimental accuracy or calibration uncertainty.
+
+### Logging and development checks
+
+Automatic easyXRD progress and rejection messages use Python logging. Enable
+notebook progress explicitly:
+
+```python
+from easyxrd import configure_logging
+configure_logging("INFO")       # progress and rejection messages
+configure_logging("WARNING")    # rejection/warning messages only
+```
+
+Applications may instead configure the `easyxrd` logger themselves. The helper
+does not change root handlers and repeated calls do not duplicate its handler.
+`verbose=True` still controls GSAS-II's own stdout. Explicit `show_config()` and
+`print_defaults()` reports continue to print.
+
+Run `python -m pytest -q` for the suite. Tests requiring GSAS-II skip when it is
+absent. The CI workflow includes Linux, macOS and Windows core tests and a Linux
+job that installs GSAS-II and runs the real integration tests. Adding the workflow
+does not establish that those remote jobs or interactive GUI checks have passed.
+

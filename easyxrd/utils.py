@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from contextlib import ExitStack, redirect_stdout
 
 import fabio
 import matplotlib.pyplot as plt
@@ -18,14 +19,107 @@ class HiddenPrints:
     Useful for processes like refinement which produce voluminous terminal output.
     """
 
+    def __init__(self):
+        self._contexts = []
+
     def __enter__(self):
-        self._original_stdout = sys.stdout
-        sys.stdout = open(os.devnull, "w")
+        stack = ExitStack()
+        output = stack.enter_context(open(os.devnull, "w"))
+        stack.enter_context(redirect_stdout(output))
+        self._contexts.append(stack)
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        sys.stdout.close()
-        sys.stdout = self._original_stdout
+    def __exit__(self, *args):
+        return self._contexts.pop().__exit__(*args)
+
+
+def load_gsas_module(name, paths=()):
+    """Import current or legacy GSAS-II modules without leaving sys.path changes."""
+    # Preserve the Linux Qt/wx fontconfig workaround, but only when GSAS-II
+    # is actually requested. Never remove another application's loaded wx.
+    if sys.platform.startswith("linux"):
+        library = Path(sys.executable).resolve().parents[1] / "lib" / "libfontconfig.so.1"
+        if library.is_file():
+            import ctypes
+            try:
+                ctypes.CDLL(str(library), mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                logging.getLogger("easyxrd").debug("Could not preload fontconfig", exc_info=True)
+    candidates = [None] + list(paths)
+    last_error = None
+    for path in candidates:
+        original_path = sys.path[:]
+        try:
+            if path and os.path.isdir(path):
+                sys.path[:0] = [str(path), str(Path(path).parent)]
+            try:
+                return importlib.import_module("GSASII." + name)
+            except ModuleNotFoundError as exc:
+                # Missing transitive dependencies must retain their real error.
+                if exc.name not in ("GSASII", "GSASII." + name):
+                    raise
+            return importlib.import_module(name)
+        except ModuleNotFoundError as exc:
+            if exc.name not in (name, "GSASII", "GSASII." + name):
+                raise
+            last_error = exc
+        finally:
+            sys.path[:] = original_path
+    raise ImportError("GSAS-II is unavailable; install it or provide gsasii_lib_path") from last_error
+
+
+def refinement_transaction(function):
+    """Restore engine and analysis state on exceptions, retaining attempt history."""
+    from functools import wraps
+    import copy
+    @wraps(function)
+    def wrapped(self, *args, **kwargs):
+        if getattr(self, "_transaction_active", False):
+            return function(self, *args, **kwargs)
+        names = ("gpx", "ds", "phases", "gpx_previous", "ds_previous", "phases_previous",
+                 "gsasii_run_directory", "gsasii_lib_path", "yshift_multiplier")
+        original_gpx = getattr(self, "gpx", None)
+        old_steps = getattr(self, "ds", xr.Dataset()).sizes.get("refinement_step", 0)
+        state = {name: copy.deepcopy(getattr(self, name)) for name in names if hasattr(self, name)}
+        self._transaction_active = True
+        # The first pre-mutation checkpoint can borrow this protected copy.
+        # Nested checkpoints after flags/cell changes still need their own copy.
+        self._transaction_checkpoint = (original_gpx, state.get("gpx"))
+        self._transaction_checkpoint_available = original_gpx is not None
+        try:
+            return function(self, *args, **kwargs)
+        except (Exception, KeyboardInterrupt) as exc:
+            history = None
+            if hasattr(self, "ds") and "rwp_history" in self.ds:
+                history = self.ds[["rwp_history", "rwp_attempted_history"]].copy(deep=True)
+                if history.sizes["refinement_step"] > old_steps and history.refinement_status.values[-1] == "accepted":
+                    statuses = history.refinement_status.values.tolist()
+                    reasons = history.refinement_reason.values.tolist()
+                    statuses[-1], reasons[-1] = "error", f"{type(exc).__name__}: {exc}"
+                    history = history.assign_coords(refinement_status=("refinement_step", statuses),
+                                                    refinement_reason=("refinement_step", reasons))
+                    history.rwp_history.values[-1] = np.nan
+            for name in names:
+                if name in state:
+                    setattr(self, name, state[name])
+                elif hasattr(self, name):
+                    delattr(self, name)
+            if history is not None and hasattr(self, "ds"):
+                self.ds = xr.merge([self.ds.drop_dims("refinement_step", errors="ignore"), history], join="exact")
+            self.last_refinement_accepted = False
+            self.last_refinement_rejection_reason = "error"
+            if original_gpx is not None and hasattr(original_gpx, "__dict__"):
+                original_gpx.__dict__.clear()
+                original_gpx.__dict__.update(self.gpx.__dict__)
+                self.gpx = original_gpx
+            if hasattr(self, "gpx"):
+                self.gpx_saver()
+            raise
+        finally:
+            self._transaction_active = False
+            del self._transaction_checkpoint
+            del self._transaction_checkpoint_available
+    return wrapped
 
 
 def install_gsas2(*, upgrade=False, gui=False):
@@ -41,9 +135,8 @@ def install_gsas2(*, upgrade=False, gui=False):
     upgrade : bool, optional
         Ask pip to upgrade an existing GSAS-II installation.
     gui : bool, optional
-        Include GUI dependencies, including wxPython (default True). easyXRD's
-        refinement setup currently requires wxPython even in notebooks. Set
-        False for GSAS-II scripting alone or when wxPython is managed separately.
+        Include GUI dependencies, including wxPython (default False). Enable
+        this when using the interactive GSAS-II editor.
 
     Returns
     -------
@@ -148,9 +241,9 @@ def read_tiff_as_DataArray(tiff, plot=False):
         2D DataArray containing image intensity, with dimensions ('pixel_y', 'pixel_x')
         and header metadata in attrs.
     """
-    fabio_img = fabio.open(str(tiff))
-    tiff_data = fabio_img.data
-    header_dict = dict(fabio_img.header)
+    with fabio.open(str(tiff)) as fabio_img:
+        tiff_data = fabio_img.data.copy()
+        header_dict = dict(fabio_img.header)
 
     da = xr.DataArray(
         tiff_data,

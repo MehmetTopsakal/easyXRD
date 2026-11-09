@@ -44,6 +44,7 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         title=None,
         site_str_x=0.4,
         site_str_y=0.8,
+        close=False,
         show_wt_fractions=False,
     ):
         """Plot XRD data, baselines, phases, and refinement results."""
@@ -63,6 +64,7 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         ds = getattr(self, "ds", None)
         ds_previous = getattr(self, "ds_previous", None)
 
+        before = set(plt.get_fignums())
         exrd_plotter(
             ds=ds,
             ds_previous=ds_previous,
@@ -80,6 +82,10 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
             site_str_y=site_str_y,
             show_wt_fractions=show_wt_fractions,
         )
+
+        if close:
+            for number in set(plt.get_fignums()) - before:
+                plt.close(number)
 
 
 __all__ = [
