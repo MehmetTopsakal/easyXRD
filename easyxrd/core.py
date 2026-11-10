@@ -54,6 +54,8 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         site_str_y=DEFAULT,
         close=DEFAULT,
         show_wt_fractions=DEFAULT,
+        show_phase_profiles=DEFAULT,
+        normalized_residuals=DEFAULT,
         dpi=DEFAULT,
     ):
         """Plot XRD data, baselines, phases, and refinement results."""
@@ -62,6 +64,8 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         site_str_y = resolve_default(site_str_y, "plot_site_str_y")
         close = resolve_default(close, "plot_close")
         show_wt_fractions = resolve_default(show_wt_fractions, "plot_show_wt_fractions")
+        show_phase_profiles = resolve_default(show_phase_profiles, "plot_show_phase_profiles")
+        normalized_residuals = resolve_default(normalized_residuals, "plot_normalized_residuals")
 
         if figsize is None:
             figsize = self.figsize
@@ -95,6 +99,8 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
             site_str_x=site_str_x,
             site_str_y=site_str_y,
             show_wt_fractions=show_wt_fractions,
+            show_phase_profiles=show_phase_profiles,
+            normalized_residuals=normalized_residuals,
             dpi=dpi,
         )
 

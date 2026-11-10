@@ -1,4 +1,5 @@
 from . import DEFAULT, resolve_default
+from .results import format_value_with_su
 
 import logging
 import warnings
@@ -22,6 +23,7 @@ def i1d_plotter(
     title_str=DEFAULT,
     ncol=DEFAULT,
     show_Ybkg_old=DEFAULT,
+    show_phase_profiles=DEFAULT,
 ):
     """Plot 1D XRD intensity profile (observed, calculated, and background)."""
     i1d_ylogscale = resolve_default(i1d_ylogscale, "plot_i1d_ylogscale")
@@ -30,6 +32,7 @@ def i1d_plotter(
     title_str = resolve_default(title_str, "i1d_plotter_title_str")
     ncol = resolve_default(ncol, "i1d_plotter_ncol")
     show_Ybkg_old = resolve_default(show_Ybkg_old, "i1d_plotter_show_Ybkg_old")
+    show_phase_profiles = resolve_default(show_phase_profiles, "i1d_plotter_show_phase_profiles")
 
     da_Y_calc = da_Y_bkg = None
     if "i1d_baseline" in ds.keys():
@@ -71,6 +74,40 @@ def i1d_plotter(
     if "i1d_refined" in ds.keys():
         da_Y_calc.plot(ax=ax, alpha=0.9, linewidth=1, color="y", label="Y$_{calc.}$")
         da_Y_bkg.plot(ax=ax, alpha=0.9, linewidth=1, color="r", label="Y$_{bkg.}$")
+        if (
+            show_phase_profiles
+            and "i1d_phase_profiles" in ds
+            and ds.i1d_phase_profiles.sizes.get("phase", 0) > 1
+        ):
+            for p_idx, p_name in enumerate(ds.i1d_phase_profiles.coords["phase"].values):
+                da_phase = (
+                    ds.i1d_gsas_background
+                    + ds.i1d_phase_profiles.isel(phase=p_idx)
+                    + extra_yshift
+                )
+                da_phase.plot(
+                    ax=ax,
+                    alpha=0.75,
+                    linewidth=0.9,
+                    linestyle="-.",
+                    color="C%d" % p_idx,
+                    label="Y$_{calc.}$ (%s)" % p_name,
+                )
+
+    if "excluded_regions_q" in ds.attrs:
+        try:
+            excl_q = json.loads(ds.attrs["excluded_regions_q"])
+            for idx_reg, (q_low, q_high) in enumerate(excl_q):
+                ax.axvspan(
+                    float(q_low),
+                    float(q_high),
+                    color="0.85",
+                    alpha=0.45,
+                    zorder=0,
+                    label="Excluded" if idx_reg == 0 else None,
+                )
+        except Exception:
+            pass
 
     if ds_previous is not None and "i1d_refined" in ds_previous:
         if "i1d_baseline" in ds_previous.keys():
@@ -347,6 +384,8 @@ def exrd_plotter(
     site_str_x=DEFAULT,
     site_str_y=DEFAULT,
     show_wt_fractions=DEFAULT,
+    show_phase_profiles=DEFAULT,
+    normalized_residuals=DEFAULT,
     dpi=DEFAULT,
 ):
     """Main plotting coordinator for easyXRD workflow stages."""
@@ -357,6 +396,8 @@ def exrd_plotter(
     site_str_x = resolve_default(site_str_x, "plot_site_str_x")
     site_str_y = resolve_default(site_str_y, "plot_site_str_y")
     show_wt_fractions = resolve_default(show_wt_fractions, "plot_show_wt_fractions")
+    show_phase_profiles = resolve_default(show_phase_profiles, "plot_show_phase_profiles")
+    normalized_residuals = resolve_default(normalized_residuals, "plot_normalized_residuals")
     dpi = resolve_default(dpi, "plot_dpi")
 
     if plot_hint in ("refinement_history", "plot_refinement_history", "refinement", "plot_refinement"):
@@ -598,6 +639,7 @@ def exrd_plotter(
             i1d_ylogscale=i1d_ylogscale,
             return_da=True,
             ncol=1,
+            show_phase_profiles=show_phase_profiles,
         )
 
         fit_str = "Rwp/GoF = %.3f/%.3f" % (ds.attrs["Rwp"], ds.attrs["GOF"])
@@ -624,6 +666,25 @@ def exrd_plotter(
             site_alpha = ds.attrs["PhaseInd_%d_cell_alpha" % site_ind]
             site_beta = ds.attrs["PhaseInd_%d_cell_beta" % site_ind]
             site_gamma = ds.attrs["PhaseInd_%d_cell_gamma" % site_ind]
+
+            site_a_str = format_value_with_su(
+                site_a, ds.attrs.get("PhaseInd_%d_cell_a_su" % site_ind), precision=4
+            )
+            site_b_str = format_value_with_su(
+                site_b, ds.attrs.get("PhaseInd_%d_cell_b_su" % site_ind), precision=4
+            )
+            site_c_str = format_value_with_su(
+                site_c, ds.attrs.get("PhaseInd_%d_cell_c_su" % site_ind), precision=4
+            )
+            site_alpha_str = format_value_with_su(
+                site_alpha, ds.attrs.get("PhaseInd_%d_cell_alpha_su" % site_ind), precision=2
+            )
+            site_beta_str = format_value_with_su(
+                site_beta, ds.attrs.get("PhaseInd_%d_cell_beta_su" % site_ind), precision=2
+            )
+            site_gamma_str = format_value_with_su(
+                site_gamma, ds.attrs.get("PhaseInd_%d_cell_gamma_su" % site_ind), precision=2
+            )
 
             site_size_broadening_type = ds.attrs[
                 "PhaseInd_%d_size_broadening_type" % site_ind
@@ -653,7 +714,20 @@ def exrd_plotter(
             if not np.isfinite(site_wt_fraction) or site_wt_fraction == 100.0 or not show_wt_fractions:
                 str_fraction = ""
             else:
-                str_fraction = "| wt%%=%.2f" % site_wt_fraction
+                wt_su = ds.attrs.get("PhaseInd_%d_wt_fraction_su" % site_ind, np.nan)
+                wt_str = format_value_with_su(site_wt_fraction, wt_su, precision=2)
+                str_fraction = "| wt%%=%s" % wt_str
+                if (
+                    site_ind == 0
+                    and "amorphous_wt_fraction" in ds.attrs
+                    and np.isfinite(ds.attrs["amorphous_wt_fraction"])
+                ):
+                    am_str = format_value_with_su(
+                        ds.attrs["amorphous_wt_fraction"],
+                        ds.attrs.get("amorphous_wt_fraction_su"),
+                        precision=2,
+                    )
+                    str_fraction += f" (Amorph.={am_str}%%)"
 
             is_lebail = (
                 ds.attrs.get("refinement_mode") == "LeBail"
@@ -663,7 +737,7 @@ def exrd_plotter(
             mode_tag = " [Le Bail]" if is_lebail else ""
 
             site_str = (
-                "\n%s %s phase (%s)%s  %s %s %s \nLattice: a/b/c=%.4f/%.4f/%.4f ($\\alpha$/$\\beta$/$\\gamma$=%.2f/%.2f/%.2f) \n"
+                "\n%s %s phase (%s)%s  %s %s %s \nLattice: a/b/c=%s/%s/%s ($\\alpha$/$\\beta$/$\\gamma$=%s/%s/%s) \n"
                 % (
                     site_SpGrp.replace(" ", ""),
                     site_SGSys,
@@ -672,12 +746,12 @@ def exrd_plotter(
                     str_fraction,
                     size_str,
                     strain_str,
-                    site_a,
-                    site_b,
-                    site_c,
-                    site_alpha,
-                    site_beta,
-                    site_gamma,
+                    site_a_str,
+                    site_b_str,
+                    site_c_str,
+                    site_alpha_str,
+                    site_beta_str,
+                    site_gamma_str,
                 )
             )
 
@@ -692,7 +766,25 @@ def exrd_plotter(
                 rotation=0,
             )
 
-        (da_Y_obs - da_Y_calc).plot(ax=ax_dict["D"], color="b")
+        residual = da_Y_obs - da_Y_calc
+        if normalized_residuals and "i1d_variance" in ds:
+            var_tot = ds.i1d_variance
+            if "i1d_baseline_variance" in ds:
+                var_tot = var_tot + ds.i1d_baseline_variance
+            sigma = np.sqrt(var_tot.where(var_tot > 0))
+            (residual / sigma).plot(ax=ax_dict["D"], color="b")
+            ax_dict["D"].set_ylabel(r"$\Delta / \sigma$", fontsize=8)
+        else:
+            residual.plot(ax=ax_dict["D"], color="b")
+            ax_dict["D"].set_ylabel(r"$\Delta Y$", fontsize=8)
+        if "excluded_regions_q" in ds.attrs:
+            try:
+                for q_low, q_high in json.loads(ds.attrs["excluded_regions_q"]):
+                    ax_dict["D"].axvspan(
+                        float(q_low), float(q_high), color="0.85", alpha=0.45, zorder=0
+                    )
+            except Exception:
+                pass
         ax_dict["D"].axhline(y=0, linestyle="--", color="k", lw=0.5)
         ax_dict["D"].set_xlabel(None)
 
@@ -742,6 +834,7 @@ def exrd_plotter(
                 i1d_ylogscale=i1d_ylogscale,
                 return_da=False,
                 show_Ybkg_old=show_Ybkg_old,
+                show_phase_profiles=show_phase_profiles,
             )
             phases_plotter(
                 ds,
@@ -768,6 +861,7 @@ def exrd_plotter(
                 i1d_ylogscale=i1d_ylogscale,
                 return_da=False,
                 show_Ybkg_old=show_Ybkg_old,
+                show_phase_profiles=show_phase_profiles,
             )
             ax_dict["1"].set_title(title_str, fontsize=8)
             phases_plotter(
