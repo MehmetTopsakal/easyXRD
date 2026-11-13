@@ -1,6 +1,8 @@
+import logging
 import math
 import os
 import tempfile
+import warnings
 from itertools import combinations
 from pathlib import Path
 
@@ -28,6 +30,12 @@ def _resolve_mp_api_key(mp_rester_api_key=None):
     if not key or str(key).lower() in ("invalid", "none", "not found"):
         key_file = Path(easyxrd_defaults["easyxrd_scratch_path"]) / "mp_api_key.dat"
         if key_file.is_file() and mp_rester_api_key is None:
+            if os.name == "posix" and key_file.stat().st_mode & 0o077:
+                warnings.warn(
+                    f"{key_file} is readable by other users; run chmod 600 on it",
+                    UserWarning,
+                    stacklevel=2,
+                )
             key = key_file.read_text().strip()
     if not key or str(key).lower() in ("invalid", "none", "not found"):
         raise ValueError("A valid Materials Project API key is required")
@@ -62,8 +70,12 @@ class PhasesMixin:
                     raise ValueError(
                         "Phase labels must be nonempty filenames without directory components"
                     )
-                mp_id = item.get("mp_id", "none")
+                mp_id = str(item.get("mp_id") or "none")
                 if mp_id.lower() == "none":
+                    if "cif" not in item:
+                        raise ValueError(
+                            f"Phase '{label}' needs a 'cif' path or an 'mp_id'"
+                        )
                     structure = Structure.from_file(item["cif"])
                 else:
                     key = _resolve_mp_api_key(mp_rester_api_key)
@@ -301,7 +313,10 @@ class PhasesMixin:
                         st, symprec=0.01
                     ).get_conventional_standard_structure()
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug(
+                        "Conventional-cell conversion failed for %s", mp_id,
+                        exc_info=True,
+                    )
                 label = f"{formula}_{mp_id.replace('-', '_')}"
                 candidates_raw.append((label, mp_id, st))
 
@@ -355,6 +370,9 @@ class PhasesMixin:
             try:
                 spg_symbol = st.get_space_group_info()[0]
             except Exception:
+                logging.getLogger(__name__).debug(
+                    "Space-group lookup failed for %s", label, exc_info=True
+                )
                 spg_symbol = "unknown"
             scored.append(
                 {

@@ -227,7 +227,7 @@ def test_export_i1d_to_xye(tmp_path):
     expected_tth = np.rad2deg(2 * np.arcsin(q * 1.5406 / (4 * np.pi)))
     np.testing.assert_allclose(exported[:, 0], expected_tth, rtol=1e-4)
     np.testing.assert_allclose(exported[:, 1], intensity, rtol=1e-4)
-    np.testing.assert_allclose(exported[:, 2], variance, rtol=1e-4)
+    np.testing.assert_allclose(exported[:, 2], np.sqrt(variance), rtol=1e-4)
 
     q_out_file = tmp_path / "out.qxye"
     sample.export_i1d_to(to=q_out_file, mode="qxye", header=True)
@@ -235,7 +235,7 @@ def test_export_i1d_to_xye(tmp_path):
     assert q_exported.shape == (3, 3)
     np.testing.assert_allclose(q_exported[:, 0], q, rtol=1e-4)
     np.testing.assert_allclose(q_exported[:, 1], intensity, rtol=1e-4)
-    np.testing.assert_allclose(q_exported[:, 2], variance, rtol=1e-4)
+    np.testing.assert_allclose(q_exported[:, 2], np.sqrt(variance), rtol=1e-4)
 
     no_var = exrd()
     no_var.load_xrd_data(
