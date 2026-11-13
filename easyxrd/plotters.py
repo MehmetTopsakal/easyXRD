@@ -160,7 +160,7 @@ def i1d_plotter(
                     label="Excluded" if idx_reg == 0 else None,
                 )
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("Excluded-region plot failed", exc_info=True)
 
     if ds_previous is not None and "i1d_refined" in ds_previous:
         if "i1d_baseline" in ds_previous.keys():
@@ -901,7 +901,7 @@ def exrd_plotter(
                         float(q_low), float(q_high), color="0.85", alpha=0.45, zorder=0
                     )
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("Excluded-region plot failed", exc_info=True)
         ax_dict["D"].axhline(y=0, linestyle="--", color="k", lw=0.5)
         ax_dict["D"].set_xlabel(None)
 

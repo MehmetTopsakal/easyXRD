@@ -13,6 +13,9 @@ import numpy as np
 import xarray as xr
 
 
+GSASII_DEFAULT_REF = "v5.10.3"
+
+
 class HiddenPrints:
     """
     Context manager that hides stdout prints from functions.
@@ -54,22 +57,30 @@ def load_gsas_module(name, paths=()):
     last_error = None
     for path in candidates:
         original_path = sys.path[:]
+        keep_path = False
         try:
             if path and os.path.isdir(path):
                 sys.path[:0] = [str(path), str(Path(path).parent)]
             try:
-                return importlib.import_module("GSASII." + name)
+                module = importlib.import_module("GSASII." + name)
+                keep_path = bool(path)
+                return module
             except ModuleNotFoundError as exc:
                 # Missing transitive dependencies must retain their real error.
                 if exc.name not in ("GSASII", "GSASII." + name):
                     raise
-            return importlib.import_module(name)
+            module = importlib.import_module(name)
+            keep_path = bool(path)
+            return module
         except ModuleNotFoundError as exc:
             if exc.name not in (name, "GSASII", "GSASII." + name):
                 raise
             last_error = exc
         finally:
-            sys.path[:] = original_path
+            # GSAS-II imports sibling modules lazily, so a successful import
+            # from an explicit path must keep that path importable.
+            if not keep_path:
+                sys.path[:] = original_path
     raise ImportError(
         "GSAS-II is unavailable; install it or provide gsasii_lib_path"
     ) from last_error
@@ -144,7 +155,13 @@ def refinement_transaction(function):
                 original_gpx.__dict__.update(self.gpx.__dict__)
                 self.gpx = original_gpx
             if hasattr(self, "gpx"):
-                self.gpx_saver()
+                try:
+                    self.gpx_saver()
+                except Exception:
+                    # Never mask the refinement error with a cleanup failure.
+                    logging.getLogger("easyxrd").warning(
+                        "Could not save restored GSAS-II project", exc_info=True
+                    )
             raise
         finally:
             self._transaction_active = False
@@ -154,7 +171,7 @@ def refinement_transaction(function):
     return wrapped
 
 
-def install_gsas2(*, upgrade=False, gui=False):
+def install_gsas2(*, upgrade=False, gui=False, ref=GSASII_DEFAULT_REF):
     """Install GSAS-II from its official GitHub repository using pip.
 
     Installation targets the running Python interpreter (including a notebook's
@@ -169,6 +186,9 @@ def install_gsas2(*, upgrade=False, gui=False):
     gui : bool, optional
         Include GUI dependencies, including wxPython (default False). Enable
         this when using the interactive GSAS-II editor.
+    ref : str, optional
+        Git tag, branch or commit to install (default: a pinned release tag).
+        Pass "main" to follow development.
 
     Returns
     -------
@@ -226,7 +246,7 @@ def install_gsas2(*, upgrade=False, gui=False):
         if upgrade:
             command.append("--upgrade")
         command.append(
-            f"GSAS-II[{extras}] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git"
+            f"GSAS-II[{extras}] @ git+https://github.com/AdvancedPhotonSource/GSAS-II.git@{ref}"
         )
         subprocess.run(command, check=True, env=env)
     except (subprocess.CalledProcessError, OSError) as exc:

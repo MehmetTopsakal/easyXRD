@@ -1617,7 +1617,7 @@ class RefinementMixin:
                         sample_broadening_active = True
                         break
             except Exception:
-                pass
+                logger.debug("Ignored non-critical failure", exc_info=True)
 
         if sample_broadening_active:
             warnings.warn(
@@ -1844,7 +1844,7 @@ class RefinementMixin:
             if isinstance(hist_entry, dict) and "Sample Parameters" in hist_entry:
                 return hist_entry["Sample Parameters"]
         except Exception:
-            pass
+            logger.debug("Ignored non-critical failure", exc_info=True)
         try:
             hist = self.gpx.histograms()[0]
             if "Sample Parameters" not in hist.data:

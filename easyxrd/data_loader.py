@@ -422,7 +422,8 @@ class DataLoaderMixin:
         The quantitative i1d always uses integrate1d, even when a cake is saved.
         Median filtering produces a separate diagnostic image, not fit data.
         radial_range uses the object's radial_unit: q in inverse Angstrom,
-        or two-theta in degrees (0 to 180), for detector and text sources.
+        or two-theta in degrees (0 to 180), for detector and text sources only;
+        it is ignored for array, DataArray and NetCDF sources.
         Configured default bounds use the same unit; None disables the bounds.
         delta_q sets image bin spacing in q even for two-theta bounds;
         set it to None to use radial_npts. Two-theta bounds are kept exact,
@@ -545,6 +546,19 @@ class DataLoaderMixin:
                 raise ValueError("i1d_variance must match the loaded profile")
             ds["i1d_variance"] = ("radial", values)
         validate_profile(ds.i1d)
+        wavelength = ds.i1d.attrs.get("wavelength_in_angst")
+        if wavelength is None:
+            logger.warning(
+                "Loaded i1d has no wavelength_in_angst attribute; two-theta "
+                "export and phase screening will be unavailable"
+            )
+        else:
+            try:
+                valid_wavelength = np.isfinite(float(wavelength)) and float(wavelength) > 0
+            except (TypeError, ValueError):
+                valid_wavelength = False
+            if not valid_wavelength:
+                raise ValueError("wavelength_in_angst must be finite and positive")
         if "i1d_variance" in ds and (
             not np.all(np.isfinite(ds.i1d_variance)) or np.any(ds.i1d_variance <= 0)
         ):
@@ -616,6 +630,10 @@ class DataLoaderMixin:
             data_x = 2 * np.pi / self.ds.i1d.radial.values
             header_str = "d(Angstrom) Intensity(a.u.)"
         elif mode in ("xy", "xye"):
+            if "wavelength_in_angst" not in self.ds.i1d.attrs:
+                raise ValueError(
+                    "Two-theta export requires i1d.attrs['wavelength_in_angst']"
+                )
             data_x = q_to_two_theta(
                 self.ds.i1d.radial.values, self.ds.i1d.attrs["wavelength_in_angst"]
             )
@@ -627,10 +645,11 @@ class DataLoaderMixin:
         if mode in ("xye", "qxye"):
             if "i1d_variance" not in self.ds:
                 raise ValueError(f"{mode} export requires i1d_variance in dataset")
-            header_str = f"{header_str} Variance"
-            columns = (data_x, data_y, self.ds.i1d_variance.values)
-            if fmt == "%.4e %.4e":
-                fmt = "%.4e %.4e %.4e"
+            # xye files carry standard deviations, matching the text loader.
+            header_str = f"{header_str} Sigma"
+            columns = (data_x, data_y, np.sqrt(self.ds.i1d_variance.values))
+            if isinstance(fmt, str) and len(fmt.split()) == 2:
+                fmt = f"{fmt} {fmt.split()[1]}"
         np.savetxt(
             to,
             np.column_stack(columns),
