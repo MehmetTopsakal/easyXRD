@@ -482,7 +482,7 @@ class RefinementMixin:
             attempted_rwp, "rejected", log_label, self.last_refinement_rejection_reason
         )
         message = (
-            "Refinement discarded because of "
+            f"Refinement discarded ({log_label}) because of "
             + reason
             + ". \n      Previous project restored; profile data and phases unchanged."
         )

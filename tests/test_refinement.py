@@ -240,6 +240,7 @@ def test_insufficient_improvement_preserves_all_state(tmp_path, gof):
 
     assert not s.last_refinement_accepted
     assert "insufficient GoF improvement" in message
+    assert "Refinement discarded (refine) because" in message
     assert s.gpx.filename.read_bytes() == before_file
     xr.testing.assert_identical(s.ds.drop_dims("refinement_step"), before_ds)
     assert s.ds.refinement_status.item() == "rejected"
