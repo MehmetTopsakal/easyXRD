@@ -9,7 +9,7 @@ import fabio
 import pyFAI
 from scipy.signal import medfilt2d
 
-from .plotters import exrd_plotter
+from .plotters import _normalize_radial_unit
 from .provenance import file_record, software_versions, provenance_json
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,21 @@ def q_to_two_theta(q, wavelength):
     if not np.all(np.isfinite(argument)) or np.any(argument < 0) or np.any(argument > 1.0 + 1e-7):
         raise ValueError("q must be finite and satisfy 0 <= q*wavelength/(4*pi) <= 1")
     return np.rad2deg(2 * np.arcsin(np.clip(argument, 0.0, 1.0)))
+
+
+def _radial_range_to_q(radial_range, radial_unit, wavelength):
+    """Translate loader bounds from the object's selected unit to analysis q."""
+    if radial_range is None:
+        return None
+    bounds = np.asarray(radial_range, dtype=float)
+    if (bounds.shape != (2,) or not np.all(np.isfinite(bounds))
+            or bounds[0] < 0 or bounds[1] <= bounds[0]):
+        raise ValueError("radial_range must be an increasing nonnegative pair")
+    if radial_unit == "two-theta":
+        if bounds[1] > 180:
+            raise ValueError("two-theta radial_range must be between 0 and 180 degrees")
+        bounds = 4 * np.pi / wavelength * np.sin(np.deg2rad(bounds) / 2)
+    return tuple(bounds)
 
 
 def validate_profile(da):
@@ -121,7 +136,12 @@ class DataLoaderMixin:
         to pyFAI; no Poisson assumption is made for arbitrary detector values.
         The quantitative i1d always uses integrate1d, even when a cake is saved.
         Median filtering produces a separate diagnostic image, not fit data.
-        delta_q sets image bin spacing; set it to None to use radial_npts.
+        radial_range uses the object's radial_unit: q in inverse Angstrom,
+        or two-theta in degrees (0 to 180), for detector and text sources.
+        Configured default bounds use the same unit; None disables the bounds.
+        delta_q sets image bin spacing in q even for two-theta bounds;
+        set it to None to use radial_npts. Two-theta bounds are kept exact,
+        with q bin spacing at most delta_q.
         Disabled polarization is recorded as the string "None" in NetCDF-safe
         metadata; pyFAI still receives None to disable the correction.
         """
@@ -138,6 +158,7 @@ class DataLoaderMixin:
         txt_file_usecols = resolve_default(txt_file_usecols, "load_xrd_data_txt_file_usecols")
         txt_file_radial_unit = resolve_default(txt_file_radial_unit, "load_xrd_data_txt_file_radial_unit")
         radial_range = resolve_default(radial_range, "load_xrd_data_radial_range")
+        radial_unit = _normalize_radial_unit(getattr(self, "radial_unit", "q"))
         radial_npts = resolve_default(radial_npts, "load_xrd_data_radial_npts")
         delta_q = resolve_default(delta_q, "load_xrd_data_delta_q")
         npt_azimuthal = resolve_default(npt_azimuthal, "load_xrd_data_npt_azimuthal")
@@ -171,15 +192,14 @@ class DataLoaderMixin:
             if mask is None and mask_file is not None:
                 with fabio.open(str(mask_file)) as frame:
                     mask = frame.data.copy()
-            if radial_range is not None:
-                if len(radial_range) != 2 or not np.all(np.isfinite(radial_range)) or radial_range[0] < 0 or radial_range[1] <= radial_range[0]:
-                    raise ValueError("radial_range must be an increasing nonnegative pair")
+            radial_range = _radial_range_to_q(radial_range, radial_unit, ai.wavelength * 1e10)
             npt = radial_npts
             if radial_range is not None and delta_q is not None:
                 if not np.isfinite(delta_q) or delta_q <= 0:
                     raise ValueError("delta_q must be finite and positive")
                 npt = int(np.ceil((radial_range[1] - radial_range[0]) / delta_q))
-                radial_range = (radial_range[0], radial_range[0] + delta_q * npt)
+                if radial_unit == "q":
+                    radial_range = (radial_range[0], radial_range[0] + delta_q * npt)
             if not isinstance(npt, (int, np.integer)) or npt <= 0:
                 raise ValueError("radial_npts must be a positive integer")
             common = dict(data=img, correctSolidAngle=True, variance=variance,
@@ -200,6 +220,7 @@ class DataLoaderMixin:
                 "polarization_factor": polarization_factor,
                 "normalization_factor": normalization_factor,
                 "radial_range": radial_range, "radial_npts": npt,
+                "radial_range_unit": "q_A^-1",
                 "npt_azimuthal": npt_azimuthal if integrate2d else None,
             })
             old_empty = ai.empty
@@ -271,6 +292,7 @@ class DataLoaderMixin:
             if is_text:
                 ds.i1d.attrs["i1d_from"] = str(from_txt_file)
                 if radial_range is not None:
+                    radial_range = _radial_range_to_q(radial_range, radial_unit, wavelength)
                     ds = ds.sel(radial=slice(*radial_range))
         if i1d_variance is not None:
             values = np.asarray(i1d_variance, float)

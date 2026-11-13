@@ -36,6 +36,7 @@ def configure_logging(level=logging.INFO, stream=None):
 easyxrd_defaults = {
     # core
     "verbose": False,
+    "radial_unit": "q",
     "plot_figsize": (8, 6),
     "plot_i2d_robust": True,
     "plot_i1d_ylogscale": True,

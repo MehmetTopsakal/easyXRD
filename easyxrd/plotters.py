@@ -12,6 +12,54 @@ from pymatgen.core.structure import Structure
 from pymatgen.analysis.diffraction.xrd import XRDCalculator
 
 
+def _normalize_radial_unit(unit):
+    """Return a canonical display unit, rejecting unsupported units early."""
+    if isinstance(unit, str):
+        unit = unit.strip().lower()
+        if unit in ("q", "q_a^-1"):
+            return "q"
+        if unit in ("two-theta", "two_theta", "tth", "2theta", "2th_deg"):
+            return "two-theta"
+    raise ValueError("radial_unit must be 'q' or 'two-theta'")
+
+
+def _plot_q_values(ds, values):
+    """Convert q positions such as Bragg markers and exclusions for a plot."""
+    if ds.i1d.attrs.get("radial_unit") == "2th_deg":
+        # Local import: data_loader imports this module during initialization.
+        from .data_loader import q_to_two_theta
+        return q_to_two_theta(values, ds.i1d.attrs["wavelength_in_angst"])
+    return values
+
+
+def _dataset_for_plotting(ds, radial_unit):
+    """Make a degree-coordinate view without changing the analysis dataset."""
+    if ds is None or radial_unit == "q":
+        return ds
+    from .data_loader import q_to_two_theta
+
+    coords = {}
+    labels = {}
+    for dim, profile in (("radial", "i1d"), ("radial_i2d", "i2d")):
+        if dim in ds.coords:
+            wavelength = ds[profile].attrs.get(
+                "wavelength_in_angst", ds.i1d.attrs.get("wavelength_in_angst")
+            )
+            if wavelength is None:
+                raise ValueError("two-theta plots require wavelength_in_angst metadata")
+            coords[dim] = q_to_two_theta(ds[dim].values, wavelength)
+            labels[dim] = rf"$2\theta$ (degrees, $\lambda$ = {wavelength:g} $\AA$)"
+    result = ds.assign_coords(coords)
+    for name in result.data_vars:
+        for dim in coords:
+            if dim in result[name].dims:
+                result[name].attrs = dict(result[name].attrs,
+                                          radial_unit="2th_deg",
+                                          xlabel=labels[dim])
+                break
+    return result
+
+
 
 def i1d_plotter(
     ds,
@@ -98,6 +146,7 @@ def i1d_plotter(
         try:
             excl_q = json.loads(ds.attrs["excluded_regions_q"])
             for idx_reg, (q_low, q_high) in enumerate(excl_q):
+                q_low, q_high = _plot_q_values(ds, [q_low, q_high])
                 ax.axvspan(
                     float(q_low),
                     float(q_high),
@@ -197,8 +246,11 @@ def i2d_plotter(
         vmin = None
         i2d_str = "Log$_{10}$(%s)" % (i2d_str)
 
+    # q -> 2theta is nonlinear; pcolormesh preserves the nonuniform bin positions.
+    cake_plot = (da_i2d.plot.pcolormesh if ds.i2d.attrs.get("radial_unit") == "2th_deg"
+                 else da_i2d.plot.imshow)
     if cbar:
-        da_i2d.plot.imshow(
+        cake_plot(
             ax=ax,
             robust=i2d_robust,
             add_colorbar=cbar,
@@ -207,7 +259,7 @@ def i2d_plotter(
             vmin=vmin,
         )
     else:
-        da_i2d.plot.imshow(
+        cake_plot(
             ax=ax, robust=i2d_robust, add_colorbar=cbar, cmap=cmap, vmin=vmin
         )
 
@@ -309,6 +361,9 @@ def phases_plotter(
 
     radial_min = ds.i1d.radial.values[0]
     radial_max = ds.i1d.radial.values[-1]
+    if ds.i1d.attrs.get("radial_unit") == "2th_deg":
+        radial_min, radial_max = (4 * np.pi / wavelength
+                                 * np.sin(np.deg2rad([radial_min, radial_max]) / 2))
 
     if isinstance(phases, dict):
         phase_items = list(phases.items())
@@ -321,6 +376,7 @@ def phases_plotter(
         refl_X, refl_Y, refl_HKLs = _calc_reflection_pattern(
             xrdc, st, wavelength, radial_min, radial_max
         )
+        refl_X = _plot_q_values(ds, refl_X)
 
         if len(refl_X) > 0:
             color = "C%d" % e
@@ -387,6 +443,7 @@ def exrd_plotter(
     show_phase_profiles=DEFAULT,
     normalized_residuals=DEFAULT,
     dpi=DEFAULT,
+    radial_unit=DEFAULT,
 ):
     """Main plotting coordinator for easyXRD workflow stages."""
     figsize = resolve_default(figsize, "plot_figsize")
@@ -399,11 +456,14 @@ def exrd_plotter(
     show_phase_profiles = resolve_default(show_phase_profiles, "plot_show_phase_profiles")
     normalized_residuals = resolve_default(normalized_residuals, "plot_normalized_residuals")
     dpi = resolve_default(dpi, "plot_dpi")
+    radial_unit = _normalize_radial_unit(resolve_default(radial_unit, "radial_unit"))
 
     if plot_hint in ("refinement_history", "plot_refinement_history", "refinement", "plot_refinement"):
         return refinement_plotter(ds, figsize=figsize, export_fig_as=export_fig_as)
     if ds is None or "i1d" not in ds or not ds.i1d.size:
         raise ValueError("Load a nonempty diffraction profile before plotting")
+    ds = _dataset_for_plotting(ds, radial_unit)
+    ds_previous = _dataset_for_plotting(ds_previous, radial_unit)
     if plot_hint is None and "i1d_refined" not in ds:
         plot_hint = "load_phases" if ds.attrs.get("num_phases", 0) else "load_xrd_data"
     has_i2d = "i2d" in ds.keys()
@@ -780,6 +840,7 @@ def exrd_plotter(
         if "excluded_regions_q" in ds.attrs:
             try:
                 for q_low, q_high in json.loads(ds.attrs["excluded_regions_q"]):
+                    q_low, q_high = _plot_q_values(ds, [q_low, q_high])
                     ax_dict["D"].axvspan(
                         float(q_low), float(q_high), color="0.85", alpha=0.45, zorder=0
                     )

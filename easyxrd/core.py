@@ -8,7 +8,7 @@ from .data_loader import DataLoaderMixin
 from .baseline import BaselineMixin, _optimize_bkg_scale, _compute_i2d_baseline
 from .phases import PhasesMixin
 from .refinement import RefinementMixin
-from .plotters import exrd_plotter
+from .plotters import exrd_plotter, _normalize_radial_unit
 
 
 
@@ -16,6 +16,9 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
     """
     Main easyXRD analysis class coordinating data loading, baseline calculation,
     phase identification, GSAS-II refinement, and visualization.
+
+    radial_unit selects the plotted x-axis: "q" (inverse Angstrom, default)
+    or "two-theta" (degrees). Analysis coordinates remain in q.
     """
 
     def __init__(
@@ -25,12 +28,14 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         i2d_robust=DEFAULT,
         i1d_ylogscale=DEFAULT,
         i2d_logscale=DEFAULT,
+        radial_unit=DEFAULT,
     ):
         verbose = resolve_default(verbose, "verbose")
         figsize = resolve_default(figsize, "plot_figsize")
         i2d_robust = resolve_default(i2d_robust, "plot_i2d_robust")
         i1d_ylogscale = resolve_default(i1d_ylogscale, "plot_i1d_ylogscale")
         i2d_logscale = resolve_default(i2d_logscale, "plot_i2d_logscale")
+        self.radial_unit = _normalize_radial_unit(resolve_default(radial_unit, "radial_unit"))
 
         self.verbose = verbose
         self.figsize = figsize
@@ -85,6 +90,7 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         before = set(plt.get_fignums())
         exrd_plotter(
             ds=ds,
+            radial_unit=self.radial_unit,
             ds_previous=ds_previous,
             figsize=figsize,
             i2d_robust=i2d_robust,

@@ -308,6 +308,7 @@ class RefinementMixin:
         if plot and self.last_refinement_rejection_reason != "insufficient_gof_improvement":
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=getattr(self, "ds_previous", None),
                 figsize=self.figsize,
                 i2d_robust=self.i2d_robust,
@@ -495,6 +496,7 @@ class RefinementMixin:
             if plot and self.last_refinement_rejection_reason != "insufficient_gof_improvement":
                 exrd_plotter(
                     ds=self.ds,
+                    radial_unit=getattr(self, "radial_unit", "q"),
                     ds_previous=getattr(self, "ds_previous", None),
                     figsize=self.figsize,
                     plot_hint="refine",
@@ -666,6 +668,7 @@ class RefinementMixin:
         if plot:
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=self.ds_previous,
                 figsize=self.figsize,
                 plot_hint="refine",
@@ -1185,6 +1188,7 @@ class RefinementMixin:
             if plot:
                 exrd_plotter(
                     ds=self.ds,
+                    radial_unit=getattr(self, "radial_unit", "q"),
                     ds_previous=None,
                     phases=self.phases,
                     figsize=self.figsize,
@@ -1253,6 +1257,7 @@ class RefinementMixin:
         if plot:
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=self.ds_previous,
                 figsize=self.figsize,
                 i2d_robust=self.i2d_robust,
@@ -1411,6 +1416,7 @@ class RefinementMixin:
         if plot:
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=self.ds_previous,
                 figsize=self.figsize,
                 i2d_robust=self.i2d_robust,
@@ -1693,6 +1699,7 @@ class RefinementMixin:
         if plot:
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=self.ds_previous,
                 figsize=self.figsize,
                 i2d_robust=self.i2d_robust,
@@ -1782,6 +1789,7 @@ class RefinementMixin:
         if plot and refine:
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=self.ds_previous,
                 figsize=self.figsize,
                 i2d_robust=self.i2d_robust,
@@ -1992,6 +2000,7 @@ class RefinementMixin:
             if plot:
                 exrd_plotter(
                     ds=self.ds,
+                    radial_unit=getattr(self, "radial_unit", "q"),
                     ds_previous=self.ds_previous,
                     figsize=self.figsize,
                     i2d_robust=self.i2d_robust,
@@ -2009,6 +2018,7 @@ class RefinementMixin:
             if plot:
                 exrd_plotter(
                     ds=self.ds,
+                    radial_unit=getattr(self, "radial_unit", "q"),
                     ds_previous=self.ds_previous,
                     figsize=self.figsize,
                     i2d_robust=self.i2d_robust,
@@ -2184,6 +2194,7 @@ class RefinementMixin:
             if plot:
                 exrd_plotter(
                     ds=self.ds,
+                    radial_unit=getattr(self, "radial_unit", "q"),
                     ds_previous=self.ds_previous,
                     figsize=self.figsize,
                     i2d_robust=self.i2d_robust,
@@ -2201,6 +2212,7 @@ class RefinementMixin:
             if plot:
                 exrd_plotter(
                     ds=self.ds,
+                    radial_unit=getattr(self, "radial_unit", "q"),
                     ds_previous=self.ds_previous,
                     figsize=self.figsize,
                     i2d_robust=self.i2d_robust,
@@ -2345,6 +2357,7 @@ class RefinementMixin:
             if plot:
                 exrd_plotter(
                     ds=self.ds,
+                    radial_unit=getattr(self, "radial_unit", "q"),
                     ds_previous=self.ds_previous,
                     figsize=self.figsize,
                     i2d_robust=self.i2d_robust,
@@ -2362,6 +2375,7 @@ class RefinementMixin:
             if plot:
                 exrd_plotter(
                     ds=self.ds,
+                    radial_unit=getattr(self, "radial_unit", "q"),
                     ds_previous=self.ds_previous,
                     figsize=self.figsize,
                     i2d_robust=self.i2d_robust,
@@ -2563,6 +2577,7 @@ class RefinementMixin:
         if plot:
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=self.ds_previous,
                 figsize=self.figsize,
                 i2d_robust=self.i2d_robust,
@@ -2791,6 +2806,7 @@ class RefinementMixin:
         if plot:
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=self.ds_previous,
                 figsize=self.figsize,
                 i2d_robust=self.i2d_robust,
@@ -2918,6 +2934,7 @@ class RefinementMixin:
         if plot:
             exrd_plotter(
                 ds=self.ds,
+                radial_unit=getattr(self, "radial_unit", "q"),
                 ds_previous=self.ds_previous,
                 figsize=self.figsize,
                 i2d_robust=self.i2d_robust,

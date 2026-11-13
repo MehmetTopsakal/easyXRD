@@ -164,6 +164,44 @@ After this step, you can contine with `exrd` as we explained in the Google Colab
 
 
 
+## X-axis units
+
+The default plot x-axis is scattering vector `q` in inverse Angstrom. Select
+2θ in degrees when creating an analysis object:
+
+```python
+from easyxrd import exrd
+
+sample = exrd(radial_unit="two-theta")
+sample.load_xrd_data(...)  # Automatic plots and sample.plot() use 2θ.
+```
+
+This applies to 1D profiles, 2D cakes, baselines, phase reflections, and refinement
+plots. Conversion uses each profile's `wavelength_in_angst` metadata. Analysis
+coordinates in `sample.ds` remain in `q`; input units are still specified with
+`i1d_array_radial_unit` or `txt_file_radial_unit`. The plotting argument
+`i1d_plot_radial_range` uses the selected display unit. Export units remain
+controlled by `export_i1d_to(mode=...)` (`"xy"` for 2θ, `"qxy"` for q).
+
+For detector integration and text-file loading, `radial_range` also uses the
+object's selected unit, including bounds from `easyxrd_defaults`. For example:
+
+```python
+sample = exrd(radial_unit="two-theta")
+sample.load_xrd_data(from_tiff_file="image.tif", poni_file="geometry.poni",
+                     radial_range=(10, 60))  # 10° to 60° in 2θ
+```
+
+Degree bounds must be between 0 and 180 and are converted using the source's
+wavelength. `radial_range=None` disables the bounds. `delta_q` continues to
+specify bin spacing in inverse Angstrom; for degree bounds the upper limit is
+kept exact and the q spacing is at most `delta_q`. Set `delta_q=None` to select
+the number of bins with `radial_npts` instead.
+
+Use `exrd(radial_unit="q")` for q plots, or set
+`easyxrd.easyxrd_defaults["radial_unit"] = "two-theta"` for new objects.
+
+
 ## Rwp history in the dataset
 
 `sample.setup_gsas2_refiner(...)` starts a new refinement history in
