@@ -1,15 +1,13 @@
-from . import DEFAULT, resolve_default
 
-import warnings
 import matplotlib.pyplot as plt
 
-from .utils import HiddenPrints
+from . import DEFAULT, resolve_default
+from .baseline import BaselineMixin, _compute_i2d_baseline, _optimize_bkg_scale
 from .data_loader import DataLoaderMixin
-from .baseline import BaselineMixin, _optimize_bkg_scale, _compute_i2d_baseline
 from .phases import PhasesMixin
+from .plotters import _normalize_radial_unit, exrd_plotter
 from .refinement import RefinementMixin
-from .plotters import exrd_plotter, _normalize_radial_unit
-
+from .utils import HiddenPrints
 
 
 class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
@@ -35,7 +33,9 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         i2d_robust = resolve_default(i2d_robust, "plot_i2d_robust")
         i1d_ylogscale = resolve_default(i1d_ylogscale, "plot_i1d_ylogscale")
         i2d_logscale = resolve_default(i2d_logscale, "plot_i2d_logscale")
-        self.radial_unit = _normalize_radial_unit(resolve_default(radial_unit, "radial_unit"))
+        self.radial_unit = _normalize_radial_unit(
+            resolve_default(radial_unit, "radial_unit")
+        )
 
         self.verbose = verbose
         self.figsize = figsize
@@ -69,8 +69,12 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
         site_str_y = resolve_default(site_str_y, "plot_site_str_y")
         close = resolve_default(close, "plot_close")
         show_wt_fractions = resolve_default(show_wt_fractions, "plot_show_wt_fractions")
-        show_phase_profiles = resolve_default(show_phase_profiles, "plot_show_phase_profiles")
-        normalized_residuals = resolve_default(normalized_residuals, "plot_normalized_residuals")
+        show_phase_profiles = resolve_default(
+            show_phase_profiles, "plot_show_phase_profiles"
+        )
+        normalized_residuals = resolve_default(
+            normalized_residuals, "plot_normalized_residuals"
+        )
 
         if figsize is None:
             figsize = self.figsize
@@ -116,12 +120,12 @@ class exrd(DataLoaderMixin, BaselineMixin, PhasesMixin, RefinementMixin):
 
 
 __all__ = [
-    "exrd",
-    "HiddenPrints",
-    "_optimize_bkg_scale",
-    "_compute_i2d_baseline",
-    "DataLoaderMixin",
     "BaselineMixin",
+    "DataLoaderMixin",
+    "HiddenPrints",
     "PhasesMixin",
     "RefinementMixin",
+    "_compute_i2d_baseline",
+    "_optimize_bkg_scale",
+    "exrd",
 ]

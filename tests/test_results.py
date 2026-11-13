@@ -1,6 +1,6 @@
 """Parameter labeling, uncertainty export, provenance and logging regressions."""
-import io
 import copy
+import io
 import json
 import logging
 
@@ -9,9 +9,9 @@ import pytest
 import xarray as xr
 
 from easyxrd import configure_logging, exrd
-from easyxrd.results import fit_result_dataset, clear_fit_results
+from easyxrd.results import clear_fit_results, fit_result_dataset
+from tests.test_refinement import Project, configurable_sample
 from tests.test_review_regressions import real_sample
-from tests.test_refinement import configurable_sample, Project
 
 
 def covariance():

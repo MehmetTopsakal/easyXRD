@@ -1,15 +1,15 @@
-from . import DEFAULT, resolve_default
-from .results import format_value_with_su
-
-import logging
-import warnings
 import json
+import logging
 from collections import OrderedDict
-import numpy as np
+
 import matplotlib.patches
 import matplotlib.pyplot as plt
-from pymatgen.core.structure import Structure
+import numpy as np
 from pymatgen.analysis.diffraction.xrd import XRDCalculator
+from pymatgen.core.structure import Structure
+
+from . import DEFAULT, resolve_default
+from .results import format_value_with_su
 
 
 def _normalize_radial_unit(unit):
@@ -28,6 +28,7 @@ def _plot_q_values(ds, values):
     if ds.i1d.attrs.get("radial_unit") == "2th_deg":
         # Local import: data_loader imports this module during initialization.
         from .data_loader import q_to_two_theta
+
         return q_to_two_theta(values, ds.i1d.attrs["wavelength_in_angst"])
     return values
 
@@ -53,12 +54,11 @@ def _dataset_for_plotting(ds, radial_unit):
     for name in result.data_vars:
         for dim in coords:
             if dim in result[name].dims:
-                result[name].attrs = dict(result[name].attrs,
-                                          radial_unit="2th_deg",
-                                          xlabel=labels[dim])
+                result[name].attrs = dict(
+                    result[name].attrs, radial_unit="2th_deg", xlabel=labels[dim]
+                )
                 break
     return result
-
 
 
 def i1d_plotter(
@@ -80,7 +80,9 @@ def i1d_plotter(
     title_str = resolve_default(title_str, "i1d_plotter_title_str")
     ncol = resolve_default(ncol, "i1d_plotter_ncol")
     show_Ybkg_old = resolve_default(show_Ybkg_old, "i1d_plotter_show_Ybkg_old")
-    show_phase_profiles = resolve_default(show_phase_profiles, "i1d_plotter_show_phase_profiles")
+    show_phase_profiles = resolve_default(
+        show_phase_profiles, "i1d_plotter_show_phase_profiles"
+    )
 
     da_Y_calc = da_Y_bkg = None
     if "i1d_baseline" in ds.keys():
@@ -88,13 +90,13 @@ def i1d_plotter(
         if "i1d_refined" in ds.keys():
             da_Y_calc = ds.i1d_refined - ds.i1d_baseline
             da_Y_bkg = ds.i1d_gsas_background
-        ylabel = "Intensity"
+        ylabel = "Intensity (a.u.)"
     else:
         da_Y_obs = ds.i1d
         if "i1d_refined" in ds.keys():
             da_Y_calc = ds.i1d_refined
             da_Y_bkg = ds.i1d_gsas_background
-        ylabel = "Intensity"
+        ylabel = "Intensity (a.u.)"
 
     if i1d_ylogscale:
         if "i1d_refined" in ds.keys():
@@ -127,7 +129,9 @@ def i1d_plotter(
             and "i1d_phase_profiles" in ds
             and ds.i1d_phase_profiles.sizes.get("phase", 0) > 1
         ):
-            for p_idx, p_name in enumerate(ds.i1d_phase_profiles.coords["phase"].values):
+            for p_idx, p_name in enumerate(
+                ds.i1d_phase_profiles.coords["phase"].values
+            ):
                 da_phase = (
                     ds.i1d_gsas_background
                     + ds.i1d_phase_profiles.isel(phase=p_idx)
@@ -247,8 +251,11 @@ def i2d_plotter(
         i2d_str = "Log$_{10}$(%s)" % (i2d_str)
 
     # q -> 2theta is nonlinear; pcolormesh preserves the nonuniform bin positions.
-    cake_plot = (da_i2d.plot.pcolormesh if ds.i2d.attrs.get("radial_unit") == "2th_deg"
-                 else da_i2d.plot.imshow)
+    cake_plot = (
+        da_i2d.plot.pcolormesh
+        if ds.i2d.attrs.get("radial_unit") == "2th_deg"
+        else da_i2d.plot.imshow
+    )
     if cbar:
         cake_plot(
             ax=ax,
@@ -259,9 +266,7 @@ def i2d_plotter(
             vmin=vmin,
         )
     else:
-        cake_plot(
-            ax=ax, robust=i2d_robust, add_colorbar=cbar, cmap=cmap, vmin=vmin
-        )
+        cake_plot(ax=ax, robust=i2d_robust, add_colorbar=cbar, cmap=cmap, vmin=vmin)
 
     if annotate:
         ax.annotate(
@@ -311,8 +316,12 @@ def _calc_reflection_pattern(xrdc, st, wavelength, radial_min, radial_max):
     tth1 = float(np.rad2deg(2 * np.arcsin(arg1)))
     two_theta_range = (min(tth0, tth1), max(tth0, tth1))
 
-    cache_key = (json.dumps(st.as_dict(), sort_keys=True),
-                 repr(sorted(xrdc.__dict__.items())), float(wavelength), two_theta_range)
+    cache_key = (
+        json.dumps(st.as_dict(), sort_keys=True),
+        repr(sorted(xrdc.__dict__.items())),
+        float(wavelength),
+        two_theta_range,
+    )
     if cache_key not in _PATTERN_CACHE:
         ps = xrdc.get_pattern(st, scaled=True, two_theta_range=two_theta_range)
         refl_x = 4 * np.pi / wavelength * np.sin(np.deg2rad(ps.x) / 2)
@@ -321,6 +330,7 @@ def _calc_reflection_pattern(xrdc, st, wavelength, radial_min, radial_max):
             _PATTERN_CACHE.popitem(last=False)
     _PATTERN_CACHE.move_to_end(cache_key)
     import copy
+
     return copy.deepcopy(_PATTERN_CACHE[cache_key])
 
 
@@ -332,12 +342,14 @@ def phases_plotter(
     phase_label_x=DEFAULT,
     phase_label_y=DEFAULT,
     phase_label_yshift=DEFAULT,
-    show_hkls = DEFAULT,
+    show_hkls=DEFAULT,
 ):
     """Plot Bragg reflection lines and phase labels."""
     phase_label_x = resolve_default(phase_label_x, "phases_plotter_phase_label_x")
     phase_label_y = resolve_default(phase_label_y, "phases_plotter_phase_label_y")
-    phase_label_yshift = resolve_default(phase_label_yshift, "phases_plotter_phase_label_yshift")
+    phase_label_yshift = resolve_default(
+        phase_label_yshift, "phases_plotter_phase_label_yshift"
+    )
     show_hkls = resolve_default(show_hkls, "phases_plotter_show_hkls")
 
     wavelength = ds.i1d.attrs["wavelength_in_angst"]
@@ -356,19 +368,25 @@ def phases_plotter(
                     label = ds.attrs.get(label_key, "Phase_%d" % aa)
                     ds_phases[label] = st
                 except Exception as exc:
-                    logging.getLogger(__name__).warning("Could not parse CIF for phase %s: %s", aa, exc)
+                    logging.getLogger(__name__).warning(
+                        "Could not parse CIF for phase %s: %s", aa, exc
+                    )
         phases = ds_phases
 
     radial_min = ds.i1d.radial.values[0]
     radial_max = ds.i1d.radial.values[-1]
     if ds.i1d.attrs.get("radial_unit") == "2th_deg":
-        radial_min, radial_max = (4 * np.pi / wavelength
-                                 * np.sin(np.deg2rad([radial_min, radial_max]) / 2))
+        radial_min, radial_max = (
+            4 * np.pi / wavelength * np.sin(np.deg2rad([radial_min, radial_max]) / 2)
+        )
 
     if isinstance(phases, dict):
         phase_items = list(phases.items())
     elif isinstance(phases, (list, tuple)):
-        phase_items = [(getattr(st, "formula", f"Phase_{idx}"), st) for idx, st in enumerate(phases)]
+        phase_items = [
+            (getattr(st, "formula", f"Phase_{idx}"), st)
+            for idx, st in enumerate(phases)
+        ]
     else:
         phase_items = []
 
@@ -381,13 +399,23 @@ def phases_plotter(
         if len(refl_X) > 0:
             color = "C%d" % e
             ax_main.vlines(
-                refl_X, 0, 1, transform=ax_main.get_xaxis_transform(),
-                lw=0.3, linestyle="--", colors=color
+                refl_X,
+                0,
+                1,
+                transform=ax_main.get_xaxis_transform(),
+                lw=0.3,
+                linestyle="--",
+                colors=color,
             )
             for a in line_axes:
                 a.vlines(
-                    refl_X, 0, 1, transform=a.get_xaxis_transform(),
-                    lw=0.3, linestyle="--", colors=color
+                    refl_X,
+                    0,
+                    1,
+                    transform=a.get_xaxis_transform(),
+                    lw=0.3,
+                    linestyle="--",
+                    colors=color,
                 )
 
             markerline, stemlines, stem_baseline = ax_main.stem(
@@ -397,17 +425,17 @@ def phases_plotter(
             plt.setp(markerline, color=color)
 
             if show_hkls:
-                for ee,y in enumerate(refl_Y):
-                    if y > 10:
-                        ax_main.annotate(refl_HKLs[ee][0]['hkl'],
-                                        xy = (refl_X[ee],refl_Y[ee]),
-                                        rotation=30,
-                                        fontsize=4,
-                                        ha='center',
-                                        va='bottom',
-                                        color=color
+                for ee, y in enumerate(refl_Y):
+                    if y > 1:
+                        ax_main.annotate(
+                            refl_HKLs[ee][0]["hkl"],
+                            xy=(refl_X[ee], y),
+                            rotation=30,
+                            fontsize=4,
+                            ha="center",
+                            va="bottom",
+                            color=color,
                         )
-
 
         ax_main.text(
             phase_label_x,
@@ -453,12 +481,21 @@ def exrd_plotter(
     site_str_x = resolve_default(site_str_x, "plot_site_str_x")
     site_str_y = resolve_default(site_str_y, "plot_site_str_y")
     show_wt_fractions = resolve_default(show_wt_fractions, "plot_show_wt_fractions")
-    show_phase_profiles = resolve_default(show_phase_profiles, "plot_show_phase_profiles")
-    normalized_residuals = resolve_default(normalized_residuals, "plot_normalized_residuals")
+    show_phase_profiles = resolve_default(
+        show_phase_profiles, "plot_show_phase_profiles"
+    )
+    normalized_residuals = resolve_default(
+        normalized_residuals, "plot_normalized_residuals"
+    )
     dpi = resolve_default(dpi, "plot_dpi")
     radial_unit = _normalize_radial_unit(resolve_default(radial_unit, "radial_unit"))
 
-    if plot_hint in ("refinement_history", "plot_refinement_history", "refinement", "plot_refinement"):
+    if plot_hint in (
+        "refinement_history",
+        "plot_refinement_history",
+        "refinement",
+        "plot_refinement",
+    ):
         return refinement_plotter(ds, figsize=figsize, export_fig_as=export_fig_as)
     if ds is None or "i1d" not in ds or not ds.i1d.size:
         raise ValueError("Load a nonempty diffraction profile before plotting")
@@ -533,7 +570,11 @@ def exrd_plotter(
         ds.i1d.plot(ax=ax_a, label=label_i1d)
 
         if "i1d_baseline" in ds.keys():
-            label_bkg = "i1d_baseline (norm.)" if "normalized_to" in ds.i1d.attrs else "i1d_baseline"
+            label_bkg = (
+                "i1d_baseline (norm.)"
+                if "normalized_to" in ds.i1d.attrs
+                else "i1d_baseline"
+            )
             ds.i1d_baseline.plot(ax=ax_a, label=label_bkg)
 
         ax_a.set_yscale("log")
@@ -630,7 +671,12 @@ def exrd_plotter(
                 line_axes=[ax_dict["1"], ax_dict["P"]],
             )
 
-    elif plot_hint in ("refinement_history", "plot_refinement_history", "refinement", "plot_refinement"):
+    elif plot_hint in (
+        "refinement_history",
+        "plot_refinement_history",
+        "refinement",
+        "plot_refinement",
+    ):
         return refinement_plotter(
             ds,
             figsize=figsize,
@@ -705,7 +751,7 @@ def exrd_plotter(
         fit_str = "Rwp/GoF = %.3f/%.3f" % (ds.attrs["Rwp"], ds.attrs["GOF"])
         ax_dict["1"].annotate(
             "%s" % (fit_str),
-            xy=(0.75, 0.95),
+            xy=(0.7, 0.95),
             xycoords="axes fraction",
             xytext=(0, 0),
             textcoords="offset points",
@@ -737,13 +783,19 @@ def exrd_plotter(
                 site_c, ds.attrs.get("PhaseInd_%d_cell_c_su" % site_ind), precision=4
             )
             site_alpha_str = format_value_with_su(
-                site_alpha, ds.attrs.get("PhaseInd_%d_cell_alpha_su" % site_ind), precision=2
+                site_alpha,
+                ds.attrs.get("PhaseInd_%d_cell_alpha_su" % site_ind),
+                precision=2,
             )
             site_beta_str = format_value_with_su(
-                site_beta, ds.attrs.get("PhaseInd_%d_cell_beta_su" % site_ind), precision=2
+                site_beta,
+                ds.attrs.get("PhaseInd_%d_cell_beta_su" % site_ind),
+                precision=2,
             )
             site_gamma_str = format_value_with_su(
-                site_gamma, ds.attrs.get("PhaseInd_%d_cell_gamma_su" % site_ind), precision=2
+                site_gamma,
+                ds.attrs.get("PhaseInd_%d_cell_gamma_su" % site_ind),
+                precision=2,
             )
 
             site_size_broadening_type = ds.attrs[
@@ -771,7 +823,11 @@ def exrd_plotter(
                 )
 
             site_wt_fraction = ds.attrs["PhaseInd_%d_wt_fraction" % site_ind]
-            if not np.isfinite(site_wt_fraction) or site_wt_fraction == 100.0 or not show_wt_fractions:
+            if (
+                not np.isfinite(site_wt_fraction)
+                or site_wt_fraction == 100.0
+                or not show_wt_fractions
+            ):
                 str_fraction = ""
             else:
                 wt_su = ds.attrs.get("PhaseInd_%d_wt_fraction_su" % site_ind, np.nan)
@@ -865,7 +921,7 @@ def exrd_plotter(
 
     else:
         # Generic refinement step plotting (covers "1st_refinement", "refine_background", "refine_cell_parameters", etc.)
-        show_Ybkg_old = (plot_hint == "refine_background")
+        show_Ybkg_old = plot_hint == "refine_background"
 
         if has_i2d:
             fig = plt.figure(figsize=(figsize[0], figsize[1]), dpi=dpi)
@@ -951,7 +1007,9 @@ def refinement_plotter(
     """
     figsize = resolve_default(figsize, "plot_figsize")
     dpi = resolve_default(dpi, "refinement_plotter_dpi")
-    min_step_detail = resolve_default(min_step_detail, "refinement_plotter_min_step_detail")
+    min_step_detail = resolve_default(
+        min_step_detail, "refinement_plotter_min_step_detail"
+    )
     show = resolve_default(show, "refinement_plotter_show")
     return_fig = resolve_default(return_fig, "refinement_plotter_return_fig")
 
@@ -986,7 +1044,11 @@ def refinement_plotter(
     step_labels = [format_label(l) for l in labels]
 
     # Detect boundary where Le Bail was switched off
-    lebail_off_indices = [i for i, l in enumerate(labels) if l == "set_LeBail:False" and status[i] == "accepted"]
+    lebail_off_indices = [
+        i
+        for i, l in enumerate(labels)
+        if l == "set_LeBail:False" and status[i] == "accepted"
+    ]
     has_stage_split = len(lebail_off_indices) > 0
     if has_stage_split:
         split_idx = lebail_off_indices[0]
@@ -1000,8 +1062,15 @@ def refinement_plotter(
 
     if not np.any(np.isfinite(rwp)):
         for ax in (ax1, ax2):
-            ax.text(.5, .5, "No finite retained Rwp; inspect refinement_status and refinement_reason",
-                    ha="center", va="center", transform=ax.transAxes, wrap=True)
+            ax.text(
+                0.5,
+                0.5,
+                "No finite retained Rwp; inspect refinement_status and refinement_reason",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+                wrap=True,
+            )
         if export_fig_as is not None:
             fig.savefig(export_fig_as, dpi=dpi)
         if show:
@@ -1158,8 +1227,8 @@ def refinement_plotter(
 
     detail_values = np.concatenate((s_rwp, s_att))
     detail_values = detail_values[np.isfinite(detail_values)]
-    detail_min = float(detail_values.min()) if detail_values.size else 0.
-    detail_max = float(detail_values.max()) if detail_values.size else 1.
+    detail_min = float(detail_values.min()) if detail_values.size else 0.0
+    detail_max = float(detail_values.max()) if detail_values.size else 1.0
     ax2.set_ylim(max(0, detail_min - 0.25), detail_max + 0.35)
     ax2.grid(True, linestyle="--", alpha=0.4, color="#cbd5e1")
 
@@ -1205,10 +1274,10 @@ def refinement_plotter(
 
 
 __all__ = [
+    "_calc_reflection_pattern",
+    "exrd_plotter",
     "i1d_plotter",
     "i2d_plotter",
     "phases_plotter",
-    "exrd_plotter",
     "refinement_plotter",
-    "_calc_reflection_pattern",
 ]

@@ -1,8 +1,10 @@
 """Small provenance records suitable for NetCDF attributes."""
+
 import hashlib
 import json
 from importlib import metadata
 from pathlib import Path
+
 import numpy as np
 
 
@@ -28,10 +30,12 @@ def software_versions(*packages):
 
 def provenance_json(record):
     """Encode NumPy scalars/arrays while rejecting unsupported object types."""
+
     def encode(value):
         if isinstance(value, np.ndarray):
             return value.tolist()
         if isinstance(value, np.generic):
             return value.item()
         raise TypeError(f"Unsupported provenance value: {type(value).__name__}")
+
     return json.dumps(record, default=encode, sort_keys=True, allow_nan=False)

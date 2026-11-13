@@ -1,8 +1,10 @@
 import os
 import tempfile
+
 import numpy as np
 import pytest
 import xarray as xr
+
 from easyxrd import exrd
 
 
@@ -177,3 +179,88 @@ def test_export_write_errors_propagate(tmp_path):
     with pytest.raises(OSError):
         sample.export_ds_to(tmp_path / "missing_directory" / "refined.nc")
     xr.testing.assert_identical(sample.ds, before)
+
+
+def test_load_detector_image_defaults_to_poisson_error_model():
+    from pyFAI.detectors import Detector
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
+
+    ai = AzimuthalIntegrator(
+        dist=0.1,
+        poni1=0.003,
+        poni2=0.004,
+        detector=Detector(pixel1=1e-4, pixel2=1e-4),
+        wavelength=1e-10,
+    )
+    y, x = np.indices((64, 64))
+    img = (100 + 2 * x + y).astype(float)
+    sample = exrd()
+    sample.load_xrd_data(
+        from_img_array=img,
+        ai=ai,
+        radial_range=(0.05, 0.3),
+        delta_q=0.01,
+        plot=False,
+    )
+    assert sample.ds.i1d.attrs["error_model"] == "poisson"
+    assert "i1d_variance" in sample.ds
+    assert np.all(sample.ds.i1d_variance > 0)
+
+
+def test_export_i1d_to_xye(tmp_path):
+    q = np.array([1.0, 2.0, 3.0])
+    intensity = np.array([10.0, 25.0, 15.0])
+    variance = np.array([0.25, 0.64, 0.36])
+
+    sample = exrd()
+    sample.load_xrd_data(
+        from_i1d_array=np.column_stack((q, intensity)),
+        i1d_array_radial_unit="q",
+        i1d_array_wavelength_in_angstrom=1.5406,
+        i1d_variance=variance,
+        plot=False,
+    )
+    out_file = tmp_path / "out.xye"
+    sample.export_i1d_to(to=out_file, mode="xye", header=True)
+    exported = np.loadtxt(out_file)
+    assert exported.shape == (3, 3)
+    expected_tth = np.rad2deg(2 * np.arcsin(q * 1.5406 / (4 * np.pi)))
+    np.testing.assert_allclose(exported[:, 0], expected_tth, rtol=1e-4)
+    np.testing.assert_allclose(exported[:, 1], intensity, rtol=1e-4)
+    np.testing.assert_allclose(exported[:, 2], variance, rtol=1e-4)
+
+    q_out_file = tmp_path / "out.qxye"
+    sample.export_i1d_to(to=q_out_file, mode="qxye", header=True)
+    q_exported = np.loadtxt(q_out_file)
+    assert q_exported.shape == (3, 3)
+    np.testing.assert_allclose(q_exported[:, 0], q, rtol=1e-4)
+    np.testing.assert_allclose(q_exported[:, 1], intensity, rtol=1e-4)
+    np.testing.assert_allclose(q_exported[:, 2], variance, rtol=1e-4)
+
+    no_var = exrd()
+    no_var.load_xrd_data(
+        from_i1d_array=np.column_stack((q, intensity)),
+        i1d_array_radial_unit="q",
+        i1d_array_wavelength_in_angstrom=1.5406,
+        plot=False,
+    )
+    for mode in ("xye", "qxye"):
+        with pytest.raises(ValueError, match="i1d_variance"):
+            no_var.export_i1d_to(to=tmp_path / f"missing_var.{mode}", mode=mode)
+
+
+def test_load_3col_txt_file_automatically(tmp_path):
+    tth = np.array([10.0, 20.0, 30.0])
+    intensity = np.array([100.0, 200.0, 150.0])
+    sigma = np.array([2.0, 3.0, 4.0])
+    txt_path = tmp_path / "three_col.xye"
+    np.savetxt(txt_path, np.column_stack((tth, intensity, sigma)))
+
+    sample = exrd()
+    sample.load_xrd_data(
+        from_txt_file=txt_path,
+        txt_file_wavelength_in_angstrom=1.5406,
+        plot=False,
+    )
+    assert "i1d_variance" in sample.ds
+    np.testing.assert_allclose(sample.ds.i1d_variance.values, sigma**2)

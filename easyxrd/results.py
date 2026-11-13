@@ -1,8 +1,9 @@
 """Labeled, serializable results from the most recent accepted GSAS-II fit."""
+
 import math
+
 import numpy as np
 import xarray as xr
-
 
 RESULT_DIMS = ("gsas_parameter", "gsas_parameter_cov", "gsas_statistic", "phase")
 RESULT_SCALARS = ("gsas_converged", "i1d_phase_profiles")
@@ -11,7 +12,9 @@ RESULT_ATTRS = ("gsas_result_schema", "gsas_covariance_status", "gsas_result_ste
 
 def clear_fit_results(ds):
     """Remove the current parameter result without removing the attempt history."""
-    result = ds.drop_dims(RESULT_DIMS, errors="ignore").drop_vars(RESULT_SCALARS, errors="ignore")
+    result = ds.drop_dims(RESULT_DIMS, errors="ignore").drop_vars(
+        RESULT_SCALARS, errors="ignore"
+    )
     result.attrs = {k: v for k, v in result.attrs.items() if k not in RESULT_ATTRS}
     return result
 
@@ -40,7 +43,7 @@ def format_value_with_su(value, su=None, precision=4):
         su_digits = two_digit
     else:
         decimals = -exponent
-        su_digits = int(round(err / (10.0 ** exponent)))
+        su_digits = int(round(err / (10.0**exponent)))
         if su_digits >= 10:
             decimals -= 1
             su_digits = 1
@@ -131,11 +134,14 @@ def compute_cell_uncertainties(cell, sg_laue, pfx, covariance):
         return {k: np.nan for k in keys}
     ca, cb, cg = np.cos(np.deg2rad([alpha, beta, gamma]))
     sa, sb, sg = np.sin(np.deg2rad([alpha, beta, gamma]))
-    g = np.array([
-        [a * a, a * b * cg, a * c * cb],
-        [a * b * cg, b * b, b * c * ca],
-        [a * c * cb, b * c * ca, c * c],
-    ], dtype=float)
+    g = np.array(
+        [
+            [a * a, a * b * cg, a * c * cb],
+            [a * b * cg, b * b, b * c * ca],
+            [a * c * cb, b * c * ca, c * c],
+        ],
+        dtype=float,
+    )
     det_g = float(np.linalg.det(g))
     if not np.isfinite(det_g) or det_g <= 0:
         return {k: np.nan for k in keys}
@@ -267,14 +273,18 @@ def compute_internal_standard_qpa(
         raise IndexError(f"Internal standard phase index {std_index} out of range")
     w_std = float(std_wt_fraction)
     if not np.isfinite(w_std) or w_std <= 0 or w_std >= 100:
-        raise ValueError("standard_wt_fraction must be finite and strictly between 0 and 100 wt%")
+        raise ValueError(
+            "standard_wt_fraction must be finite and strictly between 0 and 100 wt%"
+        )
     w_std_su = float(std_wt_fraction_su) if std_wt_fraction_su is not None else 0.0
     if not np.isfinite(w_std_su) or w_std_su < 0:
         raise ValueError("standard_wt_fraction_su must be finite and nonnegative")
 
     masses = unit_masses * scales
     if not np.all(np.isfinite(masses)) or np.any(masses < 0) or masses[std_index] <= 0:
-        raise ValueError("Internal standard phase must have a finite, positive refined mass/scale")
+        raise ValueError(
+            "Internal standard phase must have a finite, positive refined mass/scale"
+        )
 
     m_s = unit_masses[std_index]
     s_s = scales[std_index]
@@ -348,7 +358,6 @@ def compute_internal_standard_qpa(
     }
 
 
-
 def fit_result_dataset(covariance):
     """Copy native GSAS-II variables, s.u. and covariance in varyList order.
 
@@ -387,11 +396,17 @@ def fit_result_dataset(covariance):
     diagonal = np.diag(matrix)
     valid = np.isfinite(diagonal) & (diagonal > 0)
     scale = np.sqrt(np.where(valid, diagonal, np.nan))
-    np.divide(matrix, scale[:, None] * scale[None, :], out=correlation,
-              where=valid[:, None] & valid[None, :])
+    np.divide(
+        matrix,
+        scale[:, None] * scale[None, :],
+        out=correlation,
+        where=valid[:, None] & valid[None, :],
+    )
     rvals = covariance.get("Rvals", {})
     statistic_names = ("Rwp", "GOF", "Nobs", "Nvars", "chisq", "SVD0", "Max shft/sig")
-    statistics = [np.nan if rvals.get(k) is None else float(rvals[k]) for k in statistic_names]
+    statistics = [
+        np.nan if rvals.get(k) is None else float(rvals[k]) for k in statistic_names
+    ]
     converged = rvals.get("converged")
     result = xr.Dataset(
         {
@@ -402,13 +417,22 @@ def fit_result_dataset(covariance):
             "gsas_fit_statistic": ("gsas_statistic", statistics),
             "gsas_converged": np.int8(-1 if converged is None else bool(converged)),
         },
-        coords={"gsas_parameter": names, "gsas_parameter_cov": names.copy(),
-                "gsas_statistic": list(statistic_names)},
+        coords={
+            "gsas_parameter": names,
+            "gsas_parameter_cov": names.copy(),
+            "gsas_statistic": list(statistic_names),
+        },
         attrs={"gsas_result_schema": "1", "gsas_covariance_status": status},
     )
-    result.gsas_parameter_value.attrs["convention"] = "Native GSAS-II directly varied parameters and units"
-    result.gsas_parameter_su.attrs["long_name"] = "GSAS-II reported standard uncertainty"
-    result.gsas_covariance.attrs["convention"] = "Native GSAS-II covariance; no additional GoF scaling"
+    result.gsas_parameter_value.attrs["convention"] = (
+        "Native GSAS-II directly varied parameters and units"
+    )
+    result.gsas_parameter_su.attrs["long_name"] = (
+        "GSAS-II reported standard uncertainty"
+    )
+    result.gsas_covariance.attrs["convention"] = (
+        "Native GSAS-II covariance; no additional GoF scaling"
+    )
     result.gsas_correlation.attrs["units"] = "1"
     result.gsas_converged.attrs["codes"] = "-1 unknown; 0 not converged; 1 converged"
     return result

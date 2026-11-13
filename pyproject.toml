@@ -52,6 +52,7 @@ ninja = "*"
 meson-python = "*"
 git = "*"
 pytest = "*"
+black = ">=26.10.1,<27"
 
 [tool.pixi.target.linux-64.dependencies]
 fortran-compiler = "*"

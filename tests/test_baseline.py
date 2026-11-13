@@ -1,6 +1,7 @@
 import numpy as np
-import xarray as xr
 import pytest
+import xarray as xr
+
 from easyxrd import exrd
 from easyxrd.baseline import _optimize_bkg_scale
 

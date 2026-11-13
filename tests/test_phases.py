@@ -1,10 +1,12 @@
 import os
 import tempfile
-import pytest
+
 import numpy as np
+import pytest
 import xarray as xr
-from pymatgen.core.structure import Structure
 from pymatgen.core.lattice import Lattice
+from pymatgen.core.structure import Structure
+
 from easyxrd import exrd
 
 

@@ -2,6 +2,7 @@
 import json
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -162,7 +163,7 @@ def integrator():
 
     return SimpleNamespace(wavelength=1.54e-10, empty=0., dist=0.1, poni1=0., poni2=0.,
                            rot1=0., rot2=0., rot3=0., detector=SimpleNamespace(name="test"),
-                           get_config=lambda: {}, integrate1d=Mock(side_effect=profile),
+                           get_config=dict, integrate1d=Mock(side_effect=profile),
                            integrate2d=Mock(side_effect=cake))
 
 
@@ -228,8 +229,8 @@ def test_text_range_in_degrees(tmp_path, input_unit, wavelength):
 
 
 def test_real_detector_degree_range_matches_q_integration():
-    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
     from pyFAI.detectors import Detector
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
 
     ai = AzimuthalIntegrator(dist=.1, poni1=.003, poni2=.004,
                             detector=Detector(pixel1=1e-4, pixel2=1e-4), wavelength=1e-10)

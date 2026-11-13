@@ -1,11 +1,11 @@
 """Exercise version stamping through actual commits in disposable repositories."""
 
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tomllib
+from pathlib import Path
 
 import pytest
 

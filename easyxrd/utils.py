@@ -1,11 +1,11 @@
 import importlib
 import logging
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 from contextlib import ExitStack, redirect_stdout
+from pathlib import Path
 
 import fabio
 import matplotlib.pyplot as plt
@@ -38,13 +38,18 @@ def load_gsas_module(name, paths=()):
     # Preserve the Linux Qt/wx fontconfig workaround, but only when GSAS-II
     # is actually requested. Never remove another application's loaded wx.
     if sys.platform.startswith("linux"):
-        library = Path(sys.executable).resolve().parents[1] / "lib" / "libfontconfig.so.1"
+        library = (
+            Path(sys.executable).resolve().parents[1] / "lib" / "libfontconfig.so.1"
+        )
         if library.is_file():
             import ctypes
+
             try:
                 ctypes.CDLL(str(library), mode=ctypes.RTLD_GLOBAL)
             except OSError:
-                logging.getLogger("easyxrd").debug("Could not preload fontconfig", exc_info=True)
+                logging.getLogger("easyxrd").debug(
+                    "Could not preload fontconfig", exc_info=True
+                )
     candidates = [None] + list(paths)
     last_error = None
     for path in candidates:
@@ -65,22 +70,38 @@ def load_gsas_module(name, paths=()):
             last_error = exc
         finally:
             sys.path[:] = original_path
-    raise ImportError("GSAS-II is unavailable; install it or provide gsasii_lib_path") from last_error
+    raise ImportError(
+        "GSAS-II is unavailable; install it or provide gsasii_lib_path"
+    ) from last_error
 
 
 def refinement_transaction(function):
     """Restore engine and analysis state on exceptions, retaining attempt history."""
-    from functools import wraps
     import copy
+    from functools import wraps
+
     @wraps(function)
     def wrapped(self, *args, **kwargs):
         if getattr(self, "_transaction_active", False):
             return function(self, *args, **kwargs)
-        names = ("gpx", "ds", "phases", "gpx_previous", "ds_previous", "phases_previous",
-                 "gsasii_run_directory", "gsasii_lib_path", "yshift_multiplier")
+        names = (
+            "gpx",
+            "ds",
+            "phases",
+            "gpx_previous",
+            "ds_previous",
+            "phases_previous",
+            "gsasii_run_directory",
+            "gsasii_lib_path",
+            "yshift_multiplier",
+        )
         original_gpx = getattr(self, "gpx", None)
         old_steps = getattr(self, "ds", xr.Dataset()).sizes.get("refinement_step", 0)
-        state = {name: copy.deepcopy(getattr(self, name)) for name in names if hasattr(self, name)}
+        state = {
+            name: copy.deepcopy(getattr(self, name))
+            for name in names
+            if hasattr(self, name)
+        }
         self._transaction_active = True
         # The first pre-mutation checkpoint can borrow this protected copy.
         # Nested checkpoints after flags/cell changes still need their own copy.
@@ -91,13 +112,20 @@ def refinement_transaction(function):
         except (Exception, KeyboardInterrupt) as exc:
             history = None
             if hasattr(self, "ds") and "rwp_history" in self.ds:
-                history = self.ds[["rwp_history", "rwp_attempted_history"]].copy(deep=True)
-                if history.sizes["refinement_step"] > old_steps and history.refinement_status.values[-1] == "accepted":
+                history = self.ds[["rwp_history", "rwp_attempted_history"]].copy(
+                    deep=True
+                )
+                if (
+                    history.sizes["refinement_step"] > old_steps
+                    and history.refinement_status.values[-1] == "accepted"
+                ):
                     statuses = history.refinement_status.values.tolist()
                     reasons = history.refinement_reason.values.tolist()
                     statuses[-1], reasons[-1] = "error", f"{type(exc).__name__}: {exc}"
-                    history = history.assign_coords(refinement_status=("refinement_step", statuses),
-                                                    refinement_reason=("refinement_step", reasons))
+                    history = history.assign_coords(
+                        refinement_status=("refinement_step", statuses),
+                        refinement_reason=("refinement_step", reasons),
+                    )
                     history.rwp_history.values[-1] = np.nan
             for name in names:
                 if name in state:
@@ -105,7 +133,10 @@ def refinement_transaction(function):
                 elif hasattr(self, name):
                     delattr(self, name)
             if history is not None and hasattr(self, "ds"):
-                self.ds = xr.merge([self.ds.drop_dims("refinement_step", errors="ignore"), history], join="exact")
+                self.ds = xr.merge(
+                    [self.ds.drop_dims("refinement_step", errors="ignore"), history],
+                    join="exact",
+                )
             self.last_refinement_accepted = False
             self.last_refinement_rejection_reason = "error"
             if original_gpx is not None and hasattr(original_gpx, "__dict__"):
@@ -119,6 +150,7 @@ def refinement_transaction(function):
             self._transaction_active = False
             del self._transaction_checkpoint
             del self._transaction_checkpoint_available
+
     return wrapped
 
 
@@ -162,8 +194,16 @@ def install_gsas2(*, upgrade=False, gui=False):
     pip = [sys.executable, "-m", "pip", "install"]
     try:
         subprocess.run(
-            pip + ["meson-python", "ninja", "wheel", "Cython", "numpy",
-                   "pyproject-metadata>=0.5.0", "tomli>=1.0.0"],
+            pip
+            + [
+                "meson-python",
+                "ninja",
+                "wheel",
+                "Cython",
+                "numpy",
+                "pyproject-metadata>=0.5.0",
+                "tomli>=1.0.0",
+            ],
             check=True,
         )
         # NumPy 2 provides pkg-config metadata for the GSAS-II Meson build.
@@ -199,11 +239,16 @@ def install_gsas2(*, upgrade=False, gui=False):
     try:
         # A subprocess avoids validating stale modules already loaded in Jupyter.
         result = subprocess.run(
-            [sys.executable, "-c",
-             "from pathlib import Path; "
-             "import GSASII.GSASIIscriptable as G2sc; "
-             "print(Path(G2sc.__file__).resolve().parent)"],
-            check=True, capture_output=True, text=True,
+            [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; "
+                "import GSASII.GSASIIscriptable as G2sc; "
+                "print(Path(G2sc.__file__).resolve().parent)",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
         )
         library_path = result.stdout.strip().splitlines()[-1]
     except (subprocess.CalledProcessError, OSError, IndexError) as exc:

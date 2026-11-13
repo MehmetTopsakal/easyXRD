@@ -1,18 +1,18 @@
 import matplotlib
+
 matplotlib.use("Agg")  # Non-interactive backend for headless test runner
 import matplotlib.pyplot as plt
 import numpy as np
-import xarray as xr
 import pytest
-from pymatgen.core.structure import Structure
-from pymatgen.core.lattice import Lattice
+import xarray as xr
 from pymatgen.analysis.diffraction.xrd import XRDCalculator
+from pymatgen.core.lattice import Lattice
+from pymatgen.core.structure import Structure
+
 from easyxrd import exrd
 from easyxrd.plotters import (
     _calc_reflection_pattern,
-    exrd_plotter,
     i2d_plotter,
-    refinement_plotter,
 )
 
 

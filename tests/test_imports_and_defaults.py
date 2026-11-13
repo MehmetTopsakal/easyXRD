@@ -1,6 +1,8 @@
-import sys
 import io
+import sys
+
 import pytest
+
 
 def test_top_level_import():
     import easyxrd
@@ -14,7 +16,7 @@ def test_top_level_import():
 
 
 def test_defaults_configuration():
-    from easyxrd import easyxrd_defaults, set_defaults, print_defaults
+    from easyxrd import easyxrd_defaults, print_defaults, set_defaults
 
     original = easyxrd_defaults.get("custom_key")
     try:
@@ -57,8 +59,9 @@ def test_hidden_prints():
 
 @pytest.mark.parametrize("api_key", ["abcde-secret-api-key", "short", "not found", "invalid", None])
 def test_show_config_masks_key_and_reports_environment(monkeypatch, capsys, api_key):
-    import easyxrd
     from types import SimpleNamespace
+
+    import easyxrd
 
     monkeypatch.setitem(easyxrd.easyxrd_defaults, "mp_api_key", api_key)
     monkeypatch.setitem(
@@ -80,8 +83,9 @@ def test_show_config_masks_key_and_reports_environment(monkeypatch, capsys, api_
 
 
 def test_show_config_with_missing_packages(monkeypatch, capsys):
-    import easyxrd
     from importlib import metadata
+
+    import easyxrd
 
     def missing_version(package):
         raise metadata.PackageNotFoundError(package)
@@ -95,10 +99,11 @@ def test_show_config_with_missing_packages(monkeypatch, capsys):
 
 
 def test_read_tiff_as_dataarray(tmp_path):
-    import easyxrd
     import fabio
-    import numpy as np
     import matplotlib.pyplot as plt
+    import numpy as np
+
+    import easyxrd
 
     img_data = np.arange(12, dtype=np.float32).reshape(3, 4)
     tiff_path = tmp_path / "test.tif"

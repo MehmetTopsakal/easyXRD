@@ -1,12 +1,13 @@
-from . import DEFAULT, resolve_default
-
-from .results import clear_fit_results
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
-import xarray as xr
 import pybaselines
+import xarray as xr
+
+from . import DEFAULT, resolve_default
 from .data_loader import cake_profile, validate_profile
+from .results import clear_fit_results
 
 
 def _optimize_bkg_scale(y_obs, y_bkg, initial_scale=None, max_iter=100):
@@ -24,46 +25,72 @@ def _optimize_bkg_scale(y_obs, y_bkg, initial_scale=None, max_iter=100):
     obs, bkg = obs[valid], bkg[valid]
     positive, negative = bkg > 0, bkg < 0
     upper = np.min(obs[positive] / bkg[positive]) if positive.any() else np.inf
-    lower = max(0., np.max(obs[negative] / bkg[negative])) if negative.any() else 0.
+    lower = max(0.0, np.max(obs[negative] / bkg[negative])) if negative.any() else 0.0
     if np.any((bkg == 0) & (obs < 0)) or upper < lower:
-        warnings.warn("No nonnegative background scale makes all residuals nonnegative; using zero", UserWarning, stacklevel=2)
-        return 0.
-    return float(upper if np.isfinite(upper) else max(1., lower))
+        warnings.warn(
+            "No nonnegative background scale makes all residuals nonnegative; using zero",
+            UserWarning,
+            stacklevel=2,
+        )
+        return 0.0
+    return float(upper if np.isfinite(upper) else max(1.0, lower))
 
 
 def _compute_i2d_baseline(da_2d, iarpls_lam=1e5, max_workers=None):
     """Fit each sector; report failures instead of removing its entire signal."""
     radial = da_2d.radial_i2d.values
+
     def fit(y):
         valid = np.isfinite(y)
         if valid.sum() < 3:
             warnings.warn("Insufficient finite points for sector baseline", UserWarning)
             return np.full(y.shape, np.nan)
         try:
-            b, _ = pybaselines.Baseline(x_data=radial[valid]).iarpls(y[valid], lam=iarpls_lam)
+            b, _ = pybaselines.Baseline(x_data=radial[valid]).iarpls(
+                y[valid], lam=iarpls_lam
+            )
         except Exception as exc:
             raise RuntimeError("Azimuthal-sector baseline fit failed") from exc
         return np.interp(radial, radial[valid], b, left=np.nan, right=np.nan)
-    with ThreadPoolExecutor(max_workers=max_workers or  min(16, len(da_2d))) as pool:
+
+    with ThreadPoolExecutor(max_workers=max_workers or min(16, len(da_2d))) as pool:
         result = np.asarray(list(pool.map(fit, da_2d.values)))
     return da_2d.copy(data=result)
 
 
 def _same_grid(a, b, rtol=1e-5, atol=1e-7):
-    if a.dims != b.dims or a.shape != b.shape or any(
-        not np.allclose(a.coords[d].values, b.coords[d].values, rtol=rtol, atol=atol) for d in a.dims
+    if (
+        a.dims != b.dims
+        or a.shape != b.shape
+        or any(
+            not np.allclose(
+                a.coords[d].values, b.coords[d].values, rtol=rtol, atol=atol
+            )
+            for d in a.dims
+        )
     ):
-        raise ValueError("Sample and background grids must match exactly; explicitly interpolate the background first")
+        raise ValueError(
+            "Sample and background grids must match exactly; explicitly interpolate the background first"
+        )
     if a.attrs.get("radial_unit", "q_A^-1") != b.attrs.get("radial_unit", "q_A^-1"):
         raise ValueError("Sample and background radial units differ")
 
 
 class BaselineMixin:
-    def get_baseline(self, input_bkg=None, use_iarpls=DEFAULT, radial_rolling=DEFAULT,
-                     iarpls_lam=DEFAULT, plot=DEFAULT, get_i2d_baseline=DEFAULT,
-                     use_i2d_baseline=DEFAULT, roi_radial_range=None,
-                     roi_azimuthal_range=None, spotty_data_correction=DEFAULT,
-                     spotty_data_correction_threshold=DEFAULT):
+    def get_baseline(
+        self,
+        input_bkg=None,
+        use_iarpls=DEFAULT,
+        radial_rolling=DEFAULT,
+        iarpls_lam=DEFAULT,
+        plot=DEFAULT,
+        get_i2d_baseline=DEFAULT,
+        use_i2d_baseline=DEFAULT,
+        roi_radial_range=None,
+        roi_azimuthal_range=None,
+        spotty_data_correction=DEFAULT,
+        spotty_data_correction_threshold=DEFAULT,
+    ):
         """Estimate a baseline without mutating raw images or losing coordinates.
 
         Backgrounds must be explicitly interpolated onto the sample grid before
@@ -76,16 +103,29 @@ class BaselineMixin:
         radial_rolling = resolve_default(radial_rolling, "get_baseline_radial_rolling")
         iarpls_lam = resolve_default(iarpls_lam, "get_baseline_iarpls_lam")
         plot = resolve_default(plot, "get_baseline_plot")
-        get_i2d_baseline = resolve_default(get_i2d_baseline, "get_baseline_get_i2d_baseline")
-        use_i2d_baseline = resolve_default(use_i2d_baseline, "get_baseline_use_i2d_baseline")
-        spotty_data_correction = resolve_default(spotty_data_correction, "get_baseline_spotty_data_correction")
-        spotty_data_correction_threshold = resolve_default(spotty_data_correction_threshold, "get_baseline_spotty_data_correction_threshold")
+        get_i2d_baseline = resolve_default(
+            get_i2d_baseline, "get_baseline_get_i2d_baseline"
+        )
+        use_i2d_baseline = resolve_default(
+            use_i2d_baseline, "get_baseline_use_i2d_baseline"
+        )
+        spotty_data_correction = resolve_default(
+            spotty_data_correction, "get_baseline_spotty_data_correction"
+        )
+        spotty_data_correction_threshold = resolve_default(
+            spotty_data_correction_threshold,
+            "get_baseline_spotty_data_correction_threshold",
+        )
 
         if input_bkg is None and not use_iarpls:
             return
         if use_i2d_baseline and not get_i2d_baseline:
             raise ValueError("use_i2d_baseline requires get_i2d_baseline=True")
-        if (get_i2d_baseline or roi_azimuthal_range is not None or spotty_data_correction) and "i2d" not in self.ds:
+        if (
+            get_i2d_baseline
+            or roi_azimuthal_range is not None
+            or spotty_data_correction
+        ) and "i2d" not in self.ds:
             raise ValueError("The requested operation requires i2d")
         if spotty_data_correction and not get_i2d_baseline:
             raise ValueError("spotty_data_correction requires get_i2d_baseline=True")
@@ -107,13 +147,15 @@ class BaselineMixin:
         validate_profile(obs)
         bkg = xr.zeros_like(obs)
         bkg2d = xr.zeros_like(ds.i2d) if "i2d" in ds else None
-        scale = 0.
+        scale = 0.0
         external_var = None
         if input_bkg is not None:
             other = input_bkg.ds
             if "i2d" in ds and "i2d" in other:
                 _same_grid(ds.i2d, other.i2d)
-                bkg2d = other.i2d.assign_coords({d: ds.i2d.coords[d] for d in ds.i2d.dims})
+                bkg2d = other.i2d.assign_coords(
+                    {d: ds.i2d.coords[d] for d in ds.i2d.dims}
+                )
             if roi_azimuthal_range is not None and "i2d" in other:
                 bkg, external_var = cake_profile(other, roi_azimuthal_range)
             else:
@@ -129,16 +171,26 @@ class BaselineMixin:
                 external_var = external_var.assign_coords(radial=obs.radial)
             if get_i2d_baseline and "i2d" not in other:
                 full = other.i1d.rename({"radial": "radial_i2d"})
-                if not np.allclose(full.radial_i2d.values, ds.radial_i2d.values, rtol=1e-5, atol=1e-7):
-                    raise ValueError("Background radial grid must match the entire cake")
-                bkg2d = full.assign_coords(radial_i2d=ds.radial_i2d).broadcast_like(ds.i2d)
+                if not np.allclose(
+                    full.radial_i2d.values, ds.radial_i2d.values, rtol=1e-5, atol=1e-7
+                ):
+                    raise ValueError(
+                        "Background radial grid must match the entire cake"
+                    )
+                bkg2d = full.assign_coords(radial_i2d=ds.radial_i2d).broadcast_like(
+                    ds.i2d
+                )
             scale = _optimize_bkg_scale(obs.values, bkg.values)
         baseline = scale * bkg
         if use_iarpls:
             fit_data = obs - baseline
             if radial_rolling >= 1:
-                fit_data = fit_data.rolling(radial=radial_rolling, center=True, min_periods=1).mean()
-            values, _ = pybaselines.Baseline(x_data=obs.radial.values).iarpls(fit_data.values, lam=iarpls_lam)
+                fit_data = fit_data.rolling(
+                    radial=radial_rolling, center=True, min_periods=1
+                ).mean()
+            values, _ = pybaselines.Baseline(x_data=obs.radial.values).iarpls(
+                fit_data.values, lam=iarpls_lam
+            )
             baseline = baseline + values
         if get_i2d_baseline:
             cake = ds.i2d
@@ -147,7 +199,9 @@ class BaselineMixin:
                 bkg2d = bkg2d.sel(azimuthal_i2d=cake.azimuthal_i2d)
             cake_baseline = scale * bkg2d
             if use_iarpls:
-                cake_baseline = cake_baseline + _compute_i2d_baseline(cake - cake_baseline, iarpls_lam)
+                cake_baseline = cake_baseline + _compute_i2d_baseline(
+                    cake - cake_baseline, iarpls_lam
+                )
             ds["i2d_baseline"] = cake_baseline
             if use_i2d_baseline:
                 temp = ds.copy(deep=False)
@@ -155,14 +209,20 @@ class BaselineMixin:
                 baseline, _ = cake_profile(temp, roi_azimuthal_range)
                 baseline = baseline.sel(radial=obs.radial)
         ds["i1d_baseline"] = baseline
-        ds.i1d_baseline.attrs = dict(baseline_note="measured background and/or iarpls", background_scale=scale,
-                                     iarpls_lam=iarpls_lam, uncertainty_note="Fitted scale and empirical baseline uncertainty not included")
+        ds.i1d_baseline.attrs = dict(
+            baseline_note="measured background and/or iarpls",
+            background_scale=scale,
+            iarpls_lam=iarpls_lam,
+            uncertainty_note="Fitted scale and empirical baseline uncertainty not included",
+        )
         if "i1d_baseline_variance" in ds:
             del ds["i1d_baseline_variance"]
         if external_var is not None:
             ds["i1d_baseline_variance"] = scale**2 * external_var
         if not np.all(np.isfinite(ds.i1d_baseline)):
-            raise ValueError("Baseline has unsupported or nonfinite bins; observations were preserved")
+            raise ValueError(
+                "Baseline has unsupported or nonfinite bins; observations were preserved"
+            )
         if spotty_data_correction:
             selected = (ds.i2d - ds.i2d_baseline) >= spotty_data_correction_threshold
             ds["i2d_spot_mask"] = selected.astype("int8")
@@ -170,7 +230,10 @@ class BaselineMixin:
             temp["i2d"] = ds.i2d.where(selected)
             diagnostic, _ = cake_profile(temp, roi_azimuthal_range)
             ds["i1d_spot_corrected"] = diagnostic
-            warnings.warn("Spot-selected intensities are stored separately in i1d_spot_corrected; raw observations are unchanged", UserWarning)
+            warnings.warn(
+                "Spot-selected intensities are stored separately in i1d_spot_corrected; raw observations are unchanged",
+                UserWarning,
+            )
         for key in ("i1d_refined", "i1d_gsas_background"):
             if key in ds:
                 del ds[key]

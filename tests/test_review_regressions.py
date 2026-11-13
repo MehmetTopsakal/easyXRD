@@ -1,23 +1,23 @@
 """Numerical and state regressions from both November 2026 package reviews."""
-import copy
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
-from types import SimpleNamespace
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 import xarray as xr
-import matplotlib.pyplot as plt
-from pymatgen.core import Lattice, Structure
 from pymatgen.analysis.diffraction.xrd import XRDCalculator
-from easyxrd import exrd, HiddenPrints
-from easyxrd.baseline import _optimize_bkg_scale, _compute_i2d_baseline
-from easyxrd.plotters import _calc_reflection_pattern, _PATTERN_CACHE, i1d_plotter
+from pymatgen.core import Lattice, Structure
+
+from easyxrd import HiddenPrints, exrd
+from easyxrd.baseline import _compute_i2d_baseline, _optimize_bkg_scale
+from easyxrd.plotters import _PATTERN_CACHE, _calc_reflection_pattern, i1d_plotter
 from easyxrd.utils import load_gsas_module
-from tests.test_refinement import sample, phase, configurable_sample
+from tests.test_refinement import configurable_sample
 
 
 def profile(q=None, y=None):
@@ -183,8 +183,8 @@ def test_package_import_does_not_load_gsas_or_write_scratch(tmp_path):
 
 
 def test_real_pyfai_1d_matches_with_and_without_cake():
-    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
     from pyFAI.detectors import Detector
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
     ai=AzimuthalIntegrator(dist=.1,poni1=.003,poni2=.004,detector=Detector(pixel1=1e-4,pixel2=1e-4),wavelength=1e-10)
     y,x=np.indices((100,100)); img=(100+2*x+y).astype(float)
     kwargs=dict(from_img_array=img,ai=ai,mask=(x>60)&(y<50),radial_range=(.05,.35),delta_q=.01,npt_azimuthal=20,plot=False,error_model='poisson')
@@ -203,10 +203,10 @@ def test_real_pyfai_1d_matches_with_and_without_cake():
 @pytest.mark.parametrize("polarization_factor", [None, 0.95])
 def test_detector_data_direct_netcdf_roundtrip(tmp_path, integrate2d, polarization_factor):
     """TIFF/PONI/mask loading must support ordinary xarray serialization."""
-    from fabio.tifimage import TifImage
     from fabio.edfimage import EdfImage
-    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
+    from fabio.tifimage import TifImage
     from pyFAI.detectors import Detector
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
 
     ai = AzimuthalIntegrator(
         dist=0.1, poni1=0.003, poni2=0.004,
@@ -517,8 +517,8 @@ def test_setup_gsas2_refiner_presets_and_instprm_file(tmp_path):
 
 
 def test_load_xrd_data_polarization_and_poisson_variance():
-    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
     from pyFAI.detectors import Detector
+    from pyFAI.integrator.azimuthal import AzimuthalIntegrator
     ai = AzimuthalIntegrator(
         dist=0.1, poni1=0.003, poni2=0.004,
         detector=Detector(pixel1=1e-4, pixel2=1e-4), wavelength=1e-10,

@@ -8,10 +8,10 @@
 """
 
 import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,12 +20,10 @@ import xarray as xr
 from pymatgen.core.lattice import Lattice
 from pymatgen.core.structure import Structure
 
-from easyxrd import exrd, easyxrd_defaults
-from easyxrd.plotters import exrd_plotter, i1d_plotter
+from easyxrd import easyxrd_defaults, exrd
 from easyxrd.results import (
     clear_fit_results,
     compute_cell_uncertainties,
-    compute_cell_volume,
     compute_internal_standard_qpa,
     compute_weight_fraction_uncertainties,
     format_value_with_su,
